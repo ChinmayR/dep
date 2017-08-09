@@ -220,7 +220,9 @@ func (cmd *statusCommand) Run(ctx *dep.Ctx, args []string) error {
 	case cmd.old:
 		return errors.Errorf("not implemented")
 	case cmd.detailed:
-		return errors.Errorf("not implemented")
+		out = &UberOutput{
+			w: &buf,
+		}
 	case cmd.json:
 		out = &jsonOutput{
 			w: &buf,
@@ -429,18 +431,15 @@ func runStatusAll(ctx *dep.Ctx, out outputter, p *dep.Project, sm gps.SourceMana
 
 				// Get children only for specific outputers
 				// in order to avoid slower status process.
-				switch out.(type) {
-				case *dotOutput:
-					ptr, err := sm.ListPackages(proj.Ident(), proj.Version())
+				ptr, err := sm.ListPackages(proj.Ident(), proj.Version())
 
-					if err != nil {
-						bs.hasError = true
-						errListPkgCh <- err
-					}
-
-					prm, _ := ptr.ToReachMap(true, true, false, p.Manifest.IgnoredPackages())
-					bs.Children = prm.FlattenFn(paths.IsStandardImportPath)
+				if err != nil {
+					bs.hasError = true
+					errListPkgCh <- err
 				}
+
+				prm, _ := ptr.ToReachMap(true, true, false, p.Manifest.IgnoredPackages())
+				bs.Children = prm.FlattenFn(paths.IsStandardImportPath)
 
 				// Split apart the version from the lock into its constituent parts.
 				switch tv := proj.Version().(type) {
