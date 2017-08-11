@@ -220,7 +220,7 @@ func (cmd *statusCommand) Run(ctx *dep.Ctx, args []string) error {
 	case cmd.old:
 		return errors.Errorf("not implemented")
 	case cmd.detailed:
-		out = &UberOutput{
+		out = &DetailedOutput{
 			w: &buf,
 		}
 	case cmd.json:
@@ -407,6 +407,21 @@ func runStatusAll(ctx *dep.Ctx, out outputter, p *dep.Project, sm gps.SourceMana
 		// some checks.
 
 		out.BasicHeader()
+
+		switch out.(type) {
+		case *DetailedOutput:
+			bsProject := &BasicStatus{
+				ProjectRoot:  string(p.ImportRoot),
+				Constraint:   nil,
+				Version:      gps.NewBranch("master"),
+				Revision:     "",
+				Latest:       nil,
+				PackageCount: -1,
+			}
+			prm, _ := ptree.ToReachMap(true, false, false, nil)
+			bsProject.Children = prm.FlattenFn(paths.IsStandardImportPath)
+			out.BasicLine(bsProject)
+		}
 
 		logger.Println("Checking upstream projects:")
 

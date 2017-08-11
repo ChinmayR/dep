@@ -7,7 +7,7 @@ import (
 	"github.com/golang/dep/internal/gps"
 )
 
-type UberOutput struct {
+type DetailedOutput struct {
 	w       io.Writer
 	basic   []*StripBasicStatus
 	missing []*MissingStatus
@@ -23,20 +23,20 @@ type StripBasicStatus struct {
 	PackageCount int
 }
 
-func (out *UberOutput) BasicHeader() {
+func (out *DetailedOutput) BasicHeader() {
 	out.basic = []*StripBasicStatus{}
 }
 
-func (out *UberOutput) BasicFooter() {
+func (out *DetailedOutput) BasicFooter() {
 	json.NewEncoder(out.w).Encode(out.basic)
 }
 
-func (out *UberOutput) BasicLine(bs *BasicStatus) {
+func (out *DetailedOutput) BasicLine(bs *BasicStatus) {
 	var constraint string
 	if v, ok := bs.Constraint.(gps.Version); ok {
 		constraint = formatVersion(v)
 	} else {
-		constraint = bs.Constraint.String()
+		constraint = ""
 	}
 	sbs := &StripBasicStatus{
 		bs.ProjectRoot,
@@ -50,14 +50,14 @@ func (out *UberOutput) BasicLine(bs *BasicStatus) {
 	out.basic = append(out.basic, sbs)
 }
 
-func (out *UberOutput) MissingHeader() {
+func (out *DetailedOutput) MissingHeader() {
 	out.missing = []*MissingStatus{}
 }
 
-func (out *UberOutput) MissingLine(ms *MissingStatus) {
+func (out *DetailedOutput) MissingLine(ms *MissingStatus) {
 	out.missing = append(out.missing, ms)
 }
 
-func (out *UberOutput) MissingFooter() {
+func (out *DetailedOutput) MissingFooter() {
 	json.NewEncoder(out.w).Encode(out.missing)
 }
