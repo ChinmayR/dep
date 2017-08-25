@@ -51,6 +51,7 @@ func TestSourceManager_InferConstraint(t *testing.T) {
 			{gitProj, "long semver constraint", "v0.12.0-12-de4dcafe0", v012},
 			{gitProj, "branch v2", "v2", NewBranch("v2")},
 			{gitProj, "branch master", "master", NewBranch("master")},
+			{gitProj, "remote slash branch", "origin/master", NewBranch("master")},
 			{gitProj, "long revision", "3f4c3bea144e112a69bbe5d8d01c1b09a544253f",
 				Revision("3f4c3bea144e112a69bbe5d8d01c1b09a544253f")},
 			{gitProj, "short revision", "3f4c3bea",

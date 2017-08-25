@@ -553,6 +553,13 @@ func (sm *SourceMgr) InferConstraint(s string, pi ProjectIdentifier) (Constraint
 		return nil, errors.Wrapf(err, "list versions for %s", pi) // means repo does not exist
 	}
 	SortPairedForUpgrade(versions)
+	// UBER PATCH BEGIN
+	// Some projects define branch as origin/master instead of master in their glide.yaml.
+	// This is a workaround for the bug of parsing glide correctly.
+	if strings.Contains(s, "/") {
+		s = s[strings.LastIndex(s, "/")+1:]
+	}
+	// UBER PATCH END
 	for _, v := range versions {
 		if s == v.String() {
 			version = v

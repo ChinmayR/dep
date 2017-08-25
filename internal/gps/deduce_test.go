@@ -470,6 +470,23 @@ var pathDeductionFixtures = map[string][]pathDeductionFixture{
 			mb:   maybeGitSource{url: mkurl("https://go.googlesource.com/net")},
 		},
 	},
+	"code.uber.internal": {
+		{
+			in:   "code.uber.internal/devexp/version-set-poc.git",
+			root: "code.uber.internal/devexp/version-set-poc.git",
+			mb:   maybeGitSource{url: mkurl("ssh://gitolite@code.uber.internal/devexp/version-set-poc.git")},
+		},
+		{
+			in:   "code.uber.internal/devexp/crashagg.git/crash",
+			root: "code.uber.internal/devexp/crashagg.git",
+			mb:   maybeGitSource{url: mkurl("ssh://gitolite@code.uber.internal/devexp/crashagg.git")},
+		},
+		{
+			in:   "code.uber.internal/devexp/crashagg",
+			root: "code.uber.internal/devexp/crashagg",
+			mb:   maybeGitSource{url: mkurl("ssh://gitolite@code.uber.internal/devexp/crashagg")},
+		},
+	},
 }
 
 func TestDeduceFromPath(t *testing.T) {
@@ -495,6 +512,8 @@ func TestDeduceFromPath(t *testing.T) {
 				deducer = apacheDeducer{regexp: apacheRegex}
 			case "vcsext":
 				deducer = vcsExtensionDeducer{regexp: vcsExtensionRegex}
+			case "code.uber.internal":
+				deducer = gitoliteDeducer{}
 			default:
 				// Should just be the vanity imports, which we do elsewhere
 				t.Log("skipping")

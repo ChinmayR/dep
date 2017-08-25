@@ -92,6 +92,7 @@ func pathDeducerTrie() *deducerTrie {
 	dxt.Insert("git.launchpad.net/", launchpadGitDeducer{regexp: glpRegex})
 	dxt.Insert("hub.jazz.net/", jazzDeducer{regexp: jazzRegex})
 	dxt.Insert("git.apache.org/", apacheDeducer{regexp: apacheRegex})
+	dxt.Insert("code.uber.internal/", gitoliteDeducer{})
 
 	return dxt
 }
@@ -99,6 +100,28 @@ func pathDeducerTrie() *deducerTrie {
 type pathDeducer interface {
 	deduceRoot(string) (string, error)
 	deduceSource(string, *url.URL) (maybeSource, error)
+}
+
+type gitoliteDeducer struct{}
+
+func (m gitoliteDeducer) deduceRoot(path string) (string, error) {
+	return getGitoliteRoot(path), nil
+}
+
+func (m gitoliteDeducer) deduceSource(path string, u *url.URL) (maybeSource, error) {
+	u.User = url.User("gitolite")
+	u.Host = "code.uber.internal"
+	u.Path = strings.TrimPrefix(getGitoliteRoot(path), u.Host)
+	u.Scheme = "ssh"
+
+	return maybeGitSource{url: u}, nil
+}
+
+func getGitoliteRoot(path string) string {
+	if strings.Contains(path, ".git") {
+		return strings.SplitAfter(path, ".git")[0]
+	}
+	return path
 }
 
 type githubDeducer struct {
