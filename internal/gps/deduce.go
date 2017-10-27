@@ -18,6 +18,10 @@ import (
 
 	radix "github.com/armon/go-radix"
 	"github.com/pkg/errors"
+
+	// BEGIN UBER PATCH
+	"github.com/golang/dep/uber"
+	// END UBER PATCH
 )
 
 var (
@@ -109,11 +113,7 @@ func (m gitoliteDeducer) deduceRoot(path string) (string, error) {
 }
 
 func (m gitoliteDeducer) deduceSource(path string, u *url.URL) (maybeSource, error) {
-	u.User = url.User("gitolite")
-	u.Host = "code.uber.internal"
-	u.Path = strings.TrimPrefix(getGitoliteRoot(path), u.Host)
-	u.Scheme = "ssh"
-
+	u = uber.GetGitoliteUrlWithPath(strings.TrimPrefix(getGitoliteRoot(path), u.Host))
 	return maybeGitSource{url: u}, nil
 }
 
@@ -142,6 +142,14 @@ func (m githubDeducer) deduceSource(path string, u *url.URL) (maybeSource, error
 	if v == nil {
 		return nil, fmt.Errorf("%s is not a valid path for a source on github.com", path)
 	}
+
+	// BEGIN UBER PATCH
+	uberUrl, err := uber.GetGitoliteUrlForRewriter(path, "github.com")
+	if err == nil {
+		u = uberUrl
+		return maybeGitSource{url: u}, nil
+	} // if there is an error, continue to pull it directly from github
+	// END UBER PATCH
 
 	u.Host = "github.com"
 	u.Path = v[2]
@@ -288,6 +296,14 @@ func (m gopkginDeducer) deduceSource(p string, u *url.URL) (maybeSource, error) 
 	if err != nil {
 		return nil, err
 	}
+
+	// BEGIN UBER PATCH
+	uberUrl, err := uber.GetGitoliteUrlForRewriter(p, "gopkg.in")
+	if err == nil {
+		u = uberUrl
+		return maybeGitSource{url: u}, nil
+	} // if there is an error, continue to pull it directly from github
+	// END UBER PATCH
 
 	// Putting a scheme on gopkg.in would be really weird, disallow it
 	if u.Scheme != "" {

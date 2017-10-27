@@ -1,6 +1,7 @@
 // testing the uber-specific hacks since 2016
-package vcs
+package uber
 
+/* -- commenting out until I get around to refactoring them
 import (
 	"log"
 	"os"
@@ -111,3 +112,4 @@ func setDisableGitoliteAutocreate(val string) func() {
 		os.Setenv(uberDisableGitoliteAutocreation, old)
 	}
 }
+*/

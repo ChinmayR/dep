@@ -1,9 +1,11 @@
-package vcs
+package uber
 
 import (
 	"fmt"
 	"log"
+	"net/url"
 	"os"
+	"os/exec"
 	"regexp"
 	"strings"
 )
@@ -19,104 +21,77 @@ const (
 
 var uberLogger = log.New(os.Stdout, "[UBER]  ", 0)
 
-type rewriteFn func(*GitRepo, []string) (string, error)
+type rewriteFn func(string, []string) (*url.URL, error)
 
 type internalRewriter struct {
 	log     bool
-	name    string
 	pattern *regexp.Regexp
 	fn      rewriteFn
 }
 
-var hostnameRewrites = []internalRewriter{
-	{
-		name:    "gitolite",
-		log:     false,
-		pattern: regexp.MustCompile("^https://code.uber.internal/(.*)$"),
-		fn:      func(_ *GitRepo, in []string) (string, error) { return gitoliteURI(in[1]), nil },
-	},
-	{
-		name:    "golang.org",
+var hostnameRewrites = map[string]internalRewriter{
+	"github.com": {
 		log:     true,
-		pattern: regexp.MustCompile("^https://golang.org/x/(.*)$"),
-		fn:      func(_ *GitRepo, in []string) (string, error) { return gitoliteURI("googlesource/" + in[1]), nil },
-	},
-	{
-		name:    "gopkg.in",
-		log:     true,
-		pattern: regexp.MustCompile(`^https?://gopkg.in/((?P<user>[^./]+)(?P<version>\.v[0-9.]+)?(/(?P<repo>[^./]+)(?P<version>\.v[0-9.]+))?)$`),
-		fn:      rewriteGopkgIn,
-	},
-	// Make sure to keep this last, so the above rules can rewrite to public GitHub
-	// and we can rewrite public GitHub to gitolite
-	{
-		name:    "github.com",
-		log:     true,
-		pattern: regexp.MustCompile("^https?://github.com/(?P<user>[^/]+)/(?P<repo>[^/]+)$"),
+		pattern: regexp.MustCompile("^github.com/(?P<user>[^/]+)/(?P<repo>[^/]+)"),
 		fn:      getGitoliteMirrorURL,
 	},
+	"gopkg.in": {
+		log:     true,
+		pattern: regexp.MustCompile(`^gopkg.in/((?P<user>[^./]+)(?P<version>\.v[0-9.]+)?(/(?P<repo>[^./]+)(?P<version>\.v[0-9.]+))?)`),
+		fn:      rewriteGopkgIn,
+	},
 }
 
-func (s *GitRepo) ignoreRemoteMismatch() bool {
-	for _, re := range hostnameRewrites {
-		if re.pattern.MatchString(s.remote) {
-			return true
-		}
+func GetGitoliteUrlForRewriter(path, rewriterName string) (*url.URL, error) {
+	rewriter := hostnameRewrites[rewriterName]
+	matches := rewriter.pattern.FindStringSubmatch(path)
+	if len(matches) > 0 {
+		return rewriter.fn(path, matches)
 	}
-	return false
+	return nil, fmt.Errorf("Could not match path: %s to given rewriter: %s", path, rewriterName)
 }
 
-func (s *GitRepo) remoteOrGitolite() string {
-	for _, rewriter := range hostnameRewrites {
-		matches := rewriter.pattern.FindStringSubmatch(s.remote)
-		if len(matches) > 0 {
-			uri, err := rewriter.fn(s, matches)
-			if err != nil {
-				uberLogger.Printf("Error rewriting %s: %v", rewriter.name, err)
-				continue
-			}
-
-			if rewriter.log {
-				logRewrite(rewriter.name, s.remote, uri)
-			}
-
-			s.remote = uri
-		}
-	}
-	return s.Remote()
+func GetGitoliteUrlWithPath(path string) *url.URL {
+	u := new(url.URL)
+	u.User = url.User("gitolite")
+	u.Host = "code.uber.internal"
+	u.Scheme = "ssh"
+	u.Path = path
+	return u
 }
 
 // isNotOnGitolite returns a value indicating whether the error corresponds to a
 // repository not existing on Gitolite.
-func (s *GitRepo) isNotOnGitolite(err error) bool {
+func isNotOnGitolite(err error) bool {
 	return strings.Contains(err.Error(), "FATAL: autocreate denied")
 }
 
 // getGitoliteMirrorURL returns a rewritten URL for a GitHub package, using a Gitolite
 // mirror instead.  If the repository has not yet been mirrored, it creates the mirror.
-func getGitoliteMirrorURL(s *GitRepo, match []string) (string, error) {
+func getGitoliteMirrorURL(path string, match []string) (*url.URL, error) {
 	user := match[1]
 	repo := match[2]
 
 	// Return with an error if that didn't work for some reason.
 	if user == "" || repo == "" {
-		return "", fmt.Errorf("could not extract user / repo from GitHub URL: %s", s.Remote())
+		return nil, fmt.Errorf("could not extract user / repo from GitHub URL: %s", path)
 	}
 
-	return s.ensureGitoliteGithubMirror(user, repo)
+	return ensureGitoliteGithubMirror(user, repo, path)
 }
 
-func (s *GitRepo) ensureGitoliteGithubMirror(user, repo string) (string, error) {
+func ensureGitoliteGithubMirror(user, repo, path string) (*url.URL, error) {
 	// Generate the repo path and full URL on Gitolite.
 	githubPath := fmt.Sprintf("github/%s/%s", user, repo)
-	gitoliteURL := gitoliteURI(githubPath)
+	gitoliteURL := GetGitoliteUrlWithPath(githubPath)
 
 	if os.Getenv(uberDisableGitoliteAutocreation) != "" {
 		return gitoliteURL, nil
 	}
 
 	// Ping Gitolite to see if the mirror exists.
-	_, err := s.run("git", "ls-remote", gitoliteURL, "HEAD")
+	gitoliteUri := fmt.Sprintf("%s@%s:%s", gitoliteURL.User.Username(), gitoliteURL.Hostname(), gitoliteURL.Path)
+	err := execAndLogCommand("git", "ls-remote", gitoliteUri, "HEAD")
 
 	// If so, nothing more is needed, return the Gitolite mirror URL.
 	if err == nil {
@@ -125,24 +100,25 @@ func (s *GitRepo) ensureGitoliteGithubMirror(user, repo string) (string, error) 
 	}
 
 	// First, ensure the GitHub repo exists
-	if _, err := s.run("git", "ls-remote", s.Remote(), "HEAD"); err != nil {
-		uberLogger.Printf("Upstream GitHub repo does not exist: %v", s.Remote())
-		return "", err
+	githubUrlString := getGithubUrlFromUserAndRepo(user, repo)
+	if execErr := execAndLogCommand("git", "ls-remote", githubUrlString, "HEAD"); execErr != nil {
+		uberLogger.Printf("Upstream GitHub repo does not exist: %v", githubUrlString)
+		return nil, execErr
 	}
 
 	// If an error is returned indicating the mirror doesn't exist, create it.
-	if !s.isNotOnGitolite(err) {
-		return "", err
+	if !isNotOnGitolite(err) {
+		return nil, err
 	}
 
 	uberLogger.Printf("GitHub repo %s does not exist yet on Gitolite, mirroring...", gitoliteURL)
 
 	// Create a mirror.
-	_, err = s.run("ssh", "gitolite@code.uber.internal", "create", githubPath)
+	err = execAndLogCommand("ssh", "gitolite@code.uber.internal", "create", githubPath)
 
 	// Return with an error if that failed.
 	if err != nil {
-		return "", err
+		return nil, err
 	}
 
 	// All done.
@@ -150,7 +126,7 @@ func (s *GitRepo) ensureGitoliteGithubMirror(user, repo string) (string, error) 
 	return gitoliteURL, nil
 }
 
-func rewriteGopkgIn(s *GitRepo, match []string) (string, error) {
+func rewriteGopkgIn(path string, match []string) (*url.URL, error) {
 	user, repo := "go-"+match[2], match[2]
 	if len(match) > 5 && match[5] != "" {
 		user, repo = match[2], match[5]
@@ -159,9 +135,13 @@ func rewriteGopkgIn(s *GitRepo, match []string) (string, error) {
 	// If we're running during a test/production build, assume a .lock file already exists and
 	// rewrite to gitolite (which doesn't do any HEAD trickery like gopkg.in does)
 	if os.Getenv(uberGopkgRedirectEnv) != "" {
-		newRemote := fmt.Sprintf("https://github.com/%s/%s", user, repo)
+		newRemote := fmt.Sprintf("%s/%s", user, repo)
+		u := new(url.URL)
+		u.Host = "github.com"
+		u.Scheme = "https"
+		u.Path = newRemote
 
-		return newRemote, nil
+		return u, nil
 	}
 
 	// Otherwise, somebody is running "go-build/glide up" to fetch a new package from gopkg.in
@@ -170,18 +150,30 @@ func rewriteGopkgIn(s *GitRepo, match []string) (string, error) {
 
 	fullRepo := match[1]
 
-	if _, err := s.ensureGitoliteGithubMirror(user, repo); err != nil {
+	if _, err := ensureGitoliteGithubMirror(user, repo, path); err != nil {
 		uberLogger.Printf("Unable to ensure gitolite mirror exists for underlying GitHub repo for gopkg.in/%s", fullRepo)
-		return "", err
+		return nil, err
 	}
 
-	return fmt.Sprintf("https://gopkg.uberinternal.com/%s", fullRepo), nil
+	u := new(url.URL)
+	u.Host = "gopkg.uberinternal.com"
+	u.Scheme = "https"
+	u.Path = fullRepo
+	return u, nil
 }
 
-func gitoliteURI(repo string) string {
-	return fmt.Sprintf("gitolite@code.uber.internal:%s", repo)
-}
-
-func logRewrite(typ, from, to string) {
+func logRewrite(typ string, from string, to *url.URL) {
 	uberLogger.Printf("Rewrite %s %s to %s", typ, from, to)
+}
+
+func getGithubUrlFromUserAndRepo(user, repo string) string {
+	return fmt.Sprintf("git@github.com:%s/%s", user, repo)
+}
+
+func execAndLogCommand(name string, arg ...string) error {
+	command := exec.Command(name, arg...)
+	command.Env = os.Environ()
+	stdout, err := command.Output()
+	uberLogger.Printf("%s", stdout)
+	return err
 }
