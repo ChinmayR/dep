@@ -28,6 +28,9 @@ const (
 
 	// DepTypeImported represents a dependency imported by an external tool
 	DepTypeImported = "imported dep"
+
+	// DepTypeOverride represents a dependency overridden by an external tool or custom config
+	DepTypeOverride = "overridden dep"
 )
 
 // ConstraintFeedback holds project constraint feedback data

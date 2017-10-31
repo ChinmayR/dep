@@ -113,6 +113,9 @@ type ImportedPackage struct {
 
 	// Optional. Text representing a branch or version.
 	ConstraintHint string
+
+	//Optional. Boolean representing if imported package is an override.
+	IsOverride bool
 }
 
 // importedProject is a consolidated representation of a set of imported packages
@@ -157,6 +160,8 @@ func (i *Importer) loadPackages(packages []ImportedPackage) ([]importedProject, 
 		if prj.LockHint == "" && pkg.LockHint != "" {
 			prj.LockHint = pkg.LockHint
 		}
+
+		prj.IsOverride = pkg.IsOverride
 	}
 
 	return orderedProjects, nil
@@ -248,16 +253,24 @@ func (i *Importer) ImportPackages(packages []ImportedPackage, defaultConstraintF
 			pc.Constraint = gps.Any()
 		}
 
-		i.Manifest.Constraints[pc.Ident.ProjectRoot] = gps.ProjectProperties{
-			Source:     pc.Ident.Source,
-			Constraint: pc.Constraint,
-		}
-		fb.NewConstraintFeedback(pc, fb.DepTypeImported).LogFeedback(i.Logger)
+		if prj.IsOverride == false {
+			i.Manifest.Constraints[pc.Ident.ProjectRoot] = gps.ProjectProperties{
+				Source:     pc.Ident.Source,
+				Constraint: pc.Constraint,
+			}
+			fb.NewConstraintFeedback(pc, fb.DepTypeImported).LogFeedback(i.Logger)
 
-		if version != nil {
-			lp := gps.NewLockedProject(pc.Ident, version, nil)
-			i.Lock.P = append(i.Lock.P, lp)
-			fb.NewLockedProjectFeedback(lp, fb.DepTypeImported).LogFeedback(i.Logger)
+			if version != nil {
+				lp := gps.NewLockedProject(pc.Ident, version, nil)
+				i.Lock.P = append(i.Lock.P, lp)
+				fb.NewLockedProjectFeedback(lp, fb.DepTypeImported).LogFeedback(i.Logger)
+			}
+		} else {
+			i.Manifest.Ovr[pc.Ident.ProjectRoot] = gps.ProjectProperties{
+				Source:     pc.Ident.Source,
+				Constraint: pc.Constraint,
+			}
+			fb.NewConstraintFeedback(pc, fb.DepTypeOverride).LogFeedback(i.Logger)
 		}
 	}
 

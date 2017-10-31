@@ -89,7 +89,12 @@ func (g *Importer) Import(dir string, pr gps.ProjectRoot) (*dep.Manifest, *dep.L
 		return nil, nil, err
 	}
 
-	return g.convert(pr)
+	impPkgs, err := g.ReadCustomConfig(dir)
+	if err != nil {
+		return nil, nil, errors.Wrap(err, "failed to read custom configuration")
+	}
+
+	return g.convert(impPkgs, pr)
 }
 
 // load the glide configuration files.
@@ -130,7 +135,7 @@ func (g *Importer) load(projectDir string) error {
 }
 
 // convert the glide configuration files into dep configuration files.
-func (g *Importer) convert(pr gps.ProjectRoot) (*dep.Manifest, *dep.Lock, error) {
+func (g *Importer) convert(impPkgs []base.ImportedPackage, pr gps.ProjectRoot) (*dep.Manifest, *dep.Lock, error) {
 	projectName := string(pr)
 
 	task := bytes.NewBufferString("Converting from glide.yaml")
@@ -182,6 +187,8 @@ func (g *Importer) convert(pr gps.ProjectRoot) (*dep.Manifest, *dep.Lock, error)
 		}
 		packages = append(packages, ip)
 	}
+
+	packages = append(packages, impPkgs...)
 
 	err := g.ImportPackages(packages, false)
 	if err != nil {
