@@ -10,7 +10,7 @@ import (
 	"github.com/pkg/errors"
 )
 
-const customConfigName = "Config.yaml"
+const CustomConfigName = "Config.yaml"
 
 type CustomConfig struct {
 	Overrides []overridePackage `yaml:"override"`
@@ -22,7 +22,7 @@ type overridePackage struct {
 }
 
 func (i *Importer) ReadCustomConfig(dir string) ([]ImportedPackage, error) {
-	y := filepath.Join(dir, customConfigName)
+	y := filepath.Join(dir, CustomConfigName)
 	if _, err := os.Stat(y); err != nil {
 		i.Logger.Println("Did not detect custom configuration files...")
 		return nil, nil
@@ -42,10 +42,15 @@ func (i *Importer) ReadCustomConfig(dir string) ([]ImportedPackage, error) {
 		return nil, errors.Wrapf(err, "unable to parse %s", y)
 	}
 
+	return ParseConfig(customConfig)
+}
+
+func ParseConfig(config CustomConfig) ([]ImportedPackage, error) {
+
 	var impPkgs []ImportedPackage
 	pkgSeen := make(map[string]bool)
 
-	for _, pkg := range customConfig.Overrides {
+	for _, pkg := range config.Overrides {
 		if val, ok := pkgSeen[pkg.Name]; ok && val {
 			return nil, errors.Errorf("found multiple entries for %s in custom config", pkg.Name)
 		}

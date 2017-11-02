@@ -147,9 +147,17 @@ func (i *Importer) loadPackages(packages []ImportedPackage) ([]importedProject, 
 			continue
 		}
 
+		// if differing constraint and an override exist for the same package then error,
+		// but not if a lock entry and an override exist simultaneously because that is expected
+		if (pkg.IsOverride || prj.IsOverride) &&
+			prj.ConstraintHint != "" && pkg.ConstraintHint != "" && prj.ConstraintHint != pkg.ConstraintHint {
+			return nil, errors.Errorf("found a mismatch in constraint and override "+
+				"for %s with %s and %s", pkg.Name, pkg.ConstraintHint, prj.ConstraintHint)
+		}
+
 		// The config found first "wins", though we allow for incrementally
 		// setting each field because some importers have a config and lock file.
-		if prj.Source == "" && pkg.Source != "" {
+		if (prj.Source == "" || pkg.IsOverride) && pkg.Source != "" {
 			prj.Source = pkg.Source
 		}
 
@@ -161,7 +169,9 @@ func (i *Importer) loadPackages(packages []ImportedPackage) ([]importedProject, 
 			prj.LockHint = pkg.LockHint
 		}
 
-		prj.IsOverride = pkg.IsOverride
+		if !prj.IsOverride {
+			prj.IsOverride = pkg.IsOverride
+		}
 	}
 
 	return orderedProjects, nil

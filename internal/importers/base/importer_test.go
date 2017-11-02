@@ -394,6 +394,120 @@ func TestBaseImporter_ImportProjects(t *testing.T) {
 				},
 			},
 		},
+		"override only not in lock": {
+			importertest.TestCase{
+				WantOverride: "master",
+				WantVersion:  "",
+				WantRevision: "",
+			},
+			[]ImportedPackage{
+				{
+					Name:           importertest.Project,
+					LockHint:       "",
+					ConstraintHint: "master",
+					IsOverride:     true,
+				},
+			},
+		},
+		"matching constraint and override result in override": {
+			importertest.TestCase{
+				WantOverride: importertest.V2Branch,
+				WantVersion:  importertest.V2Branch,
+				WantRevision: "",
+			},
+			[]ImportedPackage{
+				{
+					Name:           importertest.Project,
+					LockHint:       "",
+					ConstraintHint: importertest.V2Branch,
+					IsOverride:     true,
+				},
+				{
+					Name:           importertest.Project,
+					LockHint:       "",
+					ConstraintHint: importertest.V2Branch,
+					IsOverride:     false,
+				},
+			},
+		},
+		"mismatch constraint and override result in error": {
+			importertest.TestCase{
+				WantConvertErr: true,
+			},
+			[]ImportedPackage{
+				{
+					Name:           importertest.Project,
+					LockHint:       "",
+					ConstraintHint: "master",
+					IsOverride:     true,
+				},
+				{
+					Name:           importertest.Project,
+					LockHint:       "",
+					ConstraintHint: importertest.V2Branch,
+					IsOverride:     false,
+				},
+			},
+		},
+		"override and lock result in override constraint and no error": {
+			importertest.TestCase{
+				WantOverride: importertest.V2Branch,
+				WantVersion:  importertest.V2Branch,
+				WantRevision: "",
+			},
+			[]ImportedPackage{
+				{
+					Name:           importertest.Project,
+					LockHint:       importertest.UntaggedRev,
+					ConstraintHint: "",
+					IsOverride:     false,
+				},
+				{
+					Name:           importertest.Project,
+					LockHint:       "",
+					ConstraintHint: importertest.V2Branch,
+					IsOverride:     true,
+				},
+			},
+		},
+		"override source clobbers lock source": {
+			importertest.TestCase{
+				WantOverride:   "master",
+				WantVersion:    "master",
+				WantSourceRepo: importertest.ProjectSrc,
+			},
+			[]ImportedPackage{
+				{
+					Name:           importertest.Project,
+					LockHint:       importertest.UntaggedRev,
+					ConstraintHint: "",
+					Source:         importertest.ProjectSrcInvalid,
+					IsOverride:     false,
+				},
+				{
+					Name:           importertest.Project,
+					LockHint:       "",
+					ConstraintHint: "master",
+					Source:         importertest.ProjectSrc,
+					IsOverride:     true,
+				},
+			},
+		},
+		"explicitly no overrides shows up as constraint": {
+			importertest.TestCase{
+				WantConstraint: "master",
+				WantVersion:    "master",
+				WantRevision:   "",
+			},
+			[]ImportedPackage{
+				{
+					Name:           importertest.Project,
+					LockHint:       "",
+					ConstraintHint: "master",
+					IsOverride:     false,
+				},
+			},
+		},
 	}
 
 	for name, tc := range testcases {

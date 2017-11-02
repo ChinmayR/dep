@@ -166,7 +166,7 @@ func TestGlideConfig_Convert(t *testing.T) {
 				g := NewImporter(logger, true, sm)
 				g.glideConfig = testCase.yaml
 				g.glideLock = testCase.lock
-				return g.convert(importertest.RootProject)
+				return g.convert(nil, importertest.RootProject)
 			})
 			if err != nil {
 				t.Fatalf("%#v", err)

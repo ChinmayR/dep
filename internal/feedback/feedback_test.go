@@ -42,6 +42,10 @@ func TestFeedback_Constraint(t *testing.T) {
 			feedback: NewConstraintFeedback(gps.ProjectConstraint{Constraint: rev, Ident: pi}, DepTypeImported),
 			want:     "Using 1b8edb3 as initial hint for imported dep github.com/foo/bar",
 		},
+		{
+			feedback: NewConstraintFeedback(gps.ProjectConstraint{Constraint: ver, Ident: pi}, DepTypeOverride),
+			want:     "Using ^1.0.0 as constraint for overridden dep github.com/foo/bar",
+		},
 	}
 
 	for _, c := range cases {

@@ -25,6 +25,7 @@ type TestCase struct {
 	WantConvertErr            bool
 	WantSourceRepo            string
 	WantConstraint            string
+	WantOverride              string
 	WantRevision              gps.Revision
 	WantVersion               string
 	WantIgnored               []string
@@ -108,6 +109,11 @@ func (tc TestCase) validate(manifest *dep.Manifest, lock *dep.Lock, convertErr e
 
 	}
 
+	err := tc.validateCustomConfig(manifest)
+	if err != nil {
+		return errors.Wrapf(err, "while validating custom config")
+	}
+
 	// Lock checks.
 	wantLockCount := 0
 	if tc.WantRevision != "" {
@@ -164,6 +170,35 @@ func (tc TestCase) validate(manifest *dep.Manifest, lock *dep.Lock, convertErr e
 	if tc.WantWarning != "" {
 		if !strings.Contains(output.String(), tc.WantWarning) {
 			return errors.Errorf("Expected the output to include the warning '%s'", tc.WantWarning)
+		}
+	}
+
+	return nil
+}
+
+func (tc TestCase) validateCustomConfig(manifest *dep.Manifest) error {
+	// Override checks
+	wantOverrideCount := 0
+	if tc.WantOverride != "" {
+		wantOverrideCount = 1
+	}
+	gotOverrideCount := len(manifest.Ovr)
+	if gotOverrideCount != wantOverrideCount {
+		return errors.Errorf("unexpected number of overrides: \n\t(GOT) %v \n\t(WNT) %v",
+			gotOverrideCount, wantOverrideCount)
+	}
+
+	if tc.WantOverride != "" {
+		d, ok := manifest.Ovr[Project]
+		if !ok {
+			return errors.Errorf("Expected the manifest to have an override for '%v'",
+				Project)
+		}
+
+		gotOverride := d.Constraint.String()
+		if gotOverride != tc.WantOverride {
+			return errors.Errorf("unexpected override: \n\t(GOT) %v \n\t(WNT) %v",
+				gotOverride, tc.WantConstraint)
 		}
 	}
 
