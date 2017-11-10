@@ -13,10 +13,10 @@ import (
 const (
 	// this environment variable is set via go-build in test/production builds.
 	// see https://code.uberinternal.com/T397242 for more details
-	uberGopkgRedirectEnv = "UBER_GOPKG_FROM_GITOLITE"
+	UberGopkgRedirectEnv = "UBER_GOPKG_FROM_GITOLITE"
 
 	// this is also set via go-build to disable repo autocreation
-	uberDisableGitoliteAutocreation = "UBER_NO_GITOLITE_AUTOCREATE"
+	UberDisableGitoliteAutocreation = "UBER_NO_GITOLITE_AUTOCREATE"
 )
 
 var uberLogger = log.New(os.Stdout, "[UBER]  ", 0)
@@ -90,9 +90,9 @@ func getGitoliteMirrorURL(path string, match []string) (*url.URL, error) {
 func ensureGitoliteGithubMirror(user, repo, path string) (*url.URL, error) {
 	// Generate the repo path and full URL on Gitolite.
 	githubPath := fmt.Sprintf("github/%s/%s", user, repo)
-	gitoliteURL := GetGitoliteUrlWithPath(githubPath)
+	gitoliteURL := GetGitoliteUrlWithPath("/" + githubPath)
 
-	if os.Getenv(uberDisableGitoliteAutocreation) != "" {
+	if os.Getenv(UberDisableGitoliteAutocreation) != "" {
 		return gitoliteURL, nil
 	}
 
@@ -141,7 +141,7 @@ func rewriteGopkgIn(path string, match []string) (*url.URL, error) {
 
 	// If we're running during a test/production build, assume a .lock file already exists and
 	// rewrite to gitolite (which doesn't do any HEAD trickery like gopkg.in does)
-	if os.Getenv(uberGopkgRedirectEnv) != "" {
+	if os.Getenv(UberGopkgRedirectEnv) != "" {
 		newRemote := fmt.Sprintf("%s/%s", user, repo)
 		u := new(url.URL)
 		u.Host = "github.com"

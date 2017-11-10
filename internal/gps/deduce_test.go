@@ -10,16 +10,21 @@ import (
 	"errors"
 	"fmt"
 	"net/url"
+	"os"
 	"reflect"
 	"testing"
+
+	"github.com/golang/dep/uber"
 )
 
 type pathDeductionFixture struct {
-	in     string
-	root   string
-	rerr   error
-	mb     maybeSource
-	srcerr error
+	in           string
+	root         string
+	rerr         error
+	mb           maybeSource
+	srcerr       error
+	runUberLogic bool
+	mirrorRepo   bool
 }
 
 // helper func to generate testing *url.URLs, panicking on err
@@ -45,6 +50,13 @@ var pathDeductionFixtures = map[string][]pathDeductionFixture{
 			},
 		},
 		{
+			in:           "github.com/sdboyer/gps",
+			root:         "github.com/sdboyer/gps",
+			mb:           maybeGitSource{url: mkurl("ssh://gitolite@code.uber.internal/github/sdboyer/gps")},
+			runUberLogic: true,
+			mirrorRepo:   true,
+		},
+		{
 			in:   "github.com/sdboyer/gps/foo",
 			root: "github.com/sdboyer/gps",
 			mb: maybeSources{
@@ -53,6 +65,13 @@ var pathDeductionFixtures = map[string][]pathDeductionFixture{
 				maybeGitSource{url: mkurl("git://github.com/sdboyer/gps")},
 				maybeGitSource{url: mkurl("http://github.com/sdboyer/gps")},
 			},
+		},
+		{
+			in:           "github.com/sdboyer/gps/foo",
+			root:         "github.com/sdboyer/gps",
+			mb:           maybeGitSource{url: mkurl("ssh://gitolite@code.uber.internal/github/sdboyer/gps")},
+			runUberLogic: true,
+			mirrorRepo:   true,
 		},
 		{
 			// TODO(sdboyer) is this a problem for enforcing uniqueness? do we
@@ -67,9 +86,25 @@ var pathDeductionFixtures = map[string][]pathDeductionFixture{
 			},
 		},
 		{
+			// TODO(sdboyer) is this a problem for enforcing uniqueness? do we
+			// need to collapse these extensions?
+			in:           "github.com/sdboyer/gps.git/foo",
+			root:         "github.com/sdboyer/gps.git",
+			mb:           maybeGitSource{url: mkurl("ssh://gitolite@code.uber.internal/github/sdboyer/gps.git")},
+			runUberLogic: true,
+			mirrorRepo:   true,
+		},
+		{
 			in:   "git@github.com:sdboyer/gps",
 			root: "github.com/sdboyer/gps",
 			mb:   maybeGitSource{url: mkurl("ssh://git@github.com/sdboyer/gps")},
+		},
+		{
+			in:           "git@github.com:sdboyer/gps",
+			root:         "github.com/sdboyer/gps",
+			mb:           maybeGitSource{url: mkurl("ssh://gitolite@code.uber.internal/github/sdboyer/gps")},
+			runUberLogic: true,
+			mirrorRepo:   true,
 		},
 		{
 			in:   "https://github.com/sdboyer/gps",
@@ -77,9 +112,23 @@ var pathDeductionFixtures = map[string][]pathDeductionFixture{
 			mb:   maybeGitSource{url: mkurl("https://github.com/sdboyer/gps")},
 		},
 		{
+			in:           "https://github.com/sdboyer/gps",
+			root:         "github.com/sdboyer/gps",
+			mb:           maybeGitSource{url: mkurl("ssh://gitolite@code.uber.internal/github/sdboyer/gps")},
+			runUberLogic: true,
+			mirrorRepo:   true,
+		},
+		{
 			in:   "https://github.com/sdboyer/gps/foo/bar",
 			root: "github.com/sdboyer/gps",
 			mb:   maybeGitSource{url: mkurl("https://github.com/sdboyer/gps")},
+		},
+		{
+			in:           "https://github.com/sdboyer/gps/foo/bar",
+			root:         "github.com/sdboyer/gps",
+			mb:           maybeGitSource{url: mkurl("ssh://gitolite@code.uber.internal/github/sdboyer/gps")},
+			runUberLogic: true,
+			mirrorRepo:   true,
 		},
 		{
 			in:   "github.com/sdboyer-/gps/foo",
@@ -92,6 +141,13 @@ var pathDeductionFixtures = map[string][]pathDeductionFixture{
 			},
 		},
 		{
+			in:           "github.com/sdboyer-/gps/foo",
+			root:         "github.com/sdboyer-/gps",
+			mb:           maybeGitSource{url: mkurl("ssh://gitolite@code.uber.internal/github/sdboyer-/gps")},
+			runUberLogic: true,
+			mirrorRepo:   false,
+		},
+		{
 			in:   "github.com/a/gps/foo",
 			root: "github.com/a/gps",
 			mb: maybeSources{
@@ -101,18 +157,43 @@ var pathDeductionFixtures = map[string][]pathDeductionFixture{
 				maybeGitSource{url: mkurl("http://github.com/a/gps")},
 			},
 		},
+		{
+			in:           "github.com/a/gps/foo",
+			root:         "github.com/a/gps",
+			mb:           maybeGitSource{url: mkurl("ssh://gitolite@code.uber.internal/github/a/gps")},
+			runUberLogic: true,
+			mirrorRepo:   false,
+		},
 		// some invalid github username patterns
 		{
 			in:   "github.com/-sdboyer/gps/foo",
 			rerr: errors.New("github.com/-sdboyer/gps/foo is not a valid path for a source on github.com"),
 		},
 		{
+			in:           "github.com/-sdboyer/gps/foo",
+			rerr:         errors.New("github.com/-sdboyer/gps/foo is not a valid path for a source on github.com"),
+			runUberLogic: true,
+			mirrorRepo:   true,
+		},
+		{
 			in:   "github.com/sdbo.yer/gps/foo",
 			rerr: errors.New("github.com/sdbo.yer/gps/foo is not a valid path for a source on github.com"),
 		},
 		{
+			in:           "github.com/sdbo.yer/gps/foo",
+			rerr:         errors.New("github.com/sdbo.yer/gps/foo is not a valid path for a source on github.com"),
+			runUberLogic: true,
+			mirrorRepo:   true,
+		},
+		{
 			in:   "github.com/sdbo_yer/gps/foo",
 			rerr: errors.New("github.com/sdbo_yer/gps/foo is not a valid path for a source on github.com"),
+		},
+		{
+			in:           "github.com/sdbo_yer/gps/foo",
+			rerr:         errors.New("github.com/sdbo_yer/gps/foo is not a valid path for a source on github.com"),
+			runUberLogic: true,
+			mirrorRepo:   true,
 		},
 		// Regression - gh does allow two-letter usernames
 		{
@@ -124,6 +205,13 @@ var pathDeductionFixtures = map[string][]pathDeductionFixture{
 				maybeGitSource{url: mkurl("git://github.com/kr/pretty")},
 				maybeGitSource{url: mkurl("http://github.com/kr/pretty")},
 			},
+		},
+		{
+			in:           "github.com/kr/pretty",
+			root:         "github.com/kr/pretty",
+			mb:           maybeGitSource{url: mkurl("ssh://gitolite@code.uber.internal/github/kr/pretty")},
+			runUberLogic: true,
+			mirrorRepo:   true,
 		},
 	},
 	"gopkg.in": {
@@ -547,7 +635,22 @@ func TestDeduceFromPath(t *testing.T) {
 			for _, fix := range fixtures {
 				fix := fix
 				t.Run(fix.in, func(t *testing.T) {
-					t.Parallel()
+					if fix.runUberLogic == false && fix.mirrorRepo == false {
+						t.Parallel()
+					}
+
+					if fix.mirrorRepo == true {
+						os.Unsetenv(uber.UberDisableGitoliteAutocreation)
+					} else {
+						os.Setenv(uber.UberDisableGitoliteAutocreation, "yes")
+					}
+
+					if fix.runUberLogic == true {
+						os.Setenv(UberEnvVar, "yes")
+					} else {
+						os.Unsetenv(UberEnvVar)
+					}
+
 					u, in, uerr := normalizeURI(fix.in)
 					if uerr != nil {
 						if fix.rerr == nil {

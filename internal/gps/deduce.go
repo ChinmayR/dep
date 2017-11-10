@@ -16,7 +16,7 @@ import (
 	"strings"
 	"sync"
 
-	"flag"
+	"os"
 
 	radix "github.com/armon/go-radix"
 	"github.com/golang/dep/uber"
@@ -31,7 +31,11 @@ var (
 	gopkginSchemes = []string{"https", "http"}
 )
 
-const gopkgUnstableSuffix = "-unstable"
+const (
+	gopkgUnstableSuffix = "-unstable"
+
+	UberEnvVar = "RUN_UBER_LOGIC"
+)
 
 func validateVCSScheme(scheme, typ string) bool {
 	// everything allows plain ssh
@@ -136,11 +140,13 @@ func (m githubDeducer) deduceSource(path string, u *url.URL) (maybeSource, error
 	}
 
 	// BEGIN UBER PATCH
-	uberUrl, err := uber.GetGitoliteUrlForRewriter(path, "github.com")
-	if err == nil {
-		u = uberUrl
-		return maybeGitSource{url: u}, nil
-	} // if there is an error, continue to pull it directly from github
+	if os.Getenv(UberEnvVar) != "" {
+		uberUrl, err := uber.GetGitoliteUrlForRewriter(path, "github.com")
+		if err == nil {
+			u = uberUrl
+			return maybeGitSource{url: u}, nil
+		} // if there is an error, continue to pull it directly from github
+	}
 	// END UBER PATCH
 
 	u.Host = "github.com"
@@ -290,11 +296,13 @@ func (m gopkginDeducer) deduceSource(p string, u *url.URL) (maybeSource, error) 
 	}
 
 	// BEGIN UBER PATCH
-	uberUrl, err := uber.GetGitoliteUrlForRewriter(p, "gopkg.in")
-	if err == nil {
-		u = uberUrl
-		return maybeGitSource{url: u}, nil
-	} // if there is an error, continue to pull it directly from github
+	if os.Getenv(UberEnvVar) != "" {
+		uberUrl, err := uber.GetGitoliteUrlForRewriter(p, "gopkg.in")
+		if err == nil {
+			u = uberUrl
+			return maybeGitSource{url: u}, nil
+		} // if there is an error, continue to pull it directly from github
+	}
 	// END UBER PATCH
 
 	// Putting a scheme on gopkg.in would be really weird, disallow it
