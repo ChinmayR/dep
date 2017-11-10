@@ -56,8 +56,15 @@ func GetGitoliteUrlWithPath(path string) *url.URL {
 	u.User = url.User("gitolite")
 	u.Host = "code.uber.internal"
 	u.Scheme = "ssh"
-	u.Path = path
+	u.Path = strings.TrimPrefix(GetGitoliteRoot(path), u.Host)
 	return u
+}
+
+func GetGitoliteRoot(path string) string {
+	if strings.Contains(path, ".git") {
+		return strings.SplitAfter(path, ".git")[0]
+	}
+	return path
 }
 
 // isNotOnGitolite returns a value indicating whether the error corresponds to a

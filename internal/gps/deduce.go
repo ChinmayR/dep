@@ -16,12 +16,11 @@ import (
 	"strings"
 	"sync"
 
-	radix "github.com/armon/go-radix"
-	"github.com/pkg/errors"
+	"flag"
 
-	// BEGIN UBER PATCH
+	radix "github.com/armon/go-radix"
 	"github.com/golang/dep/uber"
-	// END UBER PATCH
+	"github.com/pkg/errors"
 )
 
 var (
@@ -109,19 +108,12 @@ type pathDeducer interface {
 type gitoliteDeducer struct{}
 
 func (m gitoliteDeducer) deduceRoot(path string) (string, error) {
-	return getGitoliteRoot(path), nil
+	return uber.GetGitoliteRoot(path), nil
 }
 
 func (m gitoliteDeducer) deduceSource(path string, u *url.URL) (maybeSource, error) {
-	u = uber.GetGitoliteUrlWithPath(strings.TrimPrefix(getGitoliteRoot(path), u.Host))
+	u = uber.GetGitoliteUrlWithPath(path)
 	return maybeGitSource{url: u}, nil
-}
-
-func getGitoliteRoot(path string) string {
-	if strings.Contains(path, ".git") {
-		return strings.SplitAfter(path, ".git")[0]
-	}
-	return path
 }
 
 type githubDeducer struct {
