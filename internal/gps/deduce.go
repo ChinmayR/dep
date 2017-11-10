@@ -81,6 +81,7 @@ var (
 	jazzRegex         = regexp.MustCompile(`^(?P<root>hub\.jazz\.net(/git/[a-z0-9]+/[A-Za-z0-9_.\-]+))((?:/[A-Za-z0-9_.\-]+)*)$`)
 	apacheRegex       = regexp.MustCompile(`^(?P<root>git\.apache\.org(/[a-z0-9_.\-]+\.git))((?:/[A-Za-z0-9_.\-]+)*)$`)
 	vcsExtensionRegex = regexp.MustCompile(`^(?P<root>([a-z0-9.\-]+\.)+[a-z0-9.\-]+(:[0-9]+)?/[A-Za-z0-9_.\-/~]*?\.(?P<vcs>bzr|git|hg|svn))((?:/[A-Za-z0-9_.\-]+)*)$`)
+	golangRegex       = regexp.MustCompile("^golang.org/x/([^/]+)")
 )
 
 // Other helper regexes
@@ -657,6 +658,25 @@ func (dc *deductionCoordinator) deduceRootPath(ctx context.Context, path string)
 
 	if err != errNoKnownPathMatch {
 		return pathDeduction{}, err
+	}
+
+	// there is currently no deducer for golang.org paths, if the path is golang.org, return
+	// the gitolite mirror
+	if os.Getenv(UberEnvVar) != "" {
+		golangMatch := golangRegex.FindStringSubmatch(path)
+		if golangMatch != nil {
+			golangUrl, err := uber.GetGitoliteUrlForRewriter(path, "golang.org")
+			if err == nil {
+				pd := pathDeduction{
+					root: golangMatch[0],
+					mb:   maybeGitSource{url: golangUrl},
+				}
+				dc.mut.Lock()
+				dc.rootxt.Insert(pd.root, pd.mb)
+				dc.mut.Unlock()
+				return pd, nil
+			}
+		}
 	}
 
 	// The err indicates no known path matched. It's still possible that

@@ -40,6 +40,11 @@ var hostnameRewrites = map[string]internalRewriter{
 		pattern: regexp.MustCompile(`^gopkg.in/((?P<user>[^./]+)(?P<version>\.v[0-9.]+)?(/(?P<repo>[^./]+)(?P<version>\.v[0-9.]+))?)`),
 		fn:      rewriteGopkgIn,
 	},
+	"golang.org": {
+		log:     true,
+		pattern: regexp.MustCompile("^golang.org/x/([^/]+)"),
+		fn:      rewriteGolang,
+	},
 }
 
 func GetGitoliteUrlForRewriter(path, rewriterName string) (*url.URL, error) {
@@ -167,6 +172,11 @@ func rewriteGopkgIn(path string, match []string) (*url.URL, error) {
 	u.Scheme = "https"
 	u.Path = "/" + fullRepo
 	return u, nil
+}
+
+func rewriteGolang(path string, in []string) (*url.URL, error) {
+	// for some reason this hack in glide didn't actually ensure that the repo was in gitolite first
+	return GetGitoliteUrlWithPath("/googlesource/" + in[1]), nil
 }
 
 func logRewrite(typ string, from string, to *url.URL) {

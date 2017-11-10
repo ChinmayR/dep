@@ -679,6 +679,24 @@ var pathDeductionFixtures = map[string][]pathDeductionFixture{
 			root: "golang.org/x/net",
 			mb:   maybeGitSource{url: mkurl("https://go.googlesource.com/net")},
 		},
+		{
+			in:           "golang.org/x/mobile",
+			root:         "golang.org/x/mobile",
+			mb:           maybeGitSource{url: mkurl("ssh://gitolite@code.uber.internal/googlesource/mobile")},
+			runUberLogic: true,
+		},
+		{
+			in:           "golang.org/x/mobile/app",
+			root:         "golang.org/x/mobile",
+			mb:           maybeGitSource{url: mkurl("ssh://gitolite@code.uber.internal/googlesource/mobile")},
+			runUberLogic: true,
+		},
+		{
+			in:           "golang.org/x/sys/unix",
+			root:         "golang.org/x/sys",
+			mb:           maybeGitSource{url: mkurl("ssh://gitolite@code.uber.internal/googlesource/sys")},
+			runUberLogic: true,
+		},
 	},
 	"code.uber.internal": {
 		{
@@ -850,7 +868,13 @@ func TestVanityDeduction(t *testing.T) {
 		for _, fix := range vanities {
 			fix := fix
 			t.Run(fix.in, func(t *testing.T) {
-				t.Parallel()
+				if fix.runUberLogic == false {
+					t.Parallel()
+				}
+
+				if fix.runUberLogic == true {
+					defer uber.SetEnvVar(UberEnvVar, "yes")()
+				}
 
 				pr, err := sm.DeduceProjectRoot(fix.in)
 				if err != nil {
