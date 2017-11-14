@@ -142,11 +142,11 @@ func rewriteGopkgIn(path string, match []string) (*url.URL, error) {
 	// If we're running during a test/production build, assume a .lock file already exists and
 	// rewrite to gitolite (which doesn't do any HEAD trickery like gopkg.in does)
 	if os.Getenv(UberGopkgRedirectEnv) != "" {
-		newRemote := fmt.Sprintf("%s/%s", user, repo)
 		u := new(url.URL)
-		u.Host = "github.com"
-		u.Scheme = "https"
-		u.Path = newRemote
+		u.User = url.User("gitolite")
+		u.Host = "code.uber.internal"
+		u.Scheme = "ssh"
+		u.Path = fmt.Sprintf("/github/%s/%s", user, repo)
 
 		return u, nil
 	}
@@ -165,7 +165,7 @@ func rewriteGopkgIn(path string, match []string) (*url.URL, error) {
 	u := new(url.URL)
 	u.Host = "gopkg.uberinternal.com"
 	u.Scheme = "https"
-	u.Path = fullRepo
+	u.Path = "/" + fullRepo
 	return u, nil
 }
 

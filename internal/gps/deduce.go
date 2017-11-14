@@ -295,16 +295,6 @@ func (m gopkginDeducer) deduceSource(p string, u *url.URL) (maybeSource, error) 
 		return nil, err
 	}
 
-	// BEGIN UBER PATCH
-	if os.Getenv(UberEnvVar) != "" {
-		uberUrl, err := uber.GetGitoliteUrlForRewriter(p, "gopkg.in")
-		if err == nil {
-			u = uberUrl
-			return maybeGitSource{url: u}, nil
-		} // if there is an error, continue to pull it directly from github
-	}
-	// END UBER PATCH
-
 	// Putting a scheme on gopkg.in would be really weird, disallow it
 	if u.Scheme != "" {
 		return nil, fmt.Errorf("specifying alternate schemes on gopkg.in imports is not permitted")
@@ -331,6 +321,21 @@ func (m gopkginDeducer) deduceSource(p string, u *url.URL) (maybeSource, error) 
 		// this should only be reachable if there's an error in the regex
 		return nil, fmt.Errorf("could not parse %q as a gopkg.in major version", majorStr[1:])
 	}
+
+	// BEGIN UBER PATCH
+	if os.Getenv(UberEnvVar) != "" {
+		uberUrl, err := uber.GetGitoliteUrlForRewriter(p, "gopkg.in")
+		if err == nil {
+			u = uberUrl
+			return maybeGopkginSource{
+				opath:    v[1],
+				url:      u,
+				major:    major,
+				unstable: unstable,
+			}, nil
+		} // if there is an error, continue to pull it directly from github
+	}
+	// END UBER PATCH
 
 	mb := make(maybeSources, len(gopkginSchemes))
 	for k, scheme := range gopkginSchemes {

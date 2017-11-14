@@ -18,13 +18,14 @@ import (
 )
 
 type pathDeductionFixture struct {
-	in           string
-	root         string
-	rerr         error
-	mb           maybeSource
-	srcerr       error
-	runUberLogic bool
-	mirrorRepo   bool
+	in                      string
+	root                    string
+	rerr                    error
+	mb                      maybeSource
+	srcerr                  error
+	runUberLogic            bool
+	mirrorRepo              bool
+	gopkgRedirectToGitolite bool
 }
 
 // helper func to generate testing *url.URLs, panicking on err
@@ -224,12 +225,48 @@ var pathDeductionFixtures = map[string][]pathDeductionFixture{
 			},
 		},
 		{
+			in:   "gopkg.in/sdboyer/gps.v0",
+			root: "gopkg.in/sdboyer/gps.v0",
+			mb: maybeGopkginSource{opath: "gopkg.in/sdboyer/gps.v0",
+				url: mkurl("https://gopkg.uberinternal.com/sdboyer/gps.v0"), major: 0},
+			runUberLogic:            true,
+			mirrorRepo:              false,
+			gopkgRedirectToGitolite: false,
+		},
+		{
+			in:   "gopkg.in/sdboyer/gps.v0",
+			root: "gopkg.in/sdboyer/gps.v0",
+			mb: maybeGopkginSource{opath: "gopkg.in/sdboyer/gps.v0",
+				url: mkurl("ssh://gitolite@code.uber.internal/github/sdboyer/gps"), major: 0},
+			runUberLogic:            true,
+			mirrorRepo:              false,
+			gopkgRedirectToGitolite: true,
+		},
+		{
 			in:   "gopkg.in/sdboyer/gps.v0/foo",
 			root: "gopkg.in/sdboyer/gps.v0",
 			mb: maybeSources{
 				maybeGopkginSource{opath: "gopkg.in/sdboyer/gps.v0", url: mkurl("https://github.com/sdboyer/gps"), major: 0},
 				maybeGopkginSource{opath: "gopkg.in/sdboyer/gps.v0", url: mkurl("http://github.com/sdboyer/gps"), major: 0},
 			},
+		},
+		{
+			in:   "gopkg.in/sdboyer/gps.v0/foo",
+			root: "gopkg.in/sdboyer/gps.v0",
+			mb: maybeGopkginSource{opath: "gopkg.in/sdboyer/gps.v0",
+				url: mkurl("https://gopkg.uberinternal.com/sdboyer/gps.v0"), major: 0},
+			runUberLogic:            true,
+			mirrorRepo:              false,
+			gopkgRedirectToGitolite: false,
+		},
+		{
+			in:   "gopkg.in/sdboyer/gps.v0/foo",
+			root: "gopkg.in/sdboyer/gps.v0",
+			mb: maybeGopkginSource{opath: "gopkg.in/sdboyer/gps.v0",
+				url: mkurl("ssh://gitolite@code.uber.internal/github/sdboyer/gps"), major: 0},
+			runUberLogic:            true,
+			mirrorRepo:              false,
+			gopkgRedirectToGitolite: true,
 		},
 		{
 			in:   "gopkg.in/sdboyer/gps.v1/foo/bar",
@@ -240,12 +277,48 @@ var pathDeductionFixtures = map[string][]pathDeductionFixture{
 			},
 		},
 		{
+			in:   "gopkg.in/sdboyer/gps.v1/foo/bar",
+			root: "gopkg.in/sdboyer/gps.v1",
+			mb: maybeGopkginSource{opath: "gopkg.in/sdboyer/gps.v1",
+				url: mkurl("https://gopkg.uberinternal.com/sdboyer/gps.v1"), major: 1},
+			runUberLogic:            true,
+			mirrorRepo:              false,
+			gopkgRedirectToGitolite: false,
+		},
+		{
+			in:   "gopkg.in/sdboyer/gps.v1/foo/bar",
+			root: "gopkg.in/sdboyer/gps.v1",
+			mb: maybeGopkginSource{opath: "gopkg.in/sdboyer/gps.v1",
+				url: mkurl("ssh://gitolite@code.uber.internal/github/sdboyer/gps"), major: 1},
+			runUberLogic:            true,
+			mirrorRepo:              false,
+			gopkgRedirectToGitolite: true,
+		},
+		{
 			in:   "gopkg.in/yaml.v1",
 			root: "gopkg.in/yaml.v1",
 			mb: maybeSources{
 				maybeGopkginSource{opath: "gopkg.in/yaml.v1", url: mkurl("https://github.com/go-yaml/yaml"), major: 1},
 				maybeGopkginSource{opath: "gopkg.in/yaml.v1", url: mkurl("http://github.com/go-yaml/yaml"), major: 1},
 			},
+		},
+		{
+			in:   "gopkg.in/yaml.v1",
+			root: "gopkg.in/yaml.v1",
+			mb: maybeGopkginSource{opath: "gopkg.in/yaml.v1",
+				url: mkurl("https://gopkg.uberinternal.com/yaml.v1"), major: 1},
+			runUberLogic:            true,
+			mirrorRepo:              false,
+			gopkgRedirectToGitolite: false,
+		},
+		{
+			in:   "gopkg.in/yaml.v1",
+			root: "gopkg.in/yaml.v1",
+			mb: maybeGopkginSource{opath: "gopkg.in/yaml.v1",
+				url: mkurl("ssh://gitolite@code.uber.internal/github/go-yaml/yaml"), major: 1},
+			runUberLogic:            true,
+			mirrorRepo:              false,
+			gopkgRedirectToGitolite: true,
 		},
 		{
 			in:   "gopkg.in/yaml.v1/foo/bar",
@@ -256,6 +329,24 @@ var pathDeductionFixtures = map[string][]pathDeductionFixture{
 			},
 		},
 		{
+			in:   "gopkg.in/yaml.v1/foo/bar",
+			root: "gopkg.in/yaml.v1",
+			mb: maybeGopkginSource{opath: "gopkg.in/yaml.v1",
+				url: mkurl("https://gopkg.uberinternal.com/yaml.v1"), major: 1},
+			runUberLogic:            true,
+			mirrorRepo:              false,
+			gopkgRedirectToGitolite: false,
+		},
+		{
+			in:   "gopkg.in/yaml.v1/foo/bar",
+			root: "gopkg.in/yaml.v1",
+			mb: maybeGopkginSource{opath: "gopkg.in/yaml.v1",
+				url: mkurl("ssh://gitolite@code.uber.internal/github/go-yaml/yaml"), major: 1},
+			runUberLogic:            true,
+			mirrorRepo:              false,
+			gopkgRedirectToGitolite: true,
+		},
+		{
 			in:   "gopkg.in/inf.v0",
 			root: "gopkg.in/inf.v0",
 			mb: maybeSources{
@@ -264,9 +355,41 @@ var pathDeductionFixtures = map[string][]pathDeductionFixture{
 			},
 		},
 		{
+			in:   "gopkg.in/inf.v0",
+			root: "gopkg.in/inf.v0",
+			mb: maybeGopkginSource{opath: "gopkg.in/inf.v0",
+				url: mkurl("https://gopkg.uberinternal.com/inf.v0"), major: 0},
+			runUberLogic:            true,
+			mirrorRepo:              false,
+			gopkgRedirectToGitolite: false,
+		},
+		{
+			in:   "gopkg.in/inf.v0",
+			root: "gopkg.in/inf.v0",
+			mb: maybeGopkginSource{opath: "gopkg.in/inf.v0",
+				url: mkurl("ssh://gitolite@code.uber.internal/github/go-inf/inf"), major: 0},
+			runUberLogic:            true,
+			mirrorRepo:              false,
+			gopkgRedirectToGitolite: true,
+		},
+		{
 			// gopkg.in only allows specifying major version in import path
 			in:   "gopkg.in/yaml.v1.2",
 			rerr: errors.New("gopkg.in/yaml.v1.2 is not a valid import path; gopkg.in only allows major versions (\"v1\" instead of \"v1.2\")"),
+		},
+		{
+			in:                      "gopkg.in/yaml.v1.2",
+			rerr:                    errors.New("gopkg.in/yaml.v1.2 is not a valid import path; gopkg.in only allows major versions (\"v1\" instead of \"v1.2\")"),
+			runUberLogic:            true,
+			mirrorRepo:              false,
+			gopkgRedirectToGitolite: false,
+		},
+		{
+			in:                      "gopkg.in/yaml.v1.2",
+			rerr:                    errors.New("gopkg.in/yaml.v1.2 is not a valid import path; gopkg.in only allows major versions (\"v1\" instead of \"v1.2\")"),
+			runUberLogic:            true,
+			mirrorRepo:              false,
+			gopkgRedirectToGitolite: true,
 		},
 	},
 	"jazz": {
@@ -580,7 +703,6 @@ var pathDeductionFixtures = map[string][]pathDeductionFixture{
 func TestDeduceFromPath(t *testing.T) {
 	do := func(typ string, fixtures []pathDeductionFixture, t *testing.T) {
 		t.Run(typ, func(t *testing.T) {
-			t.Parallel()
 
 			var deducer pathDeducer
 			switch typ {
@@ -635,7 +757,7 @@ func TestDeduceFromPath(t *testing.T) {
 			for _, fix := range fixtures {
 				fix := fix
 				t.Run(fix.in, func(t *testing.T) {
-					if fix.runUberLogic == false && fix.mirrorRepo == false {
+					if fix.runUberLogic == false && fix.mirrorRepo == false && fix.gopkgRedirectToGitolite == false {
 						t.Parallel()
 					}
 
@@ -649,6 +771,12 @@ func TestDeduceFromPath(t *testing.T) {
 						os.Setenv(UberEnvVar, "yes")
 					} else {
 						os.Unsetenv(UberEnvVar)
+					}
+
+					if fix.gopkgRedirectToGitolite == true {
+						os.Setenv(uber.UberGopkgRedirectEnv, "yes")
+					} else {
+						os.Unsetenv(uber.UberGopkgRedirectEnv)
 					}
 
 					u, in, uerr := normalizeURI(fix.in)
