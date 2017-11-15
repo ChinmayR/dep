@@ -10,7 +10,6 @@ import (
 	"errors"
 	"fmt"
 	"net/url"
-	"os"
 	"reflect"
 	"testing"
 
@@ -762,18 +761,15 @@ func TestDeduceFromPath(t *testing.T) {
 					}
 
 					if fix.mirrorRepo == false {
-						restoreDisableGitoliteAutocreateVar := setEnvVar(uber.UberDisableGitoliteAutocreation, "yes")
-						defer restoreDisableGitoliteAutocreateVar()
+						defer uber.SetEnvVar(uber.UberDisableGitoliteAutocreation, "yes")()
 					}
 
 					if fix.runUberLogic == true {
-						restoreUberLogicVar := setEnvVar(UberEnvVar, "yes")
-						defer restoreUberLogicVar()
+						defer uber.SetEnvVar(UberEnvVar, "yes")()
 					}
 
 					if fix.gopkgRedirectToGitolite == true {
-						restoreGopkgRedirectVar := setEnvVar(uber.UberGopkgRedirectEnv, "yes")
-						defer restoreGopkgRedirectVar()
+						defer uber.SetEnvVar(uber.UberGopkgRedirectEnv, "yes")()
 					}
 
 					u, in, uerr := normalizeURI(fix.in)
@@ -837,15 +833,6 @@ func TestDeduceFromPath(t *testing.T) {
 	// Run the test set twice to ensure results are correct for both cached
 	// and uncached deductions.
 	t.Run("second", runSet)
-}
-
-func setEnvVar(envVar string, val string) func() {
-	old := os.Getenv(envVar)
-	os.Setenv(envVar, val)
-
-	return func() {
-		os.Setenv(envVar, old)
-	}
 }
 
 func TestVanityDeduction(t *testing.T) {

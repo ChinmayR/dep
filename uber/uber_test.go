@@ -1,10 +1,7 @@
 // testing the uber-specific hacks since 2016
 package uber
 
-/* -- commenting out until I get around to refactoring them
 import (
-	"log"
-	"os"
 	"testing"
 
 	"github.com/stretchr/testify/assert"
@@ -19,18 +16,18 @@ type repoTestCase struct {
 func TestUber_IsGopkg(t *testing.T) {
 	cases := []repoTestCase{
 		{
-			given:      "https://gopkg.in/validator.v2",
+			given:      "gopkg.in/validator.v2",
 			expected:   "https://gopkg.uberinternal.com/validator.v2",
-			autocreate: true,
+			autocreate: false,
 		},
 		{
-			given:    "https://gopkg.in/validator.v2",
-			expected: "gitolite@code.uber.internal:github/go-validator/validator",
+			given:    "gopkg.in/validator.v2",
+			expected: "ssh://gitolite@code.uber.internal/github/go-validator/validator",
 			redirect: true,
 		},
 		{
-			given:    "https://gopkg.in/go-validator/validator.v2",
-			expected: "gitolite@code.uber.internal:github/go-validator/validator",
+			given:    "gopkg.in/go-validator/validator.v2",
+			expected: "ssh://gitolite@code.uber.internal/github/go-validator/validator",
 			redirect: true,
 		},
 	}
@@ -38,46 +35,55 @@ func TestUber_IsGopkg(t *testing.T) {
 	for _, c := range cases {
 		func(c repoTestCase) {
 			if c.redirect {
-				defer os.Setenv(uberGopkgRedirectEnv, os.Getenv(uberGopkgRedirectEnv))
-				os.Setenv(uberGopkgRedirectEnv, "yapp")
+				defer SetEnvVar(UberGopkgRedirectEnv, "yes")()
 			}
 
 			if !c.autocreate {
-				restore := setDisableGitoliteAutocreate("yes")
-				defer restore()
+				defer SetEnvVar(UberDisableGitoliteAutocreation, "yes")()
 			}
+			got, err := GetGitoliteUrlForRewriter(c.given, "gopkg.in")
 
-			r := repoFromCase(c)
-
-			got := r.remoteOrGitolite()
-
-			assert.Equal(t, c.expected, got)
+			assert.Nil(t, err)
+			assert.Equal(t, c.expected, got.String())
 		}(c)
 	}
 }
 
-func TestUber_IsGitolite(t *testing.T) {
+func TestUber_IsGitoliteForGitolite(t *testing.T) {
 	cases := []repoTestCase{
 		{
-			given:      "https://github.com/Masterminds/glide",
-			expected:   "gitolite@code.uber.internal:github/Masterminds/glide",
-			autocreate: true,
+			given:    "code.uber.internal/go-common.git",
+			expected: "ssh://gitolite@code.uber.internal/go-common.git",
 		},
+		{
+			given:    "code.uber.internal/go-common.git/blah",
+			expected: "ssh://gitolite@code.uber.internal/go-common.git",
+		},
+		{
+			given:    "code.uber.internal/rt/filter.git",
+			expected: "ssh://gitolite@code.uber.internal/rt/filter.git",
+		},
+	}
+
+	for _, c := range cases {
+		func(c repoTestCase) {
+			got := GetGitoliteUrlWithPath(c.given)
+
+			assert.Equal(t, c.expected, got.String())
+		}(c)
+	}
+}
+
+/* --- This will fail until the Golang changes are pushed through
+func TestUber_IsGitoliteForGolang(t *testing.T) {
+	cases := []repoTestCase{
 		{
 			given:    "golang.org/x/net",
 			expected: "golang.org/x/net",
 		},
 		{
-			given:    "https://code.uber.internal/go-common.git",
-			expected: "gitolite@code.uber.internal:go-common.git",
-		},
-		{
-			given:    "https://code.uber.internal/rt/filter.git",
-			expected: "gitolite@code.uber.internal:rt/filter.git",
-		},
-		{
-			given:    "https://golang.org/x/net",
-			expected: "gitolite@code.uber.internal:googlesource/net",
+			given:    "golang.org/x/net",
+			expected: "ssh://gitolite@code.uber.internal/googlesource/net",
 		},
 	}
 
@@ -87,29 +93,36 @@ func TestUber_IsGitolite(t *testing.T) {
 				restore := setDisableGitoliteAutocreate("yes")
 				defer restore()
 			}
-			r := repoFromCase(c)
-			got := r.remoteOrGitolite()
+			got, err := GetGitoliteUrlForRewriter(c.given, "golang.org")
+			if err != nil {
+				t.Fatal(err)
+			}
 
-			assert.Equal(t, c.expected, got)
+			assert.Equal(t, c.expected, got.String())
 		}(c)
 	}
 }
 
-func repoFromCase(c repoTestCase) *GitRepo {
-	return &GitRepo{
-		base: base{
-			Logger: log.New(os.Stdout, ">test ", 0),
-			remote: c.given,
+*/
+
+func TestUber_IsGitoliteForGithub(t *testing.T) {
+	cases := []repoTestCase{
+		{
+			given:      "github.com/Masterminds/glide",
+			expected:   "ssh://gitolite@code.uber.internal/github/Masterminds/glide",
+			autocreate: true,
 		},
 	}
-}
 
-func setDisableGitoliteAutocreate(val string) func() {
-	old := os.Getenv(uberDisableGitoliteAutocreation)
-	os.Setenv(uberDisableGitoliteAutocreation, val)
+	for _, c := range cases {
+		func(c repoTestCase) {
+			if !c.autocreate {
+				defer SetEnvVar(UberDisableGitoliteAutocreation, "yes")()
+			}
+			got, err := GetGitoliteUrlForRewriter(c.given, "github.com")
 
-	return func() {
-		os.Setenv(uberDisableGitoliteAutocreation, old)
+			assert.Nil(t, err)
+			assert.Equal(t, c.expected, got.String())
+		}(c)
 	}
 }
-*/
