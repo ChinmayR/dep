@@ -29,6 +29,7 @@ var (
 	hgSchemes      = []string{"https", "ssh", "http"}
 	svnSchemes     = []string{"https", "http", "svn", "svn+ssh"}
 	gopkginSchemes = []string{"https", "http"}
+	golangSchemes  = []string{"https"}
 )
 
 const (
@@ -101,6 +102,7 @@ func pathDeducerTrie() *deducerTrie {
 	dxt.Insert("hub.jazz.net/", jazzDeducer{regexp: jazzRegex})
 	dxt.Insert("git.apache.org/", apacheDeducer{regexp: apacheRegex})
 	dxt.Insert("code.uber.internal/", gitoliteDeducer{})
+	dxt.Insert("golang.org/", golangDeducer{regexp: golangRegex})
 
 	return dxt
 }
@@ -119,6 +121,46 @@ func (m gitoliteDeducer) deduceRoot(path string) (string, error) {
 func (m gitoliteDeducer) deduceSource(path string, u *url.URL) (maybeSource, error) {
 	u = uber.GetGitoliteUrlWithPath(path)
 	return maybeGitSource{url: u}, nil
+}
+
+type golangDeducer struct {
+	regexp *regexp.Regexp
+}
+
+func (m golangDeducer) deduceRoot(path string) (string, error) {
+	v := m.regexp.FindStringSubmatch(path)
+	if v == nil {
+		return "", fmt.Errorf("%s is not a valid path for a source on golang.org", path)
+	}
+
+	return "golang.org/x/" + v[1], nil
+}
+
+func (m golangDeducer) deduceSource(path string, u *url.URL) (maybeSource, error) {
+	v := m.regexp.FindStringSubmatch(path)
+	if v == nil {
+		return nil, fmt.Errorf("%s is not a valid path for a source on golang.org", path)
+	}
+
+	if os.Getenv(UberEnvVar) != "" {
+		golangUrl, err := uber.GetGitoliteUrlForRewriter(path, "golang.org")
+		if err == nil {
+			return maybeGitSource{url: golangUrl}, nil
+		}
+	}
+
+	retUrl := new(url.URL)
+	retUrl.Host = "go.googlesource.com"
+	retUrl.Path = "/" + v[1]
+
+	mb := make(maybeSources, len(golangSchemes))
+	for k, scheme := range golangSchemes {
+		copyUrl := *retUrl
+		copyUrl.Scheme = scheme
+		mb[k] = maybeGitSource{url: &copyUrl}
+	}
+
+	return mb, nil
 }
 
 type githubDeducer struct {
@@ -659,26 +701,6 @@ func (dc *deductionCoordinator) deduceRootPath(ctx context.Context, path string)
 	if err != errNoKnownPathMatch {
 		return pathDeduction{}, err
 	}
-
-	// there is currently no deducer for golang.org paths, if the path is golang.org, return
-	// the gitolite mirror
-	if os.Getenv(UberEnvVar) != "" {
-		golangMatch := golangRegex.FindStringSubmatch(path)
-		if golangMatch != nil {
-			golangUrl, err := uber.GetGitoliteUrlForRewriter(path, "golang.org")
-			if err == nil {
-				pd := pathDeduction{
-					root: golangMatch[0],
-					mb:   maybeGitSource{url: golangUrl},
-				}
-				dc.mut.Lock()
-				dc.rootxt.Insert(pd.root, pd.mb)
-				dc.mut.Unlock()
-				return pd, nil
-			}
-		}
-	}
-
 	// The err indicates no known path matched. It's still possible that
 	// retrieving go get metadata might do the trick.
 	hmd := &httpMetadataDeducer{

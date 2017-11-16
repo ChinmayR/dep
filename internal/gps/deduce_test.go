@@ -662,22 +662,39 @@ var pathDeductionFixtures = map[string][]pathDeductionFixture{
 			},
 		},
 	},
-	"vanity": {
-		// Vanity imports
+	"golang.org": {
 		{
 			in:   "golang.org/x/exp",
 			root: "golang.org/x/exp",
-			mb:   maybeGitSource{url: mkurl("https://go.googlesource.com/exp")},
+			mb:   maybeSources{maybeGitSource{url: mkurl("https://go.googlesource.com/exp")}},
+		},
+		{
+			in:           "golang.org/x/exp",
+			root:         "golang.org/x/exp",
+			mb:           maybeGitSource{url: mkurl("ssh://gitolite@code.uber.internal/googlesource/exp")},
+			runUberLogic: true,
 		},
 		{
 			in:   "golang.org/x/exp/inotify",
 			root: "golang.org/x/exp",
-			mb:   maybeGitSource{url: mkurl("https://go.googlesource.com/exp")},
+			mb:   maybeSources{maybeGitSource{url: mkurl("https://go.googlesource.com/exp")}},
+		},
+		{
+			in:           "golang.org/x/exp/inotify",
+			root:         "golang.org/x/exp",
+			mb:           maybeGitSource{url: mkurl("ssh://gitolite@code.uber.internal/googlesource/exp")},
+			runUberLogic: true,
 		},
 		{
 			in:   "golang.org/x/net/html",
 			root: "golang.org/x/net",
-			mb:   maybeGitSource{url: mkurl("https://go.googlesource.com/net")},
+			mb:   maybeSources{maybeGitSource{url: mkurl("https://go.googlesource.com/net")}},
+		},
+		{
+			in:           "golang.org/x/net/html",
+			root:         "golang.org/x/net",
+			mb:           maybeGitSource{url: mkurl("ssh://gitolite@code.uber.internal/googlesource/net")},
+			runUberLogic: true,
 		},
 		{
 			in:           "golang.org/x/mobile",
@@ -698,6 +715,7 @@ var pathDeductionFixtures = map[string][]pathDeductionFixture{
 			runUberLogic: true,
 		},
 	},
+	"vanity": {},
 	"code.uber.internal": {
 		{
 			in:   "code.uber.internal/devexp/version-set-poc.git",
@@ -741,6 +759,8 @@ func TestDeduceFromPath(t *testing.T) {
 				deducer = vcsExtensionDeducer{regexp: vcsExtensionRegex}
 			case "code.uber.internal":
 				deducer = gitoliteDeducer{}
+			case "golang":
+				deducer = golangDeducer{regexp: golangRegex}
 			default:
 				// Should just be the vanity imports, which we do elsewhere
 				t.Log("skipping")
@@ -868,13 +888,6 @@ func TestVanityDeduction(t *testing.T) {
 		for _, fix := range vanities {
 			fix := fix
 			t.Run(fix.in, func(t *testing.T) {
-				if fix.runUberLogic == false {
-					t.Parallel()
-				}
-
-				if fix.runUberLogic == true {
-					defer uber.SetEnvVar(UberEnvVar, "yes")()
-				}
 
 				pr, err := sm.DeduceProjectRoot(fix.in)
 				if err != nil {
