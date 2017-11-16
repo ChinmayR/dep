@@ -74,36 +74,27 @@ func TestUber_IsGitoliteForGitolite(t *testing.T) {
 	}
 }
 
-/* --- This will fail until the Golang changes are pushed through
 func TestUber_IsGitoliteForGolang(t *testing.T) {
 	cases := []repoTestCase{
 		{
 			given:    "golang.org/x/net",
-			expected: "golang.org/x/net",
+			expected: "ssh://gitolite@code.uber.internal/googlesource/net",
 		},
 		{
-			given:    "golang.org/x/net",
+			given:    "golang.org/x/net/ipv4",
 			expected: "ssh://gitolite@code.uber.internal/googlesource/net",
 		},
 	}
 
 	for _, c := range cases {
 		func(c repoTestCase) {
-			if !c.autocreate {
-				restore := setDisableGitoliteAutocreate("yes")
-				defer restore()
-			}
 			got, err := GetGitoliteUrlForRewriter(c.given, "golang.org")
-			if err != nil {
-				t.Fatal(err)
-			}
 
+			assert.Nil(t, err)
 			assert.Equal(t, c.expected, got.String())
 		}(c)
 	}
 }
-
-*/
 
 func TestUber_IsGitoliteForGithub(t *testing.T) {
 	cases := []repoTestCase{
