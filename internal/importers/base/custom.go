@@ -10,7 +10,7 @@ import (
 	"github.com/pkg/errors"
 )
 
-const CustomConfigName = "Config.yaml"
+const CustomConfigName = "CConfig.yaml"
 
 type CustomConfig struct {
 	Overrides []overridePackage `yaml:"override"`

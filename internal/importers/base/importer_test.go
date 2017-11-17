@@ -430,25 +430,6 @@ func TestBaseImporter_ImportProjects(t *testing.T) {
 				},
 			},
 		},
-		"mismatch constraint and override result in error": {
-			importertest.TestCase{
-				WantConvertErr: true,
-			},
-			[]ImportedPackage{
-				{
-					Name:           importertest.Project,
-					LockHint:       "",
-					ConstraintHint: "master",
-					IsOverride:     true,
-				},
-				{
-					Name:           importertest.Project,
-					LockHint:       "",
-					ConstraintHint: importertest.V2Branch,
-					IsOverride:     false,
-				},
-			},
-		},
 		"override and lock result in override constraint and no error": {
 			importertest.TestCase{
 				WantOverride: importertest.V2Branch,
