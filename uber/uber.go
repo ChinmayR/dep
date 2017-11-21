@@ -1,6 +1,7 @@
 package uber
 
 import (
+	"bytes"
 	"fmt"
 	"log"
 	"net/url"
@@ -21,7 +22,7 @@ const (
 
 var uberLogger = log.New(os.Stdout, "[UBER]  ", 0)
 
-type rewriteFn func(string, []string) (*url.URL, error)
+type rewriteFn func([]string, ExecutorInterface) (*url.URL, error)
 
 type internalRewriter struct {
 	log     bool
@@ -29,11 +30,18 @@ type internalRewriter struct {
 	fn      rewriteFn
 }
 
+type ExecutorInterface interface {
+	ExecCommand(name string, arg ...string) (string, string, error)
+}
+
+type CommandExecutor struct {
+}
+
 var hostnameRewrites = map[string]internalRewriter{
 	"github.com": {
 		log:     true,
 		pattern: regexp.MustCompile("^github.com/(?P<user>[^/]+)/(?P<repo>[^/]+)"),
-		fn:      getGitoliteMirrorURL,
+		fn:      rewriteGithub,
 	},
 	"gopkg.in": {
 		log:     true,
@@ -45,23 +53,39 @@ var hostnameRewrites = map[string]internalRewriter{
 		pattern: regexp.MustCompile("^golang.org/x/([^/]+)"),
 		fn:      rewriteGolang,
 	},
+	"code.uber.internal": {
+		log:     true,
+		pattern: regexp.MustCompile("^code.uber.internal/(.+)$"),
+		fn:      rewriteGitolite,
+	},
 }
 
 func GetGitoliteUrlForRewriter(path, rewriterName string) (*url.URL, error) {
+	executor := new(CommandExecutor)
+	return useRewriterWithExecutor(path, rewriterName, executor)
+}
+
+func useRewriterWithExecutor(path string, rewriterName string, executor ExecutorInterface) (*url.URL, error) {
 	rewriter := hostnameRewrites[rewriterName]
 	matches := rewriter.pattern.FindStringSubmatch(path)
 	if len(matches) > 0 {
-		return rewriter.fn(path, matches)
+		return rewriter.fn(matches, executor)
 	}
 	return nil, fmt.Errorf("Could not match path: %s to given rewriter: %s", path, rewriterName)
+
 }
 
-func GetGitoliteUrlWithPath(path string) *url.URL {
+// getGitoliteUrlWithPath returns a URL pointing to the repo specified by path on gitolite.
+// (ex "github/uber/tchannel-go", "googlesource/net", etc)
+// path should not contain a leading "/"
+func getGitoliteUrlWithPath(path string) *url.URL {
 	u := new(url.URL)
 	u.User = url.User("gitolite")
 	u.Host = "code.uber.internal"
 	u.Scheme = "ssh"
-	u.Path = strings.TrimPrefix(GetGitoliteRoot(path), u.Host)
+	// The leading "/" only needs to be present for equivalency in unit tests. Urls are correctly interpreted
+	// whether the path member has the leading "/" or not.
+	u.Path = "/" + path
 	return u
 }
 
@@ -72,38 +96,37 @@ func GetGitoliteRoot(path string) string {
 	return path
 }
 
-// isNotOnGitolite returns a value indicating whether the error corresponds to a
-// repository not existing on Gitolite.
-func isNotOnGitolite(err error) bool {
-	return strings.Contains(err.Error(), "FATAL: autocreate denied")
+func rewriteGitolite(match []string, ex ExecutorInterface) (*url.URL, error) {
+	return getGitoliteUrlWithPath(strings.TrimPrefix(GetGitoliteRoot(match[0]), "code.uber.internal/")), nil
 }
 
-// getGitoliteMirrorURL returns a rewritten URL for a GitHub package, using a Gitolite
+// rewriteGithub returns a rewritten URL for a GitHub package, using a Gitolite
 // mirror instead.  If the repository has not yet been mirrored, it creates the mirror.
-func getGitoliteMirrorURL(path string, match []string) (*url.URL, error) {
+func rewriteGithub(match []string, ex ExecutorInterface) (*url.URL, error) {
 	user := match[1]
 	repo := match[2]
 
 	// Return with an error if that didn't work for some reason.
 	if user == "" || repo == "" {
-		return nil, fmt.Errorf("could not extract user / repo from GitHub URL: %s", path)
+		return nil, fmt.Errorf("could not extract user / repo from GitHub URL: %s", match[0])
 	}
 
-	return ensureGitoliteGithubMirror(user, repo, path)
+	gpath := gitolitePathForGithub(user, repo)
+	remote := getGithubRemoteFromUserAndRepo(user, repo)
+	return ensureGitoliteMirror(gpath, remote, ex)
 }
 
-func ensureGitoliteGithubMirror(user, repo, path string) (*url.URL, error) {
-	// Generate the repo path and full URL on Gitolite.
-	githubPath := fmt.Sprintf("github/%s/%s", user, repo)
-	gitoliteURL := GetGitoliteUrlWithPath("/" + githubPath)
+func ensureGitoliteMirror(gpath, remote string, ex ExecutorInterface) (*url.URL, error) {
+	// Generate the full URL on Gitolite.
+	gitoliteURL := getGitoliteUrlWithPath(gpath)
 
 	if os.Getenv(UberDisableGitoliteAutocreation) != "" {
 		return gitoliteURL, nil
 	}
 
 	// Ping Gitolite to see if the mirror exists.
-	gitoliteUri := fmt.Sprintf("%s@%s:%s", gitoliteURL.User.Username(), gitoliteURL.Hostname(), gitoliteURL.Path)
-	err := execAndLogCommand("git", "ls-remote", gitoliteUri, "HEAD")
+	stdout, stderr, err := ex.ExecCommand("git", "ls-remote", gitoliteURL.String(), "HEAD")
+	uberLogger.Print(stdout)
 
 	// If so, nothing more is needed, return the Gitolite mirror URL.
 	if err == nil {
@@ -111,25 +134,31 @@ func ensureGitoliteGithubMirror(user, repo, path string) (*url.URL, error) {
 		return gitoliteURL, nil
 	}
 
-	// First, ensure the GitHub repo exists
-	githubUrlString := getGithubUrlFromUserAndRepo(user, repo)
-	if execErr := execAndLogCommand("git", "ls-remote", githubUrlString, "HEAD"); execErr != nil {
-		uberLogger.Printf("Upstream GitHub repo does not exist: %v", githubUrlString)
-		return nil, execErr
+	// First, ensure the remote repo exists
+	uberLogger.Printf("%s not found on Gitolite, checking %s", gpath, remote)
+	rstdout, _, rerr := ex.ExecCommand("git", "ls-remote", remote, "HEAD")
+	uberLogger.Print(rstdout)
+	if rerr != nil {
+		uberLogger.Printf("Upstream repo does not exist: %v", remote)
+		return nil, rerr
 	}
 
 	// If an error is returned indicating the mirror doesn't exist, create it.
-	if !isNotOnGitolite(err) {
+	if !strings.Contains(stderr, "FATAL: autocreate denied") {
+		// the error was something other than the repo not existing in Gitolite
 		return nil, err
 	}
 
-	uberLogger.Printf("GitHub repo %s does not exist yet on Gitolite, mirroring...", gitoliteURL)
+	uberLogger.Printf("Remote repo %s does not exist yet on Gitolite, mirroring...", gitoliteURL)
 
 	// Create a mirror.
-	err = execAndLogCommand("ssh", "gitolite@code.uber.internal", "create", githubPath)
+	stdout, stderr, err = ex.ExecCommand("ssh", "gitolite@code.uber.internal", "create", gpath)
+	uberLogger.Print(stdout)
 
 	// Return with an error if that failed.
 	if err != nil {
+		uberLogger.Print(stderr)
+		uberLogger.Printf("Error creating repo %s on Gitolite: %s", gpath, err.Error())
 		return nil, err
 	}
 
@@ -138,22 +167,17 @@ func ensureGitoliteGithubMirror(user, repo, path string) (*url.URL, error) {
 	return gitoliteURL, nil
 }
 
-func rewriteGopkgIn(path string, match []string) (*url.URL, error) {
+func rewriteGopkgIn(match []string, ex ExecutorInterface) (*url.URL, error) {
 	user, repo := "go-"+match[2], match[2]
 	if len(match) > 5 && match[5] != "" {
 		user, repo = match[2], match[5]
 	}
+	gpath := gitolitePathForGithub(user, repo)
 
 	// If we're running during a test/production build, assume a .lock file already exists and
 	// rewrite to gitolite (which doesn't do any HEAD trickery like gopkg.in does)
 	if os.Getenv(UberGopkgRedirectEnv) != "" {
-		u := new(url.URL)
-		u.User = url.User("gitolite")
-		u.Host = "code.uber.internal"
-		u.Scheme = "ssh"
-		u.Path = fmt.Sprintf("/github/%s/%s", user, repo)
-
-		return u, nil
+		return getGitoliteUrlWithPath(gpath), nil
 	}
 
 	// Otherwise, somebody is running "go-build/glide up" to fetch a new package from gopkg.in
@@ -161,8 +185,8 @@ func rewriteGopkgIn(path string, match []string) (*url.URL, error) {
 	// **does** do the HEAD rewrite trickery, but also has a dependency on GitHub.
 
 	fullRepo := match[1]
-
-	if _, err := ensureGitoliteGithubMirror(user, repo, path); err != nil {
+	remote := getGithubRemoteFromUserAndRepo(user, repo)
+	if _, err := ensureGitoliteMirror(gpath, remote, ex); err != nil {
 		uberLogger.Printf("Unable to ensure gitolite mirror exists for underlying GitHub repo for gopkg.in/%s", fullRepo)
 		return nil, err
 	}
@@ -174,23 +198,35 @@ func rewriteGopkgIn(path string, match []string) (*url.URL, error) {
 	return u, nil
 }
 
-func rewriteGolang(path string, in []string) (*url.URL, error) {
-	// for some reason this hack in glide didn't actually ensure that the repo was in gitolite first
-	return GetGitoliteUrlWithPath("/googlesource/" + in[1]), nil
+func rewriteGolang(in []string, ex ExecutorInterface) (*url.URL, error) {
+	repo := in[1]
+	gpath := gitolitePathForGolang(repo)
+	remote := getGolangRemoteFromRepo(repo)
+	return ensureGitoliteMirror(gpath, remote, ex)
 }
 
-func logRewrite(typ string, from string, to *url.URL) {
-	uberLogger.Printf("Rewrite %s %s to %s", typ, from, to)
-}
-
-func getGithubUrlFromUserAndRepo(user, repo string) string {
+func getGithubRemoteFromUserAndRepo(user, repo string) string {
 	return fmt.Sprintf("git@github.com:%s/%s", user, repo)
 }
 
-func execAndLogCommand(name string, arg ...string) error {
+func gitolitePathForGithub(user, repo string) string {
+	return fmt.Sprintf("github/%s/%s", user, repo)
+}
+
+func getGolangRemoteFromRepo(repo string) string {
+	return fmt.Sprintf("https://go.googlesource.com/%s", repo)
+}
+
+func gitolitePathForGolang(repo string) string {
+	return fmt.Sprintf("googlesource/%s", repo)
+}
+
+func (c *CommandExecutor) ExecCommand(name string, arg ...string) (string, string, error) {
 	command := exec.Command(name, arg...)
 	command.Env = os.Environ()
-	stdout, err := command.Output()
-	uberLogger.Printf("%s", stdout)
-	return err
+	var stdoutbytes, stderrbytes bytes.Buffer
+	command.Stdout = &stdoutbytes
+	command.Stderr = &stderrbytes
+	err := command.Run()
+	return stdoutbytes.String(), stderrbytes.String(), err
 }

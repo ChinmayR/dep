@@ -119,7 +119,10 @@ func (m gitoliteDeducer) deduceRoot(path string) (string, error) {
 }
 
 func (m gitoliteDeducer) deduceSource(path string, u *url.URL) (maybeSource, error) {
-	u = uber.GetGitoliteUrlWithPath(path)
+	u, err := uber.GetGitoliteUrlForRewriter(path, "code.uber.internal")
+	if err != nil {
+		return nil, err
+	}
 	return maybeGitSource{url: u}, nil
 }
 
