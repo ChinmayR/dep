@@ -9,6 +9,7 @@ import (
 	"sync"
 
 	"github.com/golang/dep/internal/gps/pkgtree"
+	"github.com/golang/dep/uber"
 )
 
 // singleSourceCache provides a method set for storing and retrieving data about
@@ -177,8 +178,14 @@ func (c *singleSourceCacheMemory) getAllVersions() ([]PairedVersion, bool) {
 	if vList == nil {
 		return nil, false
 	}
-	cp := make([]PairedVersion, len(vList))
-	copy(cp, vList)
+	cp := make([]PairedVersion, 0)
+
+	for _, v := range vList {
+		if uber.IsValidVersion(v.typedString()) {
+			cp = append(cp, v)
+		}
+	}
+
 	return cp, true
 }
 
