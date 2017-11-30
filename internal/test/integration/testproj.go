@@ -17,6 +17,7 @@ import (
 	"testing"
 
 	"github.com/golang/dep/internal/test"
+	"github.com/golang/dep/uber"
 	"github.com/pkg/errors"
 )
 
@@ -53,6 +54,7 @@ func NewTestProject(t *testing.T, initPath, wd string, run RunFunc) *TestProject
 	new.CopyTree(initPath)
 
 	new.Setenv("GOPATH", new.tempdir)
+	new.Setenv(uber.TurnOffUberDeduceLogicEnv, "yes")
 
 	return new
 }

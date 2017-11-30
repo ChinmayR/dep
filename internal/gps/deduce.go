@@ -18,6 +18,8 @@ import (
 
 	"os"
 
+	"flag"
+
 	radix "github.com/armon/go-radix"
 	"github.com/golang/dep/uber"
 	"github.com/pkg/errors"
@@ -35,6 +37,8 @@ var (
 const (
 	gopkgUnstableSuffix = "-unstable"
 )
+
+var RunUberDeduceLogicForTest = false
 
 func validateVCSScheme(scheme, typ string) bool {
 	// everything allows plain ssh
@@ -143,7 +147,9 @@ func (m golangDeducer) deduceSource(path string, u *url.URL) (maybeSource, error
 		return nil, fmt.Errorf("%s is not a valid path for a source on golang.org", path)
 	}
 
-	if os.Getenv(uber.TurnOffUberDeduceLogic) == "" {
+	inTest := flag.Lookup("test.v") != nil
+	if (os.Getenv(uber.TurnOffUberDeduceLogicEnv) == "" && !inTest) ||
+		(RunUberDeduceLogicForTest == true && inTest) {
 		golangUrl, err := uber.GetGitoliteUrlForRewriter(path, "golang.org")
 		if err == nil {
 			return maybeGitSource{url: golangUrl}, nil
@@ -184,7 +190,9 @@ func (m githubDeducer) deduceSource(path string, u *url.URL) (maybeSource, error
 	}
 
 	// BEGIN UBER PATCH
-	if os.Getenv(uber.TurnOffUberDeduceLogic) == "" {
+	inTest := flag.Lookup("test.v") != nil
+	if (os.Getenv(uber.TurnOffUberDeduceLogicEnv) == "" && !inTest) ||
+		(RunUberDeduceLogicForTest == true && inTest) {
 		uberUrl, err := uber.GetGitoliteUrlForRewriter(path, "github.com")
 		if err == nil {
 			u = uberUrl
@@ -367,7 +375,9 @@ func (m gopkginDeducer) deduceSource(p string, u *url.URL) (maybeSource, error) 
 	}
 
 	// BEGIN UBER PATCH
-	if os.Getenv(uber.TurnOffUberDeduceLogic) == "" {
+	inTest := flag.Lookup("test.v") != nil
+	if (os.Getenv(uber.TurnOffUberDeduceLogicEnv) == "" && !inTest) ||
+		(RunUberDeduceLogicForTest == true && inTest) {
 		uberUrl, err := uber.GetGitoliteUrlForRewriter(p, "gopkg.in")
 		if err == nil {
 			u = uberUrl

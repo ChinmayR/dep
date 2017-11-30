@@ -21,10 +21,12 @@ const (
 
 	// this can be set by developers that want to turn off the slower uber specific
 	// checking + mirroring logic
-	TurnOffUberDeduceLogic = "TURN_OFF_UBER_DEP_DEDUCE_LOGIC"
+	TurnOffUberDeduceLogicEnv = "TURN_OFF_UBER_DEP_DEDUCE_LOGIC"
 )
 
-var uberLogger = log.New(os.Stdout, "[UBER]  ", 0)
+const UBER_PREFIX = "[UBER]  "
+
+var uberLogger = log.New(os.Stdout, UBER_PREFIX, 0)
 
 type rewriteFn func([]string, ExecutorInterface) (*url.URL, error)
 
