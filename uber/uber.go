@@ -18,6 +18,10 @@ const (
 
 	// this is also set via go-build to disable repo autocreation
 	UberDisableGitoliteAutocreation = "UBER_NO_GITOLITE_AUTOCREATE"
+
+	// this can be set by developers that want to turn off the slower uber specific
+	// checking + mirroring logic
+	TurnOffUberDeduceLogic = "TURN_OFF_UBER_DEP_DEDUCE_LOGIC"
 )
 
 var uberLogger = log.New(os.Stdout, "[UBER]  ", 0)

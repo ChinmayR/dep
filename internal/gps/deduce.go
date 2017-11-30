@@ -34,8 +34,6 @@ var (
 
 const (
 	gopkgUnstableSuffix = "-unstable"
-
-	UberEnvVar = "RUN_UBER_LOGIC"
 )
 
 func validateVCSScheme(scheme, typ string) bool {
@@ -145,7 +143,7 @@ func (m golangDeducer) deduceSource(path string, u *url.URL) (maybeSource, error
 		return nil, fmt.Errorf("%s is not a valid path for a source on golang.org", path)
 	}
 
-	if os.Getenv(UberEnvVar) != "" {
+	if os.Getenv(uber.TurnOffUberDeduceLogic) == "" {
 		golangUrl, err := uber.GetGitoliteUrlForRewriter(path, "golang.org")
 		if err == nil {
 			return maybeGitSource{url: golangUrl}, nil
@@ -186,7 +184,7 @@ func (m githubDeducer) deduceSource(path string, u *url.URL) (maybeSource, error
 	}
 
 	// BEGIN UBER PATCH
-	if os.Getenv(UberEnvVar) != "" {
+	if os.Getenv(uber.TurnOffUberDeduceLogic) == "" {
 		uberUrl, err := uber.GetGitoliteUrlForRewriter(path, "github.com")
 		if err == nil {
 			u = uberUrl
@@ -369,7 +367,7 @@ func (m gopkginDeducer) deduceSource(p string, u *url.URL) (maybeSource, error) 
 	}
 
 	// BEGIN UBER PATCH
-	if os.Getenv(UberEnvVar) != "" {
+	if os.Getenv(uber.TurnOffUberDeduceLogic) == "" {
 		uberUrl, err := uber.GetGitoliteUrlForRewriter(p, "gopkg.in")
 		if err == nil {
 			u = uberUrl

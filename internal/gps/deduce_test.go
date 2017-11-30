@@ -802,8 +802,8 @@ func TestDeduceFromPath(t *testing.T) {
 						defer uber.SetEnvVar(uber.UberDisableGitoliteAutocreation, "yes")()
 					}
 
-					if fix.runUberLogic == true {
-						defer uber.SetEnvVar(UberEnvVar, "yes")()
+					if fix.runUberLogic == false {
+						defer uber.SetEnvVar(uber.TurnOffUberDeduceLogic, "yes")()
 					}
 
 					if fix.gopkgRedirectToGitolite == true {
