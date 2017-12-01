@@ -1,0 +1,7 @@
+{
+    "phabricator.uri": "https://code.uberinternal.com/",
+    "unit.engine": "ConfigurableGolangTestEngine",
+    "unit.golang.command": "touch main.go && make -j8 test-xml JUNIT_XML=%s COVERAGE_XML=%s",
+    "git.default-relative-commit": "origin/master",
+    "generated-paths": [".gen/"]
+}

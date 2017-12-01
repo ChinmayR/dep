@@ -1,0 +1,32 @@
+package: code.uber.internal/go/uberfx.git
+import:
+- package: code.uber.internal/go/configfx.git
+  version: ^1
+- package: code.uber.internal/go/envfx.git
+  version: ^1
+- package: code.uber.internal/go/healthfx.git
+  version: ^1
+- package: code.uber.internal/go/jaegerfx.git
+  version: ^1
+- package: code.uber.internal/go/sentryfx.git
+  version: ^1
+- package: code.uber.internal/go/servicefx.git
+  version: ^1
+- package: code.uber.internal/go/systemportfx.git
+  version: ^1
+- package: code.uber.internal/go/tallyfx.git
+  version: ^1
+- package: code.uber.internal/go/versionfx.git
+  version: ^1
+- package: code.uber.internal/go/zapfx.git
+  version: ^1
+- package: code.uber.internal/go/runtimefx.git
+  version: ^1
+- package: code.uber.internal/go/maxprocsfx.git
+  version: ^1
+- package: code.uber.internal/go/debugfx.git
+  version: ^1
+- package: go.uber.org/fx
+  version: ^1
+- package: code.uber.internal/go/galileofx.git
+  version: ^1

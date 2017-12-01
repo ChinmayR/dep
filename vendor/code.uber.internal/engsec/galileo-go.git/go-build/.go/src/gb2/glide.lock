@@ -1,0 +1,181 @@
+hash: 2a3a901ea019109ee268e18935e8f3dc2ffe4a6ce360f6751616c21377a15392
+updated: 2017-09-05T16:18:23.964423003-07:00
+imports:
+- name: code.uber.internal/devexp/homebrew_bottler
+  version: eac925f698d1c542e8786c07ae9177cd392e00ce
+  vcs: git
+- name: code.uber.internal/infra/glide-exec
+  version: 584e2e5564abdca108f6d6eae2c3f85c6bbfe838
+  vcs: git
+- name: code.uber.internal/infra/prototools.git
+  version: ffd56de367cf7cfc264e123857bcd0121c180fa2
+  repo: gitolite@code.uber.internal:infra/prototools
+  vcs: git
+  subpackages:
+  - cmd/go-build-protoc-helper
+  - internal/protocutil
+- name: github.com/AlekSi/gocov-xml
+  version: d2f6da892a0d5e0b587526abf51349ad654ade51
+- name: github.com/axw/gocov
+  version: f5b2b5cf8644b8b432436eaee1c8a73d2f4cf86e
+  subpackages:
+  - gocov
+  - gocov/internal/testflag
+  - gocovutil
+- name: github.com/codegangsta/cli
+  version: cfb38830724cc34fedffe9a2a29fb54fa9169cd1
+- name: github.com/gogo/protobuf
+  version: 100ba4e885062801d56799d78530b73b178a78f3
+  subpackages:
+  - gogoproto
+  - plugin/compare
+  - plugin/defaultcheck
+  - plugin/description
+  - plugin/embedcheck
+  - plugin/enumstringer
+  - plugin/equal
+  - plugin/face
+  - plugin/gostring
+  - plugin/marshalto
+  - plugin/oneofcheck
+  - plugin/populate
+  - plugin/size
+  - plugin/stringer
+  - plugin/testgen
+  - plugin/union
+  - plugin/unmarshal
+  - proto
+  - protoc-gen-gogo/descriptor
+  - protoc-gen-gogo/generator
+  - protoc-gen-gogo/grpc
+  - protoc-gen-gogo/plugin
+  - protoc-gen-gogofaster
+  - protoc-gen-gogoslick
+  - vanity
+  - vanity/command
+- name: github.com/golang/lint
+  version: c5fb716d6688a859aae56d26d3e6070808df29f7
+  subpackages:
+  - golint
+- name: github.com/golang/mock
+  version: 0553d248bb39c614b152df7662bfc44ce92bcc04
+  subpackages:
+  - mockgen
+  - mockgen/model
+- name: github.com/golang/protobuf
+  version: 18c9bb3261723cd5401db4d0c9fbc5c3b6c70fe8
+  subpackages:
+  - proto
+  - protoc-gen-go
+  - protoc-gen-go/descriptor
+  - protoc-gen-go/generator
+  - protoc-gen-go/grpc
+  - protoc-gen-go/plugin
+- name: github.com/jessevdk/go-flags
+  version: 6cf8f02b4ae8ba723ddc64dcfd403e530c06d927
+- name: github.com/jstemmer/go-junit-report
+  version: 6aeed679b62e1c77721907cb77076f2168c7a0f6
+  subpackages:
+  - parser
+- name: github.com/jteeuwen/go-bindata
+  version: a0ff2567cfb70903282db057e799fd826784d41d
+- name: github.com/kisielk/errcheck
+  version: db0ca22445717d1b2c51ac1034440e0a2a2de645
+  subpackages:
+  - internal/errcheck
+- name: github.com/kisielk/gotool
+  version: d6ce6262d87e3a4e153e86023ff56ae771554a41
+  subpackages:
+  - internal/load
+- name: github.com/Masterminds/glide
+  version: 9ff4cf310f478d923ab6bd3521b5a95128020522
+  repo: gitolite@code.uber.internal:devexp/glide
+  vcs: git
+  subpackages:
+  - action
+  - cache
+  - cfg
+  - dependency
+  - gb
+  - godep
+  - godep/strip
+  - gom
+  - gpm
+  - importer
+  - mirrors
+  - msg
+  - path
+  - repo
+  - tree
+  - util
+- name: github.com/Masterminds/semver
+  version: 517734cc7d6470c0d07130e40fd40bdeb9bcd3fd
+- name: github.com/Masterminds/vcs
+  version: 33e3af6bb046dac9f3f33610363d0724fee1e03c
+  repo: gitolite@code.uber.internal:devexp/masterminds-vcs
+  vcs: git
+- name: github.com/matm/gocov-html
+  version: f6dd0fd0ebc7c8cff8b24c0a585caeef250627a3
+  subpackages:
+  - cov
+- name: github.com/pquerna/ffjson
+  version: f60b597ded7e7542b36fe20999dfd48166abd5ae
+  subpackages:
+  - fflib/v1
+  - fflib/v1/internal
+  - generator
+  - inception
+  - shared
+- name: github.com/samuel/go-thrift
+  version: e9042807f4f5bf47563df6992d3ea0857313e2be
+  subpackages:
+  - parser
+- name: github.com/tools/godep
+  version: caec770c49966051500e8ba06ce313f7189e1287
+  subpackages:
+  - Godeps/_workspace/src/github.com/kr/fs
+  - Godeps/_workspace/src/github.com/kr/pretty
+  - Godeps/_workspace/src/github.com/kr/text
+  - Godeps/_workspace/src/github.com/pmezard/go-difflib/difflib
+  - Godeps/_workspace/src/golang.org/x/tools/go/vcs
+- name: github.com/uber/tchannel-go
+  version: 940fa93c3b1b687ec535e5bf09842479dbf790e4
+  subpackages:
+  - thrift/thrift-gen
+- name: github.com/vektra/mockery
+  version: 35af6ab863ac461de148c218959646621c1c3d2c
+  subpackages:
+  - cmd/mockery
+  - mockery
+- name: github.com/wadey/gocovmerge
+  version: b5bfa59ec0adc420475f97f89b58045c721d761c
+- name: golang.org/x/tools
+  version: 77187f3c2d7724523287779ae0a022fa20721b04
+  subpackages:
+  - cover
+  - go/ast/astutil
+  - go/buildutil
+  - go/gcexportdata
+  - go/gcimporter15
+  - go/loader
+  - go/types/typeutil
+  - imports
+- name: gopkg.in/yaml.v2
+  version: a83829b6f1293c91addabc89d0571c246397bbf4
+- name: honnef.co/go/tools
+  version: 6bc9a2adc0446cbdfb39f633068ecf88dd42a407
+  repo: https://github.com/dominikh/go-tools
+  vcs: git
+  subpackages:
+  - cmd/staticcheck
+  - cmd/unused
+  - gcsizes
+  - lint
+  - lint/lintutil
+  - ssa
+  - ssa/ssautil
+  - staticcheck
+  - staticcheck/pure
+  - staticcheck/vrp
+  - unused
+testImports: []

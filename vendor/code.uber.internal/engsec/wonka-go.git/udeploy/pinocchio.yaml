@@ -1,0 +1,9 @@
+service_name: wonkamaster
+owning_team: engsec
+network_protocol: http
+frontend_port: 16746
+backend_port: 6746
+service_type: go
+go:
+  command: '/home/udocker/wonkamaster/wonkamaster/wonkamaster'
+  golang_version: '1.8'

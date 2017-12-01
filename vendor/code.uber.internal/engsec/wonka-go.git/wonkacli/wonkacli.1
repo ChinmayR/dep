@@ -1,0 +1,135 @@
+.TH WONKACLI "1" "July 2017" "wonkacli and wonka library version 0.9.3-dev" "User Commands"
+.SH NAME
+wonkacli \- command\-line interface to the Wonka authentication system
+.SH DESCRIPTION
+.SS "NAME:"
+.IP
+wonkacli \- Service\-to\-service authN at Uber
+.SS "USAGE:"
+.IP
+wonkacli [global options] command [command options] [arguments...]
+.SS "VERSION:"
+.IP
+0.9.3\-dev
+.SS "DESCRIPTION:"
+.IP
+Provides a command line interface to Wonka.
+.SS "GLOBAL OPTIONS:"
+.TP
+\fB\-\-self\fR value
+your entity name (default: $UBER_OWNER) [$WONKACLI_SELF]
+.TP
+\fB\-\-verbose\fR, \fB\-v\fR
+verbose output [$WONKACLI_VERBOSE]
+.TP
+\fB\-\-public\-key\fR value, \fB\-\-pubkey\fR value
+Path to public key to use, formatted as PEM
+.TP
+\fB\-\-private\-key\fR value, \fB\-\-privkey\fR value
+Path to private key to use, formatted as PEM. If unset, use session keys
+.TP
+\fB\-\-json\fR, \fB\-j\fR
+Input and output will be in JSON, not Base64
+.TP
+\fB\-\-help\fR, \fB\-h\fR
+show help
+.HP
+.SS "COMMANDS:"
+.TP
+\fBversion\fR
+Print the version and exit
+.TP
+\fBenroll\fR
+Enroll an entity
+.TP
+\fBdelete\fR
+Delete an entity
+.TP
+\fBvalidate\fR, \fBcheck\fR
+Validate that the provided token is cryptographically correct
+.TP
+\fBlookup\fR
+Look up an entity in Wonkamaster
+.TP
+\fBrequest\fR
+Request a token asserting the provided claim
+.TP
+\fBhelp\fR, \fBh\fR
+Shows a list of commands or help for one command
+.HP
+\fB\-\-version\fR, \fB\-V\fR
+.SS "COMMAND OPTIONS:"
+.TP
+\fBenroll\fR [entity]:
+.RS
+.TP
+\fB\-\-entity\fR value, \fB\-\-name\fR value
+Entity to enroll
+.TP
+\fB\-\-allowed\-groups\fR value
+Groups permitted to talk to your entity (default: "EVERYONE")
+.RE
+.TP
+\fBdelete\fR [entity]:
+.RS
+.TP
+\fB\-\-entity\fR value, \fB\-\-name\fR value
+Entity to delete
+.RE
+.TP
+\fBvalidate, check\fR [token]:
+.RS
+.TP
+\fB\-\-token\fR value, \fB\-t\fR value
+The token to validate
+.TP
+\fB\-\-claim\-list\fR value, \fB\-L\fR value
+Assert the provided token is valid for one of the values in the claim-list
+.RE
+.TP
+\fBlookup\fR [entity]:
+.RS
+.TP
+\fB\-\-entity\fR value, \fB\-\-name\fR value
+Entity to lookup
+.RE
+\fBrequest\fR [entity]:
+.RS
+.TP
+\fB\-\-claim\fR value, \fB\-\-name\fR value
+Claim name to request a token for
+.TP
+\fB\-\-destination\fR value, \fB\-\-to\fR value
+Destination for this claim (default: your personnel)
+.TP
+\fB\-\-source\fR value, \fB\-\-from\fR value
+Source entity to impersonate (only authorized services can do this)
+.TP
+\fB\-\-output\fR value, \fB\-o\fR value
+File to write the resulting claim
+.TP
+\fB\-\-expiration\fR value, \fB\-e\fR value
+Lifetime (duration) for this token (default: 15m0s)
+.RE
+.SH "EXAMPLES"
+.SS "Enroll an entity (fooservice):"
+$ openssl genrsa -out private.pem 4096
+
+$ openssl rsa -in private.pem -outform PEM -pubout -out public.pem
+
+$ wonkacli --private-key=private.pem --public-key=public.pem \\
+    enroll fooservice --allowed-groups=AD:engineering
+.SS "Look up an entity:"
+.TP
+$ wonkacli lookup usecret
+.SS "Assert AD:trust_eng to usecret"
+.TP
+$ wonkacli request AD:trust_eng --to usecret
+.SS "Impersonate foo@uber.com with claim AD:trust_eng to usecret"
+.TP
+$ wonkacli request AD:trust_eng --from="foo@uber.com" --to usecret
+.SH "AUTHORS"
+.PP
+Peter Moody <pmoody@uber.com>
+.br
+Thom Dixon <thom@uber.com>

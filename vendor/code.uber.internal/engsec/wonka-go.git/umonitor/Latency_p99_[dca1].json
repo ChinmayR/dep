@@ -1,0 +1,58 @@
+{
+  "alarmName": "Latency p99 [dca1]",
+  "alarmUUID": "fff22167-46a4-4523-94a0-9f911d54de87",
+  "groupName": "wonkamaster",
+  "groupUUID": "561e1311-7d1a-493c-b620-4f0a91fdef20",
+  "versionUUID": "632de2c3-7e35-11e7-b606-ecf4bbe84ca0",
+  "warn": 370,
+  "critical": 470,
+  "checkInterval": 0,
+  "intervalSeconds": 0,
+  "softToHard": 0,
+  "graphiteConf": "fetch service:wonkamaster timertype:p99 name:response_time dc:dca1 | transformNull 0 | showTags",
+  "graphs": [],
+  "actions": [
+    {
+      "action": "email",
+      "description": "",
+      "enabled": true,
+      "subject": "",
+      "to": "jesses@uber.com,pmoody@uber.com",
+      "uuid": "85d2d415-aef1-4e83-a4d8-3e7b8cfc9481",
+      "when": "critical"
+    },
+    {
+      "_data": [],
+      "action": "pagerduty",
+      "data": {},
+      "enabled": true,
+      "requireManualResolution": false,
+      "serviceKey": "c2b03dd151b84fc79c3837849e682686",
+      "uuid": "d6b1ae18-ae58-4cb4-8019-7cbfe8be64b1",
+      "when": "critical"
+    }
+  ],
+  "dashboardsOrLinks": [
+    {
+      "name": "RFC [GENERATED]",
+      "url": "https://docs.google.com/document/d/1QxE8XdVSZ8x48WXosF89N84ZJIATsG-ZdZXJKovbku0",
+      "isGenerated": true
+    }
+  ],
+  "isM3": true,
+  "isSLA": false,
+  "description": "",
+  "createdAt": "2017-07-26T22:28:58.83Z",
+  "lastUpdated": "2017-08-11T01:35:42.04Z",
+  "author": "jesses@uber.com",
+  "schedule": "",
+  "homeDC": "dca1",
+  "isAnomaly": false,
+  "sustainPeriod": 120,
+  "ublameService": "wonkamaster",
+  "dependentAlarmUUIDs": [],
+  "type": "",
+  "zoneThresholds": {},
+  "slaType": 0,
+  "access": 0
+}

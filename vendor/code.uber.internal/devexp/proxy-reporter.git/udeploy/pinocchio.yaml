@@ -1,0 +1,5 @@
+service_name: proxyreporter
+network_protocol: http_system
+service_type: go
+go:
+  command: '/home/udocker/proxyreporter/go-proxy-reporter'

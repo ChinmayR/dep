@@ -1,0 +1,20 @@
+version: '2'
+
+# This file provides runtime dependencies that may be used during development.
+# To use this, simply run `docker-compose up` and the development config will
+# be able to connect to this instance.
+
+services:
+   db:
+     image: mysql:5.7
+     volumes:
+       # We store data in .data between runs.
+       - ./.data:/var/lib/mysql
+       - ./initdb.d:/docker-entrypoint-initdb.d
+     environment:
+       MYSQL_ROOT_PASSWORD: root
+       MYSQL_DATABASE: wonkamaster
+       MYSQL_USER: s_wonkamaster
+       MYSQL_PASSWORD: password
+     ports:
+       - "3306:3306"

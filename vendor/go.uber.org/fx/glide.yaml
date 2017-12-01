@@ -1,0 +1,21 @@
+package: go.uber.org/fx
+import:
+- package: go.uber.org/multierr
+  version: ^1
+- package: go.uber.org/dig
+  version: ^1
+testImport:
+- package: github.com/stretchr/testify
+  version: ~1.1.4
+  subpackages:
+  - assert
+  - require
+- package: go.uber.org/tools
+  subpackages:
+  - update-license
+- package: golang.org/x/tools
+  subpackages:
+  - cover
+- package: github.com/golang/lint
+  subpackages:
+  - golint

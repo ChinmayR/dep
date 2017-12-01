@@ -1,0 +1,19 @@
+package: github.com/Masterminds/glide
+homepage: https://glide.sh
+license: MIT
+owners:
+- name: Matt Butcher
+  email: technosophos@gmail.com
+  homepage: http://technosophos.com/
+- name: Matt Farina
+  email: matt@mattfarina.com
+  homepage: https://www.mattfarina.com/
+import:
+- package: gopkg.in/yaml.v2
+- package: github.com/Masterminds/vcs
+  version: 33e3af6bb046dac9f3f33610363d0724fee1e03c
+  repo: gitolite@code.uber.internal:devexp/masterminds-vcs
+- package: github.com/codegangsta/cli
+  version: ^1.16.0
+- package: github.com/Masterminds/semver
+  version: ^1.1.1

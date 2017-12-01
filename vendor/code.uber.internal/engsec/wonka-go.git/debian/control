@@ -1,0 +1,19 @@
+Source: wonka-go
+Section: admin
+Priority: extra
+Maintainer: <wonka-team@uber.com>
+Build-Depends: debhelper (>= 9), golang-1.8-go, git
+Standards-Version: 3.9.6
+Homepage: https://code.uberinternal.com/
+
+Package: wonkacli
+Architecture: all
+Depends: ${shlibs:Depends}
+Description: interact with wonka
+ wonkacli is the command line utility for interacting with wonka.
+
+Package: wonkad
+Architecture: all
+Depends: ${shlibs:Depends}, wonkacli (>= 0.15)
+Description: host-based daemon for interacting with wonka
+  host-based daemon for interacting with wonka

@@ -1,0 +1,4 @@
+package: t
+import:
+- package: myorg/helloworldwithflags
+  version: foo

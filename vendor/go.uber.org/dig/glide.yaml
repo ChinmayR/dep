@@ -1,0 +1,15 @@
+package: go.uber.org/dig
+license: MIT
+testImport:
+- package: github.com/stretchr/testify
+  subpackages:
+  - assert
+  - require
+- package: golang.org/x/tools
+  subpackages:
+  - cover
+- package: github.com/golang/lint
+  subpackages:
+  - golint
+- package: github.com/sectioneight/md-to-godoc
+  version: master

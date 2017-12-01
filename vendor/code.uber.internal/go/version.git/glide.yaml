@@ -1,0 +1,5 @@
+package: code.uber.internal/go/version.git
+testImport:
+- package: github.com/stretchr/testify
+  subpackages:
+  - assert

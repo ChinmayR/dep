@@ -1,0 +1,20 @@
+package: code.uber.internal/engsec/galileo-go.git
+import:
+- package: code.uber.internal/engsec/wonka-go.git
+  version: ^1.1.2
+  subpackages:
+  - wonkacrypter
+- package: github.com/opentracing/opentracing-go
+  version: ^1
+- package: github.com/uber-go/tally
+  version: ^3
+- package: go.uber.org/zap
+  version: ^1
+- package: github.com/golang/mock
+  version: ^1.0.0
+- package: github.com/stretchr/testify
+  version: ^1.1.4
+  subpackages:
+  - assert
+  - mock
+  - require

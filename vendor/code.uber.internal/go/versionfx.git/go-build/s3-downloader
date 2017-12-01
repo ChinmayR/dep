@@ -1,0 +1,44 @@
+#!/bin/bash
+
+# Get the current directory (traversing all symlinks)
+pushd . > /dev/null
+SCRIPT_PATH="${BASH_SOURCE[0]}";
+while([ -h "${SCRIPT_PATH}" ]); do
+  cd "`dirname "${SCRIPT_PATH}"`"
+  SCRIPT_PATH="$(readlink "`basename "${SCRIPT_PATH}"`")";
+done
+cd "`dirname "${SCRIPT_PATH}"`" > /dev/null
+BASEDIR="`pwd`";
+popd  > /dev/null
+
+# Make sure PATH is prefixed with our BASEDIR
+if [[ "$PATH" != "$BASEDIR:"* ]]; then
+  export PATH="$BASEDIR:$PATH"
+fi
+
+OS=`uname -s`-`uname -m`
+OS=`echo $OS | tr [:upper:] [:lower:]`
+
+BIN_NAME=$1
+BIN_VERSIONED=$2
+shift
+shift
+
+BIN_FOLDER="$BASEDIR/.go/bin/${OS}/"
+BIN_PATH="$BIN_FOLDER/$BIN_VERSIONED"
+if [ ! -f "$BIN_PATH" ]; then
+  URL="https://s3.amazonaws.com/uber-devtools/go-build/$OS/$BIN_NAME/$BIN_VERSIONED.tar.gz"
+  mkdir -p "$BIN_FOLDER"
+  echo "Downloading $URL"
+
+  # The m option to tar is important here. The option has different documentation
+  # OSX vs loonix but the function is the same. The mtime is not preserved from 
+  # the archive. A previous attempt to remidiate this touched the file on the
+  # *second* invocation which meant targets which depended on a tool could end
+  # up running a second time even when everything is up to date. We could also
+  # just touch the extracted binary but it seems more elegant to let tar take
+  # care of this detail. Additionally this should obviate the need to check for
+  # the presence of BIN_PATH but it's a reasonable safety net against spurious 
+  # downloads
+  curl "$URL" | tar -xvzmf- -C "$BIN_FOLDER"
+fi

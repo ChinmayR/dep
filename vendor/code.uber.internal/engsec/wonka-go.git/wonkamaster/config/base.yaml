@@ -1,0 +1,27 @@
+service:
+  name: wonkamaster
+
+galileo:
+  servicename: wonkamaster
+  allowedgroups: ["AD:engineering"]
+  endpoints:
+    /admin:
+      allow_write: ["AD:wonka-admins"]
+    /enroll:
+      allow_write: ["AD:engineering"]
+      allow_read: ["AD:engineering"]
+
+port: 6746
+hose_check_interval: 600
+
+tracing:
+  disabled: false
+  rpc_metrics: true
+
+cassandra:
+  hosts: ["127.0.0.1"]
+  port: 9042
+  keyspace: "development"
+  username: "cassandra"
+  password: "cassandra"
+

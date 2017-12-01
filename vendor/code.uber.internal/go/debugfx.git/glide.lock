@@ -1,0 +1,73 @@
+hash: 484da596c757691c7a8601d7f846532ab9a7f5f758646f772aee7058b13f77c5
+updated: 2017-08-17T00:17:37.194116566-07:00
+imports:
+- name: code.uber.internal/go/envfx.git
+  version: 870cd725e0f175d1562799f5495b89a4ce459230
+- name: code.uber.internal/go/servicefx.git
+  version: 8145526c3b1eb42c46fac4ca186784927aa0fbf5
+- name: code.uber.internal/go/systemportfx.git
+  version: 55713b0ed3c3f3a2e93c5168ff5c2ab1e90ebcbc
+- name: code.uber.internal/go/tallyfx.git
+  version: 546a5874ad9bbc330083083699348a294996cc1e
+- name: code.uber.internal/go/version.git
+  version: cfd32da23f6a8edebb2bab8ba89f35b8a2693aca
+- name: code.uber.internal/go/versionfx.git
+  version: 59b7ddb5165a61e39e13eb0e008ba96f5bc1aeff
+- name: github.com/apache/thrift
+  version: 9549b25c77587b29be4e0b5c258221a4ed85d37a
+  subpackages:
+  - lib/go/thrift
+- name: github.com/facebookgo/clock
+  version: 600d898af40aa09a7a93ecb9265d87b0504b6f03
+- name: github.com/pkg/errors
+  version: 645ef00459ed84a119197bfb8d8205042c6df63d
+- name: github.com/uber-go/atomic
+  version: e682c1008ac17bf26d2e4b5ad6cdd08520ed0b22
+- name: github.com/uber-go/tally
+  version: 2605c407d7d219644d03a3680ad7df4779017782
+  subpackages:
+  - m3
+  - m3/customtransports
+  - m3/thrift
+  - m3/thriftudp
+- name: go.uber.org/atomic
+  version: 4e336646b2ef9fc6e47be8e21594178f98e5ebcf
+- name: go.uber.org/config
+  version: 4636f4a401ee0ed6207eb8a605b3dba15ce060b3
+- name: go.uber.org/dig
+  version: 5e65f1a430fd50d4291edc5ee9811f7dd520d77d
+- name: go.uber.org/fx
+  version: 3cdc81a59a7bbc63d452ec37dbc8ef3af23e6073
+  subpackages:
+  - fxtest
+  - internal/fxlog
+  - internal/fxreflect
+  - internal/lifecycle
+- name: go.uber.org/multierr
+  version: 3c4937480c32f4c13a875a1829af76c98ca3d40a
+- name: go.uber.org/zap
+  version: 9d9d6135afe89b6fc4a05e9a8552526caba38048
+  subpackages:
+  - buffer
+  - internal/bufferpool
+  - internal/color
+  - internal/exit
+  - zapcore
+- name: gopkg.in/validator.v2
+  version: 07ffaad256c8e957050ad83d6472eb97d785013d
+- name: gopkg.in/yaml.v2
+  version: a83829b6f1293c91addabc89d0571c246397bbf4
+testImports:
+- name: github.com/davecgh/go-spew
+  version: 6d212800a42e8ab5c146b8ace3490ee17e5225f9
+  subpackages:
+  - spew
+- name: github.com/pmezard/go-difflib
+  version: d8ed2627bdf02c080bf22230dbb337003b7aba2d
+  subpackages:
+  - difflib
+- name: github.com/stretchr/testify
+  version: 69483b4bd14f5845b5a1e55bca19e954e827f1d0
+  subpackages:
+  - assert
+  - require

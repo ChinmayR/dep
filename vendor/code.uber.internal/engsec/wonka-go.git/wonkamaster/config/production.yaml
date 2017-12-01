@@ -1,0 +1,35 @@
+# Add your production configuration here
+logging:
+  level: warn
+  disableStackTrace: true
+
+sentry:
+  dsn: http://27a60f3e1e28403cb904ecb59778f92a:d8540118a3c040ff9275f509103d993b@usentry.local.uber.internal/2716
+
+dbhost: 127.5.0.217
+dbport: 17025
+
+# impersonators defines the entities that are allowed to get claims on behalf of end-users
+impersonators: ["usso"]
+
+# TODO: replace `hosts` with uns path
+cassandra:
+  hosts: ["10.66.3.26", "10.70.143.147", "10.67.7.167"]
+  port: 10203
+  keyspace: "wonkamaster"
+
+launchers:
+  mesos:
+    launched_by: "^mesos-master\\d{2}-\\w{3}\\d\\.prod\\.uber\\.internal$"
+    launched_on: "^compute\\d{2}-\\w{3}\\d\\.prod\\.uber\\.internal$"
+    taskname: "^[^:]+$"
+  udeploy_classic:
+    launched_by: "^udeploy-master\\d{2}-\\w{3}\\d\\.prod\\.uber\\.internal$"
+    launched_on: "^appdocker\\d{2}-\\w{3}\\d\\.prod\\.uber\\.internal$"
+    taskname: "^[^:]+$"
+
+derelicts:
+  # this will install a 'derelict' service that will be valid until
+  # our 32 bit time_t overflows. this is so we can do a positive
+  # test on IsDerelict
+  libwonka-integration-test: 2038/01/01

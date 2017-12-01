@@ -1,0 +1,47 @@
+# Add your test configuration here
+
+logging:
+  level: debug
+  disableStackTrace: true
+
+sentry:
+  dsn: http://60ac7f8e9ddd47ec8cb79b055ddc4f78:62ca9905e20a4e7b8728030a08736179@usentry.local.uber.internal/2716
+
+wonkamasterkey:
+  private_dot_pem: private.pem
+
+port: 16746
+dbhost: 127.0.0.1
+dbport: 3306
+
+nemo:
+  auto_user_of_database:
+    wonkamaster: s_wonkamaster
+  password_of_user:
+    s_wonkamaster: password
+
+# pulloconfig defines the mocked pullo replies for the defined users. Used in dev/testing
+pulloconfig:
+  ccc@uber.com: ["AD:engineering", "AD:wonka-admins"]
+  jesses@uber.com: ["AD:engineering", "AD:wonka-admins"]
+  jkline@uber.com: ["AD:engineering", "AD:wonka-admins"]
+  pmoody@uber.com: ["AD:engineering", "AD:wonka-admins"]
+  tjulian@uber.com: ["AD:engineering", "AD:wonka-admins"]
+
+# impersonators defines the entities that are allowed to get claims on behalf of end-users
+impersonators: ["usso", "wonkaSample:usso"]
+
+ussh_user_signer:
+  trusted_user_ca: /etc/ssh/trusted_user_ca
+
+ussh_host_signer:
+  ssh_known_hosts: ssh_known_hosts.pub
+
+derelicts:
+  servicefoo: 2017/09/01
+  servicebar: 2017/10/01
+
+task_launchers:
+  mesos:
+    name: "^[^@]+@uber.com$"
+    allowed_tasks: "^[^:]+$"

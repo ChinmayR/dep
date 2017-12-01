@@ -1,0 +1,40 @@
+required_env_vars:
+  - TRANSPORT
+run:
+  - command: ./protobuf -outbound $TRANSPORT $GOOGLE_GRPC
+    input: |
+      get foo
+      get foo
+      set foo bar
+      get foo
+      get foo
+      set baz qux
+      get baz
+      get foo
+      get baz
+      fire foo
+      fire bar
+      fired-values
+      exit
+    output: |
+      get foo
+      get foo failed: foo
+      get foo
+      get foo failed: foo
+      set foo bar
+      get foo
+      foo = bar
+      get foo
+      foo = bar
+      set baz qux
+      get baz
+      baz = qux
+      get foo
+      foo = bar
+      get baz
+      baz = qux
+      fire foo
+      fire bar
+      fired-values
+      foo bar
+      exit

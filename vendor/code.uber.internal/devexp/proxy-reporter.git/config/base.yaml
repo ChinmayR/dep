@@ -1,0 +1,5 @@
+service:
+  name: proxyreporter
+
+http:
+  port: "${UBER_PORT_HTTP:6366}"

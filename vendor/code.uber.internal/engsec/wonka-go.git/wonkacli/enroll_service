@@ -1,0 +1,24 @@
+#!/bin/bash
+echo "enrolling a new service"
+echo ""
+echo -n "service name: "
+read svc
+if [ -z ${svc} ] ; then
+    echo "empty service name" && exit 1
+fi
+
+if [ ! -e "wonka_private" ] ; then
+    echo "no keys found, generating public.pem and private.pem"
+    openssl genrsa -out wonka_private 4096
+    openssl rsa -in wonka_private -outform PEM -pubout -out wonka_public
+fi
+
+echo "enrolling: ${svc}, requires ${requires}"
+./wonkacli --private-key wonka_private --public-key wonka_public enroll ${svc} --allowed-groups "EVERYONE" || exit 1
+
+echo ""
+echo "enrollment succeeded! you're almost done."
+echo "now you need to add your service keys to langley"
+echo "1. add wonka_private (your private key) located at wonkacli/wonka_private, name it 'wonka_private', and share it with your service"
+echo "2. add wonka_public (your public key) located at wonkacli/wonka_public, name it 'wonka_public', and share it with your service"
+echo "3. if enrolling more services, delete wonka_private and wonka_public before re-running"

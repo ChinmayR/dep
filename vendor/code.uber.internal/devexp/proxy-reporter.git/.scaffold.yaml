@@ -1,0 +1,9 @@
+# Please include this file as-is in your initial commit.
+# It contains scaffolding metadata for tracking purposes.
+
+layers_abstract: []
+layers_other: []
+layers_root:
+- Golang service.
+project_type: service
+time: 1502839753
