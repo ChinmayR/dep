@@ -17,6 +17,7 @@ import (
 	"github.com/golang/dep/internal/gps"
 	"github.com/golang/dep/internal/gps/paths"
 	"github.com/golang/dep/internal/gps/pkgtree"
+	"github.com/golang/dep/uber"
 	"github.com/pkg/errors"
 )
 
@@ -87,6 +88,13 @@ func (cmd *initCommand) Run(ctx *dep.Ctx, args []string) error {
 			return errors.Wrapf(err, "unable to create directory %s", root)
 		}
 	}
+
+	tags := uber.GetRepoTagFromRoot(root)
+	name := cmd.Name()
+	if cmd.skipTools {
+		name = name + "-skip-tools"
+	}
+	defer uber.Instrument(name, tags)()
 
 	var err error
 	p := new(dep.Project)

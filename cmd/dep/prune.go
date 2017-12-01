@@ -14,6 +14,8 @@ import (
 	"sort"
 	"strings"
 
+	"github.com/golang/dep/uber"
+
 	"github.com/golang/dep"
 	"github.com/golang/dep/internal/fs"
 	"github.com/golang/dep/internal/gps"
@@ -42,6 +44,9 @@ func (cmd *pruneCommand) Register(fs *flag.FlagSet) {
 }
 
 func (cmd *pruneCommand) Run(ctx *dep.Ctx, args []string) error {
+	tags := uber.GetRepoTagFromRoot(ctx.WorkingDir)
+	defer uber.Instrument(cmd.Name(), tags)()
+
 	p, err := ctx.LoadProject()
 	if err != nil {
 		return err

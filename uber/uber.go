@@ -26,7 +26,7 @@ const (
 
 const UBER_PREFIX = "[UBER]  "
 
-var uberLogger = log.New(os.Stdout, UBER_PREFIX, 0)
+var UberLogger = log.New(os.Stdout, UBER_PREFIX, 0)
 
 type rewriteFn func([]string, ExecutorInterface) (*url.URL, error)
 
@@ -132,20 +132,20 @@ func ensureGitoliteMirror(gpath, remote string, ex ExecutorInterface) (*url.URL,
 
 	// Ping Gitolite to see if the mirror exists.
 	stdout, stderr, err := ex.ExecCommand("git", "ls-remote", gitoliteURL.String(), "HEAD")
-	uberLogger.Print(stdout)
+	UberLogger.Print(stdout)
 
 	// If so, nothing more is needed, return the Gitolite mirror URL.
 	if err == nil {
-		uberLogger.Printf("Gitolite GitHub mirror %s already exists", gitoliteURL)
+		UberLogger.Printf("Gitolite GitHub mirror %s already exists", gitoliteURL)
 		return gitoliteURL, nil
 	}
 
 	// First, ensure the remote repo exists
-	uberLogger.Printf("%s not found on Gitolite, checking %s", gpath, remote)
+	UberLogger.Printf("%s not found on Gitolite, checking %s", gpath, remote)
 	rstdout, _, rerr := ex.ExecCommand("git", "ls-remote", remote, "HEAD")
-	uberLogger.Print(rstdout)
+	UberLogger.Print(rstdout)
 	if rerr != nil {
-		uberLogger.Printf("Upstream repo does not exist: %v", remote)
+		UberLogger.Printf("Upstream repo does not exist: %v", remote)
 		return nil, rerr
 	}
 
@@ -155,21 +155,21 @@ func ensureGitoliteMirror(gpath, remote string, ex ExecutorInterface) (*url.URL,
 		return nil, err
 	}
 
-	uberLogger.Printf("Remote repo %s does not exist yet on Gitolite, mirroring...", gitoliteURL)
+	UberLogger.Printf("Remote repo %s does not exist yet on Gitolite, mirroring...", gitoliteURL)
 
 	// Create a mirror.
 	stdout, stderr, err = ex.ExecCommand("ssh", "gitolite@code.uber.internal", "create", gpath)
-	uberLogger.Print(stdout)
+	UberLogger.Print(stdout)
 
 	// Return with an error if that failed.
 	if err != nil {
-		uberLogger.Print(stderr)
-		uberLogger.Printf("Error creating repo %s on Gitolite: %s", gpath, err.Error())
+		UberLogger.Print(stderr)
+		UberLogger.Printf("Error creating repo %s on Gitolite: %s", gpath, err.Error())
 		return nil, err
 	}
 
 	// All done.
-	uberLogger.Printf("Created Gitolite GitHub mirror %s", gitoliteURL)
+	UberLogger.Printf("Created Gitolite GitHub mirror %s", gitoliteURL)
 	return gitoliteURL, nil
 }
 
@@ -193,7 +193,7 @@ func rewriteGopkgIn(match []string, ex ExecutorInterface) (*url.URL, error) {
 	fullRepo := match[1]
 	remote := getGithubRemoteFromUserAndRepo(user, repo)
 	if _, err := ensureGitoliteMirror(gpath, remote, ex); err != nil {
-		uberLogger.Printf("Unable to ensure gitolite mirror exists for underlying GitHub repo for gopkg.in/%s", fullRepo)
+		UberLogger.Printf("Unable to ensure gitolite mirror exists for underlying GitHub repo for gopkg.in/%s", fullRepo)
 		return nil, err
 	}
 

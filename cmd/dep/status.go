@@ -16,6 +16,8 @@ import (
 	"sync"
 	"text/tabwriter"
 
+	"github.com/golang/dep/uber"
+
 	"github.com/golang/dep"
 	"github.com/golang/dep/internal/gps"
 	"github.com/golang/dep/internal/gps/paths"
@@ -192,6 +194,10 @@ func (out *dotOutput) MissingLine(ms *MissingStatus) {}
 func (out *dotOutput) MissingFooter()                {}
 
 func (cmd *statusCommand) Run(ctx *dep.Ctx, args []string) error {
+
+	tags := uber.GetRepoTagFromRoot(ctx.WorkingDir)
+	defer uber.Instrument(cmd.Name(), tags)()
+
 	p, err := ctx.LoadProject()
 	if err != nil {
 		return err

@@ -14,8 +14,11 @@ import (
 	"os"
 	"path/filepath"
 	"sort"
+	"strconv"
 	"strings"
 	"sync"
+
+	"github.com/golang/dep/uber"
 
 	"github.com/golang/dep"
 	"github.com/golang/dep/internal/gps"
@@ -154,6 +157,26 @@ func (cmd *ensureCommand) Run(ctx *dep.Ctx, args []string) error {
 		ctx.Err.Println(strings.TrimSpace(ensureExamples))
 		return nil
 	}
+
+	tags := uber.GetRepoTagFromRoot(ctx.WorkingDir)
+	name := cmd.Name()
+	if cmd.add {
+		name = name + "-add"
+	}
+	if cmd.update {
+		name = name + "-update"
+	}
+	if cmd.dryRun {
+		name = name + "-dry-run"
+	}
+	if cmd.noVendor {
+		name = name + "-no-vendor"
+	}
+	if cmd.vendorOnly {
+		name = name + "-vendor-only"
+	}
+	tags["args"] = strconv.Itoa(len(args))
+	defer uber.Instrument(name, tags)()
 
 	if err := cmd.validateFlags(); err != nil {
 		return err
