@@ -23,7 +23,6 @@ type pathDeductionFixture struct {
 	mb                      maybeSource
 	srcerr                  error
 	runUberLogic            bool
-	mirrorRepo              bool
 	gopkgRedirectToGitolite bool
 }
 
@@ -52,9 +51,9 @@ var pathDeductionFixtures = map[string][]pathDeductionFixture{
 		{
 			in:           "github.com/sdboyer/gps",
 			root:         "github.com/sdboyer/gps",
-			mb:           maybeGitSource{url: mkurl("ssh://gitolite@code.uber.internal/github/sdboyer/gps")},
+			mb:           maybeGitoliteSource{url: mkurl("ssh://gitolite@code.uber.internal/github/sdboyer/gps"),
+			gpath: "github/sdboyer/gps", remote:"git@github.com:sdboyer/gps", gitoliteURL: mkurl("ssh://gitolite@code.uber.internal/github/sdboyer/gps")},
 			runUberLogic: true,
-			mirrorRepo:   true,
 		},
 		{
 			in:   "github.com/sdboyer/gps/foo",
@@ -69,9 +68,9 @@ var pathDeductionFixtures = map[string][]pathDeductionFixture{
 		{
 			in:           "github.com/sdboyer/gps/foo",
 			root:         "github.com/sdboyer/gps",
-			mb:           maybeGitSource{url: mkurl("ssh://gitolite@code.uber.internal/github/sdboyer/gps")},
+			mb:           maybeGitoliteSource{url: mkurl("ssh://gitolite@code.uber.internal/github/sdboyer/gps"),
+				gpath: "github/sdboyer/gps", remote:"git@github.com:sdboyer/gps", gitoliteURL: mkurl("ssh://gitolite@code.uber.internal/github/sdboyer/gps")},
 			runUberLogic: true,
-			mirrorRepo:   true,
 		},
 		{
 			// TODO(sdboyer) is this a problem for enforcing uniqueness? do we
@@ -90,9 +89,9 @@ var pathDeductionFixtures = map[string][]pathDeductionFixture{
 			// need to collapse these extensions?
 			in:           "github.com/sdboyer/gps.git/foo",
 			root:         "github.com/sdboyer/gps.git",
-			mb:           maybeGitSource{url: mkurl("ssh://gitolite@code.uber.internal/github/sdboyer/gps.git")},
+			mb:           maybeGitoliteSource{url: mkurl("ssh://gitolite@code.uber.internal/github/sdboyer/gps.git"),
+				gpath: "github/sdboyer/gps.git", remote:"git@github.com:sdboyer/gps.git", gitoliteURL: mkurl("ssh://gitolite@code.uber.internal/github/sdboyer/gps.git")},
 			runUberLogic: true,
-			mirrorRepo:   true,
 		},
 		{
 			in:   "git@github.com:sdboyer/gps",
@@ -102,9 +101,9 @@ var pathDeductionFixtures = map[string][]pathDeductionFixture{
 		{
 			in:           "git@github.com:sdboyer/gps",
 			root:         "github.com/sdboyer/gps",
-			mb:           maybeGitSource{url: mkurl("ssh://gitolite@code.uber.internal/github/sdboyer/gps")},
+			mb:           maybeGitoliteSource{url: mkurl("ssh://gitolite@code.uber.internal/github/sdboyer/gps"),
+				gpath: "github/sdboyer/gps", remote:"git@github.com:sdboyer/gps", gitoliteURL: mkurl("ssh://gitolite@code.uber.internal/github/sdboyer/gps")},
 			runUberLogic: true,
-			mirrorRepo:   true,
 		},
 		{
 			in:   "https://github.com/sdboyer/gps",
@@ -114,9 +113,9 @@ var pathDeductionFixtures = map[string][]pathDeductionFixture{
 		{
 			in:           "https://github.com/sdboyer/gps",
 			root:         "github.com/sdboyer/gps",
-			mb:           maybeGitSource{url: mkurl("ssh://gitolite@code.uber.internal/github/sdboyer/gps")},
+			mb:           maybeGitoliteSource{url: mkurl("ssh://gitolite@code.uber.internal/github/sdboyer/gps"),
+				gpath: "github/sdboyer/gps", remote:"git@github.com:sdboyer/gps", gitoliteURL: mkurl("ssh://gitolite@code.uber.internal/github/sdboyer/gps")},
 			runUberLogic: true,
-			mirrorRepo:   true,
 		},
 		{
 			in:   "https://github.com/sdboyer/gps/foo/bar",
@@ -126,9 +125,9 @@ var pathDeductionFixtures = map[string][]pathDeductionFixture{
 		{
 			in:           "https://github.com/sdboyer/gps/foo/bar",
 			root:         "github.com/sdboyer/gps",
-			mb:           maybeGitSource{url: mkurl("ssh://gitolite@code.uber.internal/github/sdboyer/gps")},
+			mb:           maybeGitoliteSource{url: mkurl("ssh://gitolite@code.uber.internal/github/sdboyer/gps"),
+				gpath: "github/sdboyer/gps", remote:"git@github.com:sdboyer/gps", gitoliteURL: mkurl("ssh://gitolite@code.uber.internal/github/sdboyer/gps")},
 			runUberLogic: true,
-			mirrorRepo:   true,
 		},
 		{
 			in:   "github.com/sdboyer-/gps/foo",
@@ -143,9 +142,9 @@ var pathDeductionFixtures = map[string][]pathDeductionFixture{
 		{
 			in:           "github.com/sdboyer-/gps/foo",
 			root:         "github.com/sdboyer-/gps",
-			mb:           maybeGitSource{url: mkurl("ssh://gitolite@code.uber.internal/github/sdboyer-/gps")},
+			mb:           maybeGitoliteSource{url: mkurl("ssh://gitolite@code.uber.internal/github/sdboyer-/gps"),
+				gpath: "github/sdboyer-/gps", remote:"git@github.com:sdboyer-/gps", gitoliteURL: mkurl("ssh://gitolite@code.uber.internal/github/sdboyer-/gps")},
 			runUberLogic: true,
-			mirrorRepo:   false,
 		},
 		{
 			in:   "github.com/a/gps/foo",
@@ -160,9 +159,9 @@ var pathDeductionFixtures = map[string][]pathDeductionFixture{
 		{
 			in:           "github.com/a/gps/foo",
 			root:         "github.com/a/gps",
-			mb:           maybeGitSource{url: mkurl("ssh://gitolite@code.uber.internal/github/a/gps")},
+			mb:           maybeGitoliteSource{url: mkurl("ssh://gitolite@code.uber.internal/github/a/gps"),
+				gpath: "github/a/gps", remote:"git@github.com:a/gps", gitoliteURL: mkurl("ssh://gitolite@code.uber.internal/github/a/gps")},
 			runUberLogic: true,
-			mirrorRepo:   false,
 		},
 		// some invalid github username patterns
 		{
@@ -173,7 +172,6 @@ var pathDeductionFixtures = map[string][]pathDeductionFixture{
 			in:           "github.com/-sdboyer/gps/foo",
 			rerr:         errors.New("github.com/-sdboyer/gps/foo is not a valid path for a source on github.com"),
 			runUberLogic: true,
-			mirrorRepo:   true,
 		},
 		{
 			in:   "github.com/sdbo.yer/gps/foo",
@@ -183,7 +181,6 @@ var pathDeductionFixtures = map[string][]pathDeductionFixture{
 			in:           "github.com/sdbo.yer/gps/foo",
 			rerr:         errors.New("github.com/sdbo.yer/gps/foo is not a valid path for a source on github.com"),
 			runUberLogic: true,
-			mirrorRepo:   true,
 		},
 		{
 			in:   "github.com/sdbo_yer/gps/foo",
@@ -193,7 +190,6 @@ var pathDeductionFixtures = map[string][]pathDeductionFixture{
 			in:           "github.com/sdbo_yer/gps/foo",
 			rerr:         errors.New("github.com/sdbo_yer/gps/foo is not a valid path for a source on github.com"),
 			runUberLogic: true,
-			mirrorRepo:   true,
 		},
 		// Regression - gh does allow two-letter usernames
 		{
@@ -209,9 +205,9 @@ var pathDeductionFixtures = map[string][]pathDeductionFixture{
 		{
 			in:           "github.com/kr/pretty",
 			root:         "github.com/kr/pretty",
-			mb:           maybeGitSource{url: mkurl("ssh://gitolite@code.uber.internal/github/kr/pretty")},
+			mb:           maybeGitoliteSource{url: mkurl("ssh://gitolite@code.uber.internal/github/kr/pretty"),
+				gpath: "github/kr/pretty", remote:"git@github.com:kr/pretty", gitoliteURL: mkurl("ssh://gitolite@code.uber.internal/github/kr/pretty")},
 			runUberLogic: true,
-			mirrorRepo:   true,
 		},
 	},
 	"gopkg.in": {
@@ -229,7 +225,6 @@ var pathDeductionFixtures = map[string][]pathDeductionFixture{
 			mb: maybeGopkginSource{opath: "gopkg.in/sdboyer/gps.v0",
 				url: mkurl("https://gopkg.uberinternal.com/sdboyer/gps.v0"), major: 0},
 			runUberLogic:            true,
-			mirrorRepo:              false,
 			gopkgRedirectToGitolite: false,
 		},
 		{
@@ -238,7 +233,6 @@ var pathDeductionFixtures = map[string][]pathDeductionFixture{
 			mb: maybeGopkginSource{opath: "gopkg.in/sdboyer/gps.v0",
 				url: mkurl("ssh://gitolite@code.uber.internal/github/sdboyer/gps"), major: 0},
 			runUberLogic:            true,
-			mirrorRepo:              false,
 			gopkgRedirectToGitolite: true,
 		},
 		{
@@ -255,7 +249,6 @@ var pathDeductionFixtures = map[string][]pathDeductionFixture{
 			mb: maybeGopkginSource{opath: "gopkg.in/sdboyer/gps.v0",
 				url: mkurl("https://gopkg.uberinternal.com/sdboyer/gps.v0"), major: 0},
 			runUberLogic:            true,
-			mirrorRepo:              false,
 			gopkgRedirectToGitolite: false,
 		},
 		{
@@ -264,7 +257,6 @@ var pathDeductionFixtures = map[string][]pathDeductionFixture{
 			mb: maybeGopkginSource{opath: "gopkg.in/sdboyer/gps.v0",
 				url: mkurl("ssh://gitolite@code.uber.internal/github/sdboyer/gps"), major: 0},
 			runUberLogic:            true,
-			mirrorRepo:              false,
 			gopkgRedirectToGitolite: true,
 		},
 		{
@@ -281,7 +273,6 @@ var pathDeductionFixtures = map[string][]pathDeductionFixture{
 			mb: maybeGopkginSource{opath: "gopkg.in/sdboyer/gps.v1",
 				url: mkurl("https://gopkg.uberinternal.com/sdboyer/gps.v1"), major: 1},
 			runUberLogic:            true,
-			mirrorRepo:              false,
 			gopkgRedirectToGitolite: false,
 		},
 		{
@@ -290,7 +281,6 @@ var pathDeductionFixtures = map[string][]pathDeductionFixture{
 			mb: maybeGopkginSource{opath: "gopkg.in/sdboyer/gps.v1",
 				url: mkurl("ssh://gitolite@code.uber.internal/github/sdboyer/gps"), major: 1},
 			runUberLogic:            true,
-			mirrorRepo:              false,
 			gopkgRedirectToGitolite: true,
 		},
 		{
@@ -307,7 +297,6 @@ var pathDeductionFixtures = map[string][]pathDeductionFixture{
 			mb: maybeGopkginSource{opath: "gopkg.in/yaml.v1",
 				url: mkurl("https://gopkg.uberinternal.com/yaml.v1"), major: 1},
 			runUberLogic:            true,
-			mirrorRepo:              false,
 			gopkgRedirectToGitolite: false,
 		},
 		{
@@ -316,7 +305,6 @@ var pathDeductionFixtures = map[string][]pathDeductionFixture{
 			mb: maybeGopkginSource{opath: "gopkg.in/yaml.v1",
 				url: mkurl("ssh://gitolite@code.uber.internal/github/go-yaml/yaml"), major: 1},
 			runUberLogic:            true,
-			mirrorRepo:              false,
 			gopkgRedirectToGitolite: true,
 		},
 		{
@@ -333,7 +321,6 @@ var pathDeductionFixtures = map[string][]pathDeductionFixture{
 			mb: maybeGopkginSource{opath: "gopkg.in/yaml.v1",
 				url: mkurl("https://gopkg.uberinternal.com/yaml.v1"), major: 1},
 			runUberLogic:            true,
-			mirrorRepo:              false,
 			gopkgRedirectToGitolite: false,
 		},
 		{
@@ -342,7 +329,6 @@ var pathDeductionFixtures = map[string][]pathDeductionFixture{
 			mb: maybeGopkginSource{opath: "gopkg.in/yaml.v1",
 				url: mkurl("ssh://gitolite@code.uber.internal/github/go-yaml/yaml"), major: 1},
 			runUberLogic:            true,
-			mirrorRepo:              false,
 			gopkgRedirectToGitolite: true,
 		},
 		{
@@ -359,7 +345,6 @@ var pathDeductionFixtures = map[string][]pathDeductionFixture{
 			mb: maybeGopkginSource{opath: "gopkg.in/inf.v0",
 				url: mkurl("https://gopkg.uberinternal.com/inf.v0"), major: 0},
 			runUberLogic:            true,
-			mirrorRepo:              false,
 			gopkgRedirectToGitolite: false,
 		},
 		{
@@ -368,7 +353,6 @@ var pathDeductionFixtures = map[string][]pathDeductionFixture{
 			mb: maybeGopkginSource{opath: "gopkg.in/inf.v0",
 				url: mkurl("ssh://gitolite@code.uber.internal/github/go-inf/inf"), major: 0},
 			runUberLogic:            true,
-			mirrorRepo:              false,
 			gopkgRedirectToGitolite: true,
 		},
 		{
@@ -380,14 +364,12 @@ var pathDeductionFixtures = map[string][]pathDeductionFixture{
 			in:                      "gopkg.in/yaml.v1.2",
 			rerr:                    errors.New("gopkg.in/yaml.v1.2 is not a valid import path; gopkg.in only allows major versions (\"v1\" instead of \"v1.2\")"),
 			runUberLogic:            true,
-			mirrorRepo:              false,
 			gopkgRedirectToGitolite: false,
 		},
 		{
 			in:                      "gopkg.in/yaml.v1.2",
 			rerr:                    errors.New("gopkg.in/yaml.v1.2 is not a valid import path; gopkg.in only allows major versions (\"v1\" instead of \"v1.2\")"),
 			runUberLogic:            true,
-			mirrorRepo:              false,
 			gopkgRedirectToGitolite: true,
 		},
 	},
@@ -671,7 +653,8 @@ var pathDeductionFixtures = map[string][]pathDeductionFixture{
 		{
 			in:           "golang.org/x/exp",
 			root:         "golang.org/x/exp",
-			mb:           maybeGitSource{url: mkurl("ssh://gitolite@code.uber.internal/googlesource/exp")},
+			mb:           maybeGitoliteSource{url: mkurl("ssh://gitolite@code.uber.internal/googlesource/exp"),
+				gpath: "googlesource/exp", remote:"https://go.googlesource.com/exp", gitoliteURL: mkurl("ssh://gitolite@code.uber.internal/googlesource/exp")},
 			runUberLogic: true,
 		},
 		{
@@ -682,7 +665,8 @@ var pathDeductionFixtures = map[string][]pathDeductionFixture{
 		{
 			in:           "golang.org/x/exp/inotify",
 			root:         "golang.org/x/exp",
-			mb:           maybeGitSource{url: mkurl("ssh://gitolite@code.uber.internal/googlesource/exp")},
+			mb:           maybeGitoliteSource{url: mkurl("ssh://gitolite@code.uber.internal/googlesource/exp"),
+				gpath: "googlesource/exp", remote:"https://go.googlesource.com/exp", gitoliteURL: mkurl("ssh://gitolite@code.uber.internal/googlesource/exp")},
 			runUberLogic: true,
 		},
 		{
@@ -693,25 +677,29 @@ var pathDeductionFixtures = map[string][]pathDeductionFixture{
 		{
 			in:           "golang.org/x/net/html",
 			root:         "golang.org/x/net",
-			mb:           maybeGitSource{url: mkurl("ssh://gitolite@code.uber.internal/googlesource/net")},
+			mb:           maybeGitoliteSource{url: mkurl("ssh://gitolite@code.uber.internal/googlesource/net"),
+				gpath: "googlesource/net", remote:"https://go.googlesource.com/net", gitoliteURL: mkurl("ssh://gitolite@code.uber.internal/googlesource/net")},
 			runUberLogic: true,
 		},
 		{
 			in:           "golang.org/x/mobile",
 			root:         "golang.org/x/mobile",
-			mb:           maybeGitSource{url: mkurl("ssh://gitolite@code.uber.internal/googlesource/mobile")},
+			mb:           maybeGitoliteSource{url: mkurl("ssh://gitolite@code.uber.internal/googlesource/mobile"),
+				gpath: "googlesource/mobile", remote:"https://go.googlesource.com/mobile", gitoliteURL: mkurl("ssh://gitolite@code.uber.internal/googlesource/mobile")},
 			runUberLogic: true,
 		},
 		{
 			in:           "golang.org/x/mobile/app",
 			root:         "golang.org/x/mobile",
-			mb:           maybeGitSource{url: mkurl("ssh://gitolite@code.uber.internal/googlesource/mobile")},
+			mb:           maybeGitoliteSource{url: mkurl("ssh://gitolite@code.uber.internal/googlesource/mobile"),
+				gpath: "googlesource/mobile", remote:"https://go.googlesource.com/mobile", gitoliteURL: mkurl("ssh://gitolite@code.uber.internal/googlesource/mobile")},
 			runUberLogic: true,
 		},
 		{
 			in:           "golang.org/x/sys/unix",
 			root:         "golang.org/x/sys",
-			mb:           maybeGitSource{url: mkurl("ssh://gitolite@code.uber.internal/googlesource/sys")},
+			mb:           maybeGitoliteSource{url: mkurl("ssh://gitolite@code.uber.internal/googlesource/sys"),
+				gpath: "googlesource/sys", remote:"https://go.googlesource.com/sys", gitoliteURL: mkurl("ssh://gitolite@code.uber.internal/googlesource/sys")},
 			runUberLogic: true,
 		},
 	},
@@ -720,17 +708,20 @@ var pathDeductionFixtures = map[string][]pathDeductionFixture{
 		{
 			in:   "code.uber.internal/devexp/version-set-poc.git",
 			root: "code.uber.internal/devexp/version-set-poc.git",
-			mb:   maybeGitSource{url: mkurl("ssh://gitolite@code.uber.internal/devexp/version-set-poc.git")},
+			mb:   maybeGitoliteSource{url: mkurl("ssh://gitolite@code.uber.internal/devexp/version-set-poc.git"),
+				gpath: "", remote:"", gitoliteURL: mkurl("ssh://gitolite@code.uber.internal/devexp/version-set-poc.git")},
 		},
 		{
 			in:   "code.uber.internal/devexp/crashagg.git/crash",
 			root: "code.uber.internal/devexp/crashagg.git",
-			mb:   maybeGitSource{url: mkurl("ssh://gitolite@code.uber.internal/devexp/crashagg.git")},
+			mb:   maybeGitoliteSource{url: mkurl("ssh://gitolite@code.uber.internal/devexp/crashagg.git"),
+				gpath: "", remote:"", gitoliteURL: mkurl("ssh://gitolite@code.uber.internal/devexp/crashagg.git")},
 		},
 		{
 			in:   "code.uber.internal/devexp/crashagg",
 			root: "code.uber.internal/devexp/crashagg",
-			mb:   maybeGitSource{url: mkurl("ssh://gitolite@code.uber.internal/devexp/crashagg")},
+			mb:   maybeGitoliteSource{url: mkurl("ssh://gitolite@code.uber.internal/devexp/crashagg"),
+				gpath: "", remote:"", gitoliteURL: mkurl("ssh://gitolite@code.uber.internal/devexp/crashagg")},
 		},
 	},
 }
@@ -759,7 +750,7 @@ func TestDeduceFromPath(t *testing.T) {
 				deducer = vcsExtensionDeducer{regexp: vcsExtensionRegex}
 			case "code.uber.internal":
 				deducer = gitoliteDeducer{}
-			case "golang":
+			case "golang.org":
 				deducer = golangDeducer{regexp: golangRegex}
 			default:
 				// Should just be the vanity imports, which we do elsewhere
@@ -779,6 +770,9 @@ func TestDeduceFromPath(t *testing.T) {
 					return buf.String()
 				case maybeGitSource:
 					return fmt.Sprintf("%T: %s", tmb, ufmt(tmb.url))
+				case maybeGitoliteSource:
+					return fmt.Sprintf("%T: url:%s gpath:%s remote:%s gitoliteURL:%s", tmb, ufmt(tmb.url),
+						tmb.gpath, tmb.remote, ufmt(tmb.gitoliteURL))
 				case maybeBzrSource:
 					return fmt.Sprintf("%T: %s", tmb, ufmt(tmb.url))
 				case maybeHgSource:
@@ -794,12 +788,8 @@ func TestDeduceFromPath(t *testing.T) {
 			for _, fix := range fixtures {
 				fix := fix
 				t.Run(fix.in, func(t *testing.T) {
-					if fix.runUberLogic == false && fix.mirrorRepo == false && fix.gopkgRedirectToGitolite == false {
+					if fix.runUberLogic == false && fix.gopkgRedirectToGitolite == false {
 						t.Parallel()
-					}
-
-					if fix.mirrorRepo == false {
-						defer uber.SetEnvVar(uber.UberDisableGitoliteAutocreation, "yes")()
 					}
 
 					if fix.runUberLogic == true {
@@ -948,6 +938,9 @@ func TestVanityDeductionSchemeMismatch(t *testing.T) {
 // more useful string for debugging than fmt's struct printer
 func ufmt(u *url.URL) string {
 	var user, pass interface{}
+	if u == nil {
+		return ""
+	}
 	if u.User != nil {
 		user = u.User.Username()
 		if p, ok := u.User.Password(); ok {

@@ -85,6 +85,7 @@ var (
 	apacheRegex       = regexp.MustCompile(`^(?P<root>git\.apache\.org(/[a-z0-9_.\-]+\.git))((?:/[A-Za-z0-9_.\-]+)*)$`)
 	vcsExtensionRegex = regexp.MustCompile(`^(?P<root>([a-z0-9.\-]+\.)+[a-z0-9.\-]+(:[0-9]+)?/[A-Za-z0-9_.\-/~]*?\.(?P<vcs>bzr|git|hg|svn))((?:/[A-Za-z0-9_.\-]+)*)$`)
 	golangRegex       = regexp.MustCompile("^golang.org/x/([^/]+)")
+	googlesourceRegex = regexp.MustCompile("^go.googlesource.com/([^/]+)")
 )
 
 // Other helper regexes
@@ -105,6 +106,7 @@ func pathDeducerTrie() *deducerTrie {
 	dxt.Insert("git.apache.org/", apacheDeducer{regexp: apacheRegex})
 	dxt.Insert("code.uber.internal/", gitoliteDeducer{})
 	dxt.Insert("golang.org/", golangDeducer{regexp: golangRegex})
+	dxt.Insert("go.googlesource.com/", golangDeducer{regexp: googlesourceRegex})
 
 	return dxt
 }
@@ -121,11 +123,11 @@ func (m gitoliteDeducer) deduceRoot(path string) (string, error) {
 }
 
 func (m gitoliteDeducer) deduceSource(path string, u *url.URL) (maybeSource, error) {
-	u, err := uber.GetGitoliteUrlForRewriter(path, "code.uber.internal")
+	u, gpath, remote, gitoliteURL, err := uber.GetGitoliteUrlForRewriter(path, "code.uber.internal")
 	if err != nil {
 		return nil, err
 	}
-	return maybeGitSource{url: u}, nil
+	return maybeGitoliteSource{url:u, gpath:gpath, remote:remote, gitoliteURL:gitoliteURL}, nil
 }
 
 type golangDeducer struct {
@@ -150,9 +152,9 @@ func (m golangDeducer) deduceSource(path string, u *url.URL) (maybeSource, error
 	inTest := flag.Lookup("test.v") != nil
 	if (os.Getenv(uber.TurnOffUberDeduceLogicEnv) == "" && !inTest) ||
 		(RunUberDeduceLogicForTest == true && inTest) {
-		golangUrl, err := uber.GetGitoliteUrlForRewriter(path, "golang.org")
+		golangUrl, gpath, remote, gitoliteURL, err := uber.GetGitoliteUrlForRewriter(path, "golang.org")
 		if err == nil {
-			return maybeGitSource{url: golangUrl}, nil
+			return maybeGitoliteSource{url:golangUrl, gpath:gpath, remote:remote, gitoliteURL:gitoliteURL}, nil
 		}
 	}
 
@@ -193,10 +195,10 @@ func (m githubDeducer) deduceSource(path string, u *url.URL) (maybeSource, error
 	inTest := flag.Lookup("test.v") != nil
 	if (os.Getenv(uber.TurnOffUberDeduceLogicEnv) == "" && !inTest) ||
 		(RunUberDeduceLogicForTest == true && inTest) {
-		uberUrl, err := uber.GetGitoliteUrlForRewriter(path, "github.com")
+		uberUrl, gpath, remote, gitoliteURL, err := uber.GetGitoliteUrlForRewriter(path, "github.com")
 		if err == nil {
 			u = uberUrl
-			return maybeGitSource{url: u}, nil
+			return maybeGitoliteSource{url:u, gpath:gpath, remote:remote, gitoliteURL:gitoliteURL}, nil
 		} // if there is an error, continue to pull it directly from github
 	}
 	// END UBER PATCH
@@ -378,7 +380,7 @@ func (m gopkginDeducer) deduceSource(p string, u *url.URL) (maybeSource, error) 
 	inTest := flag.Lookup("test.v") != nil
 	if (os.Getenv(uber.TurnOffUberDeduceLogicEnv) == "" && !inTest) ||
 		(RunUberDeduceLogicForTest == true && inTest) {
-		uberUrl, err := uber.GetGitoliteUrlForRewriter(p, "gopkg.in")
+		uberUrl, _, _, _, err := uber.GetGitoliteUrlForRewriter(p, "gopkg.in")
 		if err == nil {
 			u = uberUrl
 			return maybeGopkginSource{

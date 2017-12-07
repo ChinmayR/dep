@@ -13,6 +13,7 @@ import (
 
 	"github.com/Masterminds/vcs"
 	"github.com/pkg/errors"
+	"github.com/golang/dep/uber"
 )
 
 // A maybeSource represents a set of information that, given some
@@ -70,6 +71,61 @@ func (mbs maybeSources) possibleURLs() []*url.URL {
 // sourceCachePath returns a url-sanitized source cache dir path.
 func sourceCachePath(cacheDir, sourceURL string) string {
 	return filepath.Join(cacheDir, "sources", sanitizer.Replace(sourceURL))
+}
+
+// used for trying to pull gitolite sources, same functionality as git sources
+// with the addition of cloning external repos on gitolite and trying again
+// if it fails
+type maybeGitoliteSource struct {
+	url *url.URL
+	gpath string
+	remote string
+	gitoliteURL *url.URL
+}
+
+func (m maybeGitoliteSource) try(ctx context.Context, cachedir string, c singleSourceCache, superv *supervisor) (source, sourceState, error) {
+	ustr := m.url.String()
+
+	r, err := newCtxRepo(vcs.Git, ustr, sourceCachePath(cachedir, ustr))
+	if err != nil {
+		return nil, 0, unwrapVcsErr(err)
+	}
+
+	src := &gitSource{
+		baseVCSSource: baseVCSSource{
+			repo: r,
+		},
+	}
+
+	// Pinging invokes the same action as calling listVersions, so just do that.
+	var vl []PairedVersion
+	tryListVersions := func(ctx context.Context) error {
+		var err error
+		vl, err = src.listVersions(ctx)
+		return errors.Wrapf(err, "remote repository at %s does not exist, or is inaccessible", ustr)
+	}
+
+	if err := superv.do(ctx, "git:lv:maybe", ctListVersions, tryListVersions); err != nil {
+		mirrorErr := uber.CheckAndMirrorRepo(new(uber.CommandExecutor), m.gpath, m.remote, m.gitoliteURL)
+		if mirrorErr == nil {
+			if err2 := superv.do(ctx, "git:lv:maybe", ctListVersions, tryListVersions); err2 != nil {
+				return nil, 0, errors.Wrapf(err, "mirrored repo but repository at %s still does not exist, or is inaccessible", ustr)
+			}
+		}
+	}
+
+	c.setVersionMap(vl)
+	state := sourceIsSetUp | sourceExistsUpstream | sourceHasLatestVersionList
+
+	if r.CheckLocal() {
+		state |= sourceExistsLocally
+	}
+
+	return src, state, nil
+}
+
+func (m maybeGitoliteSource) possibleURLs() []*url.URL {
+	return []*url.URL{m.url}
 }
 
 type maybeGitSource struct {
