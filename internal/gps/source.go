@@ -10,6 +10,8 @@ import (
 	"log"
 	"sync"
 
+	"time"
+
 	"github.com/golang/dep/internal/gps/pkgtree"
 	"github.com/pkg/errors"
 )
@@ -51,9 +53,19 @@ type sourceCoordinator struct {
 	deducer    deducer
 	cachedir   string
 	logger     *log.Logger
+	diskCache  *boltCache
 }
 
 func newSourceCoordinator(superv *supervisor, deducer deducer, cachedir string, logger *log.Logger) *sourceCoordinator {
+	// the cache is never invalidated since the data cached is keyed
+	// by project and revision, only the list versions is a plain map
+	// but that is loaded and stored in memory with each run regardless
+	epoch := time.Now().AddDate(-1, 0, 0).Unix()
+	boltCache, err := newBoltCache(cachedir, epoch, logger)
+	if err != nil {
+		logger.Fatalf("%s, failed to create new bolt cache", err.Error())
+	}
+
 	return &sourceCoordinator{
 		supervisor: superv,
 		deducer:    deducer,
@@ -62,10 +74,13 @@ func newSourceCoordinator(superv *supervisor, deducer deducer, cachedir string, 
 		srcs:       make(map[string]*sourceGateway),
 		nameToURL:  make(map[string]string),
 		protoSrcs:  make(map[string][]srcReturnChans),
+		diskCache:  boltCache,
 	}
 }
 
-func (sc *sourceCoordinator) close() {}
+func (sc *sourceCoordinator) close() {
+	sc.diskCache.close()
+}
 
 func (sc *sourceCoordinator) getSourceGatewayFor(ctx context.Context, id ProjectIdentifier) (*sourceGateway, error) {
 	if err := sc.supervisor.ctx.Err(); err != nil {
@@ -190,7 +205,10 @@ func (sc *sourceCoordinator) getSourceGatewayFor(ctx context.Context, id Project
 	}
 	sc.srcmut.RUnlock()
 
-	srcGate = newSourceGateway(pd.mb, sc.supervisor, sc.cachedir)
+	srcGate, err = newSourceGateway(pd.mb, sc.supervisor, sc.cachedir, sc.diskCache, id)
+	if err != nil {
+		return nil, errors.Wrap(err, "failed to create new source gateway")
+	}
 
 	// The normalized name is usually different from the source URL- e.g.
 	// github.com/sdboyer/gps vs. https://github.com/sdboyer/gps. But it's
@@ -257,15 +275,20 @@ type sourceGateway struct {
 	suprvsr  *supervisor
 }
 
-func newSourceGateway(maybe maybeSource, superv *supervisor, cachedir string) *sourceGateway {
+func newSourceGateway(maybe maybeSource, superv *supervisor, cachedir string, boltCache *boltCache, pi ProjectIdentifier) (*sourceGateway, error) {
 	sg := &sourceGateway{
 		maybe:    maybe,
 		cachedir: cachedir,
 		suprvsr:  superv,
 	}
-	sg.cache = sg.createSingleSourceCache()
+	memCache := sg.createSingleSourceCache()
 
-	return sg
+	sg.cache = &multiCache{
+		mem:  memCache,
+		disk: boltCache.newSingleSourceCache(pi),
+	}
+
+	return sg, nil
 }
 
 func (sg *sourceGateway) syncLocal(ctx context.Context) error {
