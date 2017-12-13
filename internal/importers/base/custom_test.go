@@ -76,6 +76,27 @@ func TestCustomConfig_Parse(t *testing.T) {
 			impPkgs: nil,
 			wantErr: true,
 		},
+		"source override": {
+			config: CustomConfig{
+				Overrides: []overridePackage{
+					{
+						Name:      importertest.Project,
+						Reference: importertest.V1Constraint,
+						Source:    "overrideSource",
+					},
+				},
+			},
+			impPkgs: []ImportedPackage{
+				{
+					Name:           importertest.Project,
+					LockHint:       "",
+					Source:         "overrideSource",
+					ConstraintHint: importertest.V1Constraint,
+					IsOverride:     true,
+				},
+			},
+			wantErr: false,
+		},
 	}
 
 	for name, testCase := range testCases {

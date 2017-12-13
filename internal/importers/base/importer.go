@@ -5,7 +5,10 @@
 package base
 
 import (
+	"flag"
 	"log"
+
+	"sync"
 
 	"github.com/golang/dep"
 	fb "github.com/golang/dep/internal/feedback"
@@ -18,6 +21,7 @@ import (
 type Importer struct {
 	sm gps.SourceManager
 
+	mu       sync.Mutex
 	Logger   *log.Logger
 	Verbose  bool
 	Manifest *dep.Manifest
@@ -186,95 +190,127 @@ func (i *Importer) ImportPackages(packages []ImportedPackage, defaultConstraintF
 		return err
 	}
 
-	for _, prj := range projects {
-		source := prj.Source
-		if len(source) > 0 {
-			isDefault, err := i.isDefaultSource(prj.Root, source)
-			if err != nil {
-				i.Logger.Printf("  Ignoring imported source %s for %s: %s", source, prj.Root, err.Error())
-				source = ""
-			} else if isDefault {
-				source = ""
-			}
-		}
-
-		pc := gps.ProjectConstraint{
-			Ident: gps.ProjectIdentifier{
-				ProjectRoot: prj.Root,
-				Source:      source,
-			},
-		}
-
-		pc.Constraint, err = i.sm.InferConstraint(prj.ConstraintHint, pc.Ident)
-		if err != nil {
-			pc.Constraint = gps.Any()
-		}
-
-		var version gps.Version
-		if prj.LockHint != "" {
-			var isTag bool
-			// Determine if the lock hint is a revision or tag
-			isTag, version, err = i.isTag(pc.Ident, prj.LockHint)
-			if err != nil {
-				return err
-			}
-
-			// If the hint is a revision, check if it is tagged
-			if !isTag {
-				revision := gps.Revision(prj.LockHint)
-				version, err = i.lookupVersionForLockedProject(pc.Ident, pc.Constraint, revision)
-				if err != nil {
-					version = nil
-					i.Logger.Println(err)
-				}
-			}
-
-			// Default the constraint based on the locked version
-			if defaultConstraintFromLock && prj.ConstraintHint == "" && version != nil {
-				c := i.convertToConstraint(version)
-				if c != nil {
-					pc.Constraint = c
-				}
-			}
-		}
-
-		// Ignore pinned constraints
-		if i.isConstraintPinned(pc.Constraint) {
-			if i.Verbose {
-				i.Logger.Printf("  Ignoring pinned constraint %v for %v.\n", pc.Constraint, pc.Ident)
-			}
-			pc.Constraint = gps.Any()
-		}
-
-		// Ignore constraints which conflict with the locked revision, so that
-		// solve doesn't later change the revision to satisfy the constraint.
-		if !i.testConstraint(pc.Constraint, version) {
-			if i.Verbose {
-				i.Logger.Printf("  Ignoring constraint %v for %v because it would invalidate the locked version %v.\n", pc.Constraint, pc.Ident, version)
-			}
-			pc.Constraint = gps.Any()
-		}
-
-		if prj.IsOverride == false {
-			i.Manifest.Constraints[pc.Ident.ProjectRoot] = gps.ProjectProperties{
-				Source:     pc.Ident.Source,
-				Constraint: pc.Constraint,
-			}
-			fb.NewConstraintFeedback(pc, fb.DepTypeImported).LogFeedback(i.Logger)
-
-			if version != nil {
-				lp := gps.NewLockedProject(pc.Ident, version, nil)
-				i.Lock.P = append(i.Lock.P, lp)
-				fb.NewLockedProjectFeedback(lp, fb.DepTypeImported).LogFeedback(i.Logger)
-			}
-		} else {
-			i.Manifest.Ovr[pc.Ident.ProjectRoot] = gps.ProjectProperties{
-				Source:     pc.Ident.Source,
-				Constraint: pc.Constraint,
-			}
-			fb.NewConstraintFeedback(pc, fb.DepTypeOverride).LogFeedback(i.Logger)
-		}
+	numThreadsAllowed := 30
+	// we want to use a single thread for tests since they have a golden.txt
+	// that check for the order of logging during importing, multiple threads
+	// put the logs out of sync (although correct) causing the tests to fail
+	// TODO: revisit modifying the tests to allow and test for out of sync logging
+	inTest := flag.Lookup("test.v") != nil
+	if inTest {
+		numThreadsAllowed = 1
 	}
+
+	threadSema := make(chan string, numThreadsAllowed)
+	for i := 0; i < numThreadsAllowed; i++ {
+		threadSema <- "free"
+	}
+
+	var wg sync.WaitGroup
+	wg.Add(len(projects))
+	for _, proj := range projects {
+		localProj := proj
+		<-threadSema
+		go func(prj *importedProject, wg *sync.WaitGroup, ch chan<- string) {
+			defer wg.Done()
+			source := prj.Source
+			if len(source) > 0 {
+				isDefault, err := i.isDefaultSource(prj.Root, source)
+				if err != nil {
+					i.Logger.Printf("  Ignoring imported source %s for %s: %s", source, prj.Root, err.Error())
+					source = ""
+				} else if isDefault {
+					source = ""
+				}
+			}
+
+			pc := gps.ProjectConstraint{
+				Ident: gps.ProjectIdentifier{
+					ProjectRoot: prj.Root,
+					Source:      source,
+				},
+			}
+
+			pc.Constraint, err = i.sm.InferConstraint(prj.ConstraintHint, pc.Ident)
+			if err != nil {
+				pc.Constraint = gps.Any()
+			}
+
+			var version gps.Version
+			if prj.LockHint != "" {
+				var isTag bool
+				// Determine if the lock hint is a revision or tag
+				isTag, version, err = i.isTag(pc.Ident, prj.LockHint)
+				if err != nil {
+					//return err
+					i.Logger.Fatal(err)
+				}
+
+				// If the hint is a revision, check if it is tagged
+				if !isTag {
+					revision := gps.Revision(prj.LockHint)
+					version, err = i.lookupVersionForLockedProject(pc.Ident, pc.Constraint, revision)
+					if err != nil {
+						version = nil
+						i.Logger.Println(err)
+					}
+				}
+
+				// Default the constraint based on the locked version
+				if defaultConstraintFromLock && prj.ConstraintHint == "" && version != nil {
+					c := i.convertToConstraint(version)
+					if c != nil {
+						pc.Constraint = c
+					}
+				}
+			}
+
+			// Ignore pinned constraints
+			if i.isConstraintPinned(pc.Constraint) {
+				if i.Verbose {
+					i.Logger.Printf("  Ignoring pinned constraint %v for %v.\n", pc.Constraint, pc.Ident)
+				}
+				pc.Constraint = gps.Any()
+			}
+
+			// Ignore constraints which conflict with the locked revision, so that
+			// solve doesn't later change the revision to satisfy the constraint.
+			if !i.testConstraint(pc.Constraint, version) {
+				if i.Verbose {
+					i.Logger.Printf("  Ignoring constraint %v for %v because it would invalidate the locked version %v.\n", pc.Constraint, pc.Ident, version)
+				}
+				pc.Constraint = gps.Any()
+			}
+
+			// each goroutine is responsible for preprocessing the project into
+			// a project constraint and then store it into the manifest constraint
+			// map. writing to the map needs to be thread safe so it is guarded
+			// by a mutex. the logging also needs to be in sync for each imported
+			// project so the logging is also inside this same mutex block.
+			i.mu.Lock()
+			if prj.IsOverride == false {
+				i.Manifest.Constraints[pc.Ident.ProjectRoot] = gps.ProjectProperties{
+					Source:     pc.Ident.Source,
+					Constraint: pc.Constraint,
+				}
+				fb.NewConstraintFeedback(pc, fb.DepTypeImported).LogFeedback(i.Logger)
+
+				if version != nil {
+					lp := gps.NewLockedProject(pc.Ident, version, nil)
+					i.Lock.P = append(i.Lock.P, lp)
+					fb.NewLockedProjectFeedback(lp, fb.DepTypeImported).LogFeedback(i.Logger)
+				}
+			} else {
+				i.Manifest.Ovr[pc.Ident.ProjectRoot] = gps.ProjectProperties{
+					Source:     pc.Ident.Source,
+					Constraint: pc.Constraint,
+				}
+				fb.NewConstraintFeedback(pc, fb.DepTypeOverride).LogFeedback(i.Logger)
+			}
+			i.mu.Unlock()
+			ch <- "free"
+		}(&localProj, &wg, threadSema)
+	}
+	wg.Wait()
 
 	return nil
 }

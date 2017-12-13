@@ -14,6 +14,9 @@ const (
 	// ProjectSrc is an alternate source for the imported project.
 	ProjectSrc = "https://github.com/carolynvs/deptest-importers.git"
 
+	// ProjectSrc2 is an alternate source for the imported project.
+	ProjectSrc2 = "https://github.com/carolynvs/deptest-importers2.git"
+
 	// ProjectSrcInvalid is an alternate invalid source for the imported project.
 	ProjectSrcInvalid = "https://github.com/carolynvs/invalid/deptest-importers.git"
 

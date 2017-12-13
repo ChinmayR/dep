@@ -12,6 +12,8 @@ import (
 
 	"time"
 
+	"flag"
+
 	"github.com/golang/dep/internal/gps/pkgtree"
 	"github.com/pkg/errors"
 )
@@ -283,9 +285,17 @@ func newSourceGateway(maybe maybeSource, superv *supervisor, cachedir string, bo
 	}
 	memCache := sg.createSingleSourceCache()
 
+	// do not use a disk cache if we are running as part of a test,
+	// but this will use a disk cache for an integration test
+	diskCache := boltCache.newSingleSourceCache(pi)
+	inTest := flag.Lookup("test.v") != nil
+	if inTest {
+		diskCache = discardCache{}
+	}
+
 	sg.cache = &multiCache{
 		mem:  memCache,
-		disk: boltCache.newSingleSourceCache(pi),
+		disk: diskCache,
 	}
 
 	return sg, nil

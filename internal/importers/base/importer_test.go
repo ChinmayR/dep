@@ -509,6 +509,37 @@ func TestBaseImporter_ImportProjects(t *testing.T) {
 				},
 			},
 		},
+		"conflicting sources overriden by override source": {
+			importertest.TestCase{
+				WantOverride:   "master",
+				WantVersion:    "master",
+				WantRevision:   "",
+				WantSourceRepo: importertest.ProjectSrc,
+			},
+			[]ImportedPackage{
+				{
+					Name:           importertest.Project,
+					LockHint:       "",
+					Source:         importertest.ProjectSrcInvalid,
+					ConstraintHint: importertest.V2Branch,
+					IsOverride:     false,
+				},
+				{
+					Name:           importertest.Project,
+					LockHint:       "",
+					Source:         importertest.ProjectSrcInvalid,
+					ConstraintHint: importertest.V2Branch,
+					IsOverride:     false,
+				},
+				{
+					Name:           importertest.Project,
+					LockHint:       "",
+					Source:         importertest.ProjectSrc,
+					ConstraintHint: "master",
+					IsOverride:     true,
+				},
+			},
+		},
 	}
 
 	for name, tc := range testcases {

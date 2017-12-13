@@ -10,7 +10,7 @@ import (
 	"github.com/pkg/errors"
 )
 
-const CustomConfigName = "CConfig.yaml"
+const CustomConfigName = "DepConfig.yaml"
 
 type CustomConfig struct {
 	Overrides []overridePackage `yaml:"override"`
@@ -19,6 +19,7 @@ type CustomConfig struct {
 type overridePackage struct {
 	Name      string `yaml:"package"`
 	Reference string `yaml:"version"`
+	Source    string `yaml:"source"`
 }
 
 func (i *Importer) ReadCustomConfig(dir string) ([]ImportedPackage, error) {
@@ -36,6 +37,7 @@ func (i *Importer) ReadCustomConfig(dir string) ([]ImportedPackage, error) {
 	if err != nil {
 		return nil, errors.Wrapf(err, "unable to read %s", y)
 	}
+	i.Logger.Println(string(yb))
 	customConfig := CustomConfig{}
 	err = yaml.Unmarshal(yb, &customConfig)
 	if err != nil {
@@ -57,6 +59,7 @@ func ParseConfig(config CustomConfig) ([]ImportedPackage, error) {
 		impPkgs = append(impPkgs, ImportedPackage{
 			Name:           pkg.Name,
 			ConstraintHint: pkg.Reference,
+			Source:         pkg.Source,
 			IsOverride:     true,
 		})
 		pkgSeen[pkg.Name] = true

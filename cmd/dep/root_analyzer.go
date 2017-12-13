@@ -150,7 +150,7 @@ func (a *rootAnalyzer) DeriveManifestAndLock(dir string, pr gps.ProjectRoot) (gp
 		// The assignment back to an interface prevents interface-based nil checks from failing later
 		var manifest gps.Manifest = gps.SimpleManifest{}
 		var lock gps.Lock
-		im, il, err := a.importManifestAndLock(dir, pr, true)
+		im, il, err := a.importManifestAndLock(dir, pr, false)
 		if im != nil {
 			manifest = im
 		}
