@@ -159,24 +159,13 @@ func (cmd *ensureCommand) Run(ctx *dep.Ctx, args []string) error {
 	}
 
 	tags := uber.GetRepoTagFromRoot(ctx.WorkingDir)
-	name := cmd.Name()
-	if cmd.add {
-		name = name + "-add"
-	}
-	if cmd.update {
-		name = name + "-update"
-	}
-	if cmd.dryRun {
-		name = name + "-dry-run"
-	}
-	if cmd.noVendor {
-		name = name + "-no-vendor"
-	}
-	if cmd.vendorOnly {
-		name = name + "-vendor-only"
-	}
+	tags["add"] = strconv.FormatBool(cmd.add)
+	tags["update"] = strconv.FormatBool(cmd.update)
+	tags["dryrun"] = strconv.FormatBool(cmd.dryRun)
+	tags["novendor"] = strconv.FormatBool(cmd.noVendor)
+	tags["vendoronly"] = strconv.FormatBool(cmd.vendorOnly)
 	tags["args"] = strconv.Itoa(len(args))
-	defer uber.Instrument(name, tags)()
+	defer uber.Instrument(cmd.Name(), tags)()
 
 	if err := cmd.validateFlags(); err != nil {
 		return err

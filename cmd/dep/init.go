@@ -10,6 +10,7 @@ import (
 	"log"
 	"os"
 	"path/filepath"
+	"strconv"
 	"time"
 
 	"github.com/golang/dep"
@@ -90,11 +91,8 @@ func (cmd *initCommand) Run(ctx *dep.Ctx, args []string) error {
 	}
 
 	tags := uber.GetRepoTagFromRoot(root)
-	name := cmd.Name()
-	if cmd.skipTools {
-		name = name + "-skip-tools"
-	}
-	defer uber.Instrument(name, tags)()
+	tags["skiptools"] = strconv.FormatBool(cmd.skipTools)
+	defer uber.Instrument(cmd.Name(), tags)()
 
 	var err error
 	p := new(dep.Project)
