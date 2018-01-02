@@ -58,6 +58,7 @@ func (c *Config) Run() (exitCode int) {
 	// Build the list of available commands.
 	commands := []command{
 		&initCommand{},
+		&monorepoCommand{},
 		&statusCommand{},
 		&ensureCommand{},
 		&hashinCommand{},

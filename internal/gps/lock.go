@@ -8,6 +8,8 @@ import (
 	"bytes"
 	"fmt"
 	"sort"
+
+	"github.com/pkg/errors"
 )
 
 // Lock represents data from a lock file (or however the implementing tool
@@ -197,6 +199,34 @@ func (lp LockedProject) Eq(lp2 LockedProject) bool {
 //  * The slice is not a copy. If you need to modify it, copy it first.
 func (lp LockedProject) Packages() []string {
 	return lp.pkgs
+}
+
+// OverrideFrom takes info from the other lock and adds to the target lock, replacing version and revision constraints and merging packages.
+func (lp *LockedProject) OverrideFrom(l LockedProject) error {
+	if lp.pi != l.pi {
+		return errors.New(fmt.Sprintf("Project identifier mismatch between target: %v and destination: %v", lp.pi, l.pi))
+	}
+	// Copy version and revision info.
+	lp.v = l.v
+	lp.r = l.r
+	// Now add all new packages.
+	lp.MergePackages(l)
+	return nil
+}
+
+// Merges all packages that are missing in the target lock.
+func (lp *LockedProject) MergePackages(l LockedProject) {
+	for _, pkg := range l.pkgs {
+		alreadyExists := false
+		for _, lpkg := range lp.pkgs {
+			if lpkg == pkg {
+				alreadyExists = true
+			}
+		}
+		if !alreadyExists {
+			lp.pkgs = append(lp.pkgs, pkg)
+		}
+	}
 }
 
 func (lp LockedProject) String() string {

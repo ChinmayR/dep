@@ -170,6 +170,47 @@ func (c *Ctx) LoadProject() (*Project, error) {
 	return p, nil
 }
 
+// ReadManifestAndLock parses and returns manifest at lock if they exist at the location defined by path.
+func (c *Ctx) ReadManifestAndLock(path string) (*Manifest, *Lock, error) {
+	mp := filepath.Join(path, ManifestName)
+	mf, err := os.Open(mp)
+	if err != nil {
+		if os.IsNotExist(err) {
+			return nil, nil, errors.Errorf("no %v found in project root %v", ManifestName, path)
+		}
+		// Unable to read the manifest file
+		return nil, nil, err
+	}
+	defer mf.Close()
+
+	var warns []error
+	manifest, warns, err := readManifest(mf)
+	for _, warn := range warns {
+		c.Err.Printf("dep: WARNING: %v\n", warn)
+	}
+	if err != nil {
+		return nil, nil, errors.Wrapf(err, "error while parsing %s", mp)
+	}
+
+	lp := filepath.Join(path, LockName)
+	lf, err := os.Open(lp)
+	if err != nil {
+		if os.IsNotExist(err) {
+			// It's fine for the lock not to exist
+			return manifest, nil, nil
+		}
+		// But if a lock does exist and we can't open it, that's a problem
+		return nil, nil, errors.Wrapf(err, "could not open %s", lp)
+	}
+	defer lf.Close()
+
+	lock, err := readLock(lf)
+	if err != nil {
+		return nil, nil, errors.Wrapf(err, "error while parsing %s", lp)
+	}
+	return manifest, lock, nil
+}
+
 // DetectProjectGOPATH attempt to find the GOPATH containing the project.
 //
 //  If p.AbsRoot is not a symlink and is within a GOPATH, the GOPATH containing p.AbsRoot is returned.
