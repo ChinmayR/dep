@@ -618,8 +618,9 @@ func (v versionPair) identical(c Constraint) bool {
 	return v.v.identical(v2.v)
 }
 
-func (v versionPair) copyTo(*pb.Constraint) {
-	panic("versionPair should never be serialized; it is solver internal-only")
+func (v versionPair) copyTo(msg *pb.Constraint) {
+	// only serialize the unpaired version into the constraint and resolve the rev in real time
+	v.Unpair().copyTo(msg)
 }
 
 // compareVersionType is a sort func helper that makes a coarse-grained sorting

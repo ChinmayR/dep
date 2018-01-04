@@ -969,12 +969,14 @@ func TestConstraintEncoding(t *testing.T) {
 	for _, test := range []struct {
 		name string
 		c    Constraint
+		want Constraint
 	}{
-		{"defaultBranch", newDefaultBranch("test")},
-		{"branch", NewBranch("test")},
-		{"ver", NewVersion("test")},
-		{"semver", testSemverConstraint(t, "^1.0.0")},
-		{"rev", Revision("test")},
+		{"defaultBranch", newDefaultBranch("test"), newDefaultBranch("test")},
+		{"branch", NewBranch("test"), NewBranch("test")},
+		{"ver", NewVersion("test"), NewVersion("test")},
+		{"semver", testSemverConstraint(t, "^1.0.0"), testSemverConstraint(t, "^1.0.0")},
+		{"rev", Revision("test"), Revision("test")},
+		{"pairedBranch", NewBranch("pairedBranch").Pair("rev"), NewBranch("pairedBranch")},
 	} {
 		t.Run(test.name, func(t *testing.T) {
 			var msg pb.Constraint
@@ -990,15 +992,15 @@ func TestConstraintEncoding(t *testing.T) {
 			got, err := constraintFromCache(&msg)
 			if err != nil {
 				t.Error("failed to decode:", err)
-			} else if !got.identical(test.c) {
+			} else if !got.identical(test.want) {
 				t.Errorf("decoded non-identical Constraint:\n\t(GOT): %#v\n\t(WNT): %#v", got, test.c)
 			}
 
-			if _, ok := test.c.(UnpairedVersion); ok {
+			if _, ok := test.want.(UnpairedVersion); ok {
 				got, err := unpairedVersionFromCache(&msg)
 				if err != nil {
 					t.Error("failed to decode:", err)
-				} else if !got.identical(test.c) {
+				} else if !got.identical(test.want) {
 					t.Errorf("decoded non-identical UnpairedVersion:\n\t(GOT): %#v\n\t(WNT): %#v", got, test.c)
 				}
 			}
