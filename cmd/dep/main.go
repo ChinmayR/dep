@@ -63,6 +63,7 @@ func (c *Config) Run() (exitCode int) {
 		&hashinCommand{},
 		&pruneCommand{},
 		&versionCommand{},
+		&bootConfigCommand{},
 	}
 
 	examples := [][2]string{
@@ -81,6 +82,10 @@ func (c *Config) Run() (exitCode int) {
 		{
 			"dep ensure -add github.com/pkg/errors",
 			"add a dependency to the project",
+		},
+		{
+			"dep bootConfig",
+			"bootstrap the uber specific default config",
 		},
 	}
 

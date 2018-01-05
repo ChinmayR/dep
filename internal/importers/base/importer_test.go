@@ -540,6 +540,29 @@ func TestBaseImporter_ImportProjects(t *testing.T) {
 				},
 			},
 		},
+		"source override should not clobber version constraint": {
+			importertest.TestCase{
+				WantOverride:   importertest.V2Branch,
+				WantVersion:    importertest.V2Branch,
+				WantRevision:   "",
+				WantSourceRepo: importertest.ProjectSrc,
+			},
+			[]ImportedPackage{
+				{
+					Name:           importertest.Project,
+					LockHint:       "",
+					Source:         importertest.ProjectSrcInvalid,
+					ConstraintHint: importertest.V2Branch,
+					IsOverride:     false,
+				},
+				{
+					Name:           importertest.Project,
+					LockHint:       "",
+					Source:         importertest.ProjectSrc,
+					IsOverride:     true,
+				},
+			},
+		},
 	}
 
 	for name, tc := range testcases {

@@ -8,6 +8,8 @@ import (
 
 	"github.com/go-yaml/yaml"
 	"github.com/pkg/errors"
+	"fmt"
+	"log"
 )
 
 const CustomConfigName = "DepConfig.yaml"
@@ -22,22 +24,20 @@ type overridePackage struct {
 	Source    string `yaml:"source"`
 }
 
-func (i *Importer) ReadCustomConfig(dir string) ([]ImportedPackage, error) {
+func ReadCustomConfig(dir string) ([]ImportedPackage, error) {
 	y := filepath.Join(dir, CustomConfigName)
 	if _, err := os.Stat(y); err != nil {
-		i.Logger.Println("Did not detect custom configuration files...")
+		fmt.Println("Did not detect custom configuration files...")
 		return nil, nil
 	}
 
-	i.Logger.Println("Detected custom configuration files...")
-	if i.Verbose {
-		i.Logger.Printf("  Loading %s", y)
-	}
+	fmt.Println("Detected custom configuration files...")
+	fmt.Printf("  Loading %s", y)
 	yb, err := ioutil.ReadFile(y)
 	if err != nil {
 		return nil, errors.Wrapf(err, "unable to read %s", y)
 	}
-	i.Logger.Println(string(yb))
+	fmt.Println(string(yb))
 	customConfig := CustomConfig{}
 	err = yaml.Unmarshal(yb, &customConfig)
 	if err != nil {
@@ -47,8 +47,39 @@ func (i *Importer) ReadCustomConfig(dir string) ([]ImportedPackage, error) {
 	return ParseConfig(customConfig)
 }
 
-func ParseConfig(config CustomConfig) ([]ImportedPackage, error) {
+func WriteCustomConfig(dir string, impPkgs []ImportedPackage, overwrite bool, out *log.Logger) error {
+	y := filepath.Join(dir, CustomConfigName)
+	if _, err := os.Stat(y); err == nil && overwrite == false {
+		return errors.Errorf("custom config exists and cannot overwrite")
+	}
 
+	out.Println("Overwriting custom configuration files...")
+	yb, err := yaml.Marshal(CustomConfig{Overrides: convertImpPkgToOveridePkg(impPkgs)})
+	if err != nil {
+		return errors.Wrap(err, "unable to marshall imported packages")
+	}
+	out.Println(string(yb))
+	out.Printf("  Writing %s", y)
+	err = ioutil.WriteFile(y, yb, 0644)
+	if err != nil {
+		return errors.Wrap(err, "error writing config file")
+	}
+	return nil
+}
+
+func convertImpPkgToOveridePkg(impPkgs []ImportedPackage) []overridePackage {
+	var overidePkgs []overridePackage
+	for _, impPkg := range impPkgs {
+		overidePkgs = append(overidePkgs, overridePackage{
+			Name: impPkg.Name,
+			Reference: impPkg.ConstraintHint,
+			Source: impPkg.Source,
+		})
+	}
+	return overidePkgs
+}
+
+func ParseConfig(config CustomConfig) ([]ImportedPackage, error) {
 	var impPkgs []ImportedPackage
 	pkgSeen := make(map[string]bool)
 
@@ -63,6 +94,72 @@ func ParseConfig(config CustomConfig) ([]ImportedPackage, error) {
 			IsOverride:     true,
 		})
 		pkgSeen[pkg.Name] = true
+	}
+
+	return impPkgs, nil
+}
+
+/*
+These are basic uber specific overrides that help avoid conflicts
+and speed up resolution for uber repos. These were derived through
+testing and data collected from resolve failures.
+ */
+var basicOverrides = []overridePackage {
+	{
+		Name: "golang.org/x/net",
+		Source: "golang.org/x/net",
+	},
+	{
+		Name: "golang.org/x/sys",
+		Source: "golang.org/x/sys",
+	},
+	{
+		Name: "golang.org/x/tools",
+		Source: "golang.org/x/tools",
+	},
+}
+
+func AppendBasicOverrides(impPkgs []ImportedPackage, pkgSeen map[string]bool) ([]ImportedPackage, error) {
+
+	for _, pkg := range basicOverrides {
+		if val, ok := pkgSeen[pkg.Name]; ok && val {
+			pkgFound := false
+			for idx := range impPkgs {
+				subPkg := &impPkgs[idx]
+				if subPkg.Name == pkg.Name {
+					pkgFound = true
+					// overwrite reference if not empty otherwise return error (don't clobber)
+					if pkg.Reference != "" {
+						if subPkg.ConstraintHint != "" {
+							return nil, errors.Errorf("reference override for %s already exists in current config",
+								subPkg.Name)
+						} else {
+							subPkg.ConstraintHint = pkg.Reference
+						}
+					}
+					// overwrite source if not empty otherwise return error (don't clobber)
+					if pkg.Source != "" {
+						if subPkg.Source != "" {
+							return nil, errors.Errorf("source override for %s already exists in current config",
+								subPkg.Name)
+						} else {
+							subPkg.Source = pkg.Source
+						}
+					}
+				}
+			}
+			if !pkgFound {
+				return nil, errors.Errorf("could not find package %s in list", pkg.Name)
+			}
+		} else {
+			impPkgs = append(impPkgs, ImportedPackage{
+				Name:           pkg.Name,
+				ConstraintHint: pkg.Reference,
+				Source:         pkg.Source,
+				IsOverride:     true,
+			})
+			pkgSeen[pkg.Name] = true
+		}
 	}
 
 	return impPkgs, nil

@@ -89,7 +89,7 @@ func (g *Importer) Import(dir string, pr gps.ProjectRoot) (*dep.Manifest, *dep.L
 		return nil, nil, err
 	}
 
-	impPkgs, err := g.ReadCustomConfig(dir)
+	impPkgs, err := base.ReadCustomConfig(dir)
 	if err != nil {
 		return nil, nil, errors.Wrap(err, "failed to read custom configuration")
 	}

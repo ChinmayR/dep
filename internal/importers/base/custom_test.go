@@ -113,6 +113,108 @@ func TestCustomConfig_Parse(t *testing.T) {
 	}
 }
 
+func TestCustomConfig_BasicOverrides(t *testing.T) {
+	testCases := map[string]struct {
+		existPkgs []ImportedPackage
+		pkgSeen map[string]bool
+		impPkgs []ImportedPackage
+		wantErr bool
+	}{
+		"basic case with no existing config": {
+			existPkgs: make([]ImportedPackage, 0),
+			pkgSeen: make(map[string]bool),
+			impPkgs: []ImportedPackage{
+				{
+					Name:           "golang.org/x/net",
+					LockHint:       "",
+					Source:         "golang.org/x/net",
+					ConstraintHint: "",
+					IsOverride:     true,
+				},
+				{
+					Name:           "golang.org/x/sys",
+					LockHint:       "",
+					Source:         "golang.org/x/sys",
+					ConstraintHint: "",
+					IsOverride:     true,
+				},
+				{
+					Name:           "golang.org/x/tools",
+					LockHint:       "",
+					Source:         "golang.org/x/tools",
+					ConstraintHint: "",
+					IsOverride:     true,
+				},
+			},
+			wantErr: false,
+		},
+		"overlapping override source returns error": {
+			existPkgs: []ImportedPackage{
+				{
+					Name:      "golang.org/x/net",
+					ConstraintHint: importertest.V1Constraint,
+					Source:    "overrideSource",
+				},
+			},
+			pkgSeen: map[string]bool {
+				"golang.org/x/net": true,
+			},
+			impPkgs: nil,
+			wantErr: true,
+		},
+		"overlapping override ref throws no error": {
+			existPkgs: []ImportedPackage{
+				{
+					Name:      "golang.org/x/net",
+					ConstraintHint: importertest.V1Constraint,
+					Source:    "",
+					IsOverride: true,
+				},
+			},
+			pkgSeen: map[string]bool {
+				"golang.org/x/net": true,
+			},
+			impPkgs: []ImportedPackage{
+				{
+					Name:           "golang.org/x/net",
+					LockHint:       "",
+					Source:         "golang.org/x/net",
+					ConstraintHint: importertest.V1Constraint,
+					IsOverride:     true,
+				},
+				{
+					Name:           "golang.org/x/sys",
+					LockHint:       "",
+					Source:         "golang.org/x/sys",
+					ConstraintHint: "",
+					IsOverride:     true,
+				},
+				{
+					Name:           "golang.org/x/tools",
+					LockHint:       "",
+					Source:         "golang.org/x/tools",
+					ConstraintHint: "",
+					IsOverride:     true,
+				},
+			},
+			wantErr: false,
+		},
+	}
+
+	for name, testCase := range testCases {
+		name := name
+		t.Run(name, func(t *testing.T) {
+			impPkgs, err := AppendBasicOverrides(testCase.existPkgs, testCase.pkgSeen)
+			if testCase.wantErr && err == nil {
+				t.Fatalf("wanted error but got none")
+			}
+			if !equalImpPkgs(impPkgs, testCase.impPkgs) {
+				t.Fatal("imported packages did not match")
+			}
+		})
+	}
+}
+
 func equalImpPkgs(a, b []ImportedPackage) bool {
 	if a == nil && b == nil {
 		return true
