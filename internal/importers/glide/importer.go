@@ -18,6 +18,7 @@ import (
 	"github.com/golang/dep/internal/gps"
 	"github.com/golang/dep/internal/importers/base"
 	"github.com/pkg/errors"
+	"strings"
 )
 
 const glideYamlName = "glide.yaml"
@@ -89,12 +90,12 @@ func (g *Importer) Import(dir string, pr gps.ProjectRoot) (*dep.Manifest, *dep.L
 		return nil, nil, err
 	}
 
-	impPkgs, err := base.ReadCustomConfig(dir)
+	impPkgs, customExcludeDirs, err := base.ReadCustomConfig(dir)
 	if err != nil {
 		return nil, nil, errors.Wrap(err, "failed to read custom configuration")
 	}
 
-	return g.convert(impPkgs, pr)
+	return g.convert(impPkgs, customExcludeDirs, pr)
 }
 
 // load the glide configuration files.
@@ -135,7 +136,7 @@ func (g *Importer) load(projectDir string) error {
 }
 
 // convert the glide configuration files into dep configuration files.
-func (g *Importer) convert(impPkgs []base.ImportedPackage, pr gps.ProjectRoot) (*dep.Manifest, *dep.Lock, error) {
+func (g *Importer) convert(impPkgs []base.ImportedPackage, customExcludeDirs []string, pr gps.ProjectRoot) (*dep.Manifest, *dep.Lock, error) {
 	projectName := string(pr)
 
 	task := bytes.NewBufferString("Converting from glide.yaml")
@@ -204,6 +205,19 @@ func (g *Importer) convert(impPkgs []base.ImportedPackage, pr gps.ProjectRoot) (
 
 		for _, dir := range g.glideConfig.ExcludeDirs {
 			pkg := path.Join(projectName, dir)
+			g.Manifest.Ignored = append(g.Manifest.Ignored, pkg)
+		}
+	}
+	for _, customIgnore := range customExcludeDirs {
+		pkg := path.Join(projectName, customIgnore)
+		alreadyExists := false
+		for _, existingIgnore := range g.Manifest.Ignored {
+			if strings.EqualFold(pkg, existingIgnore) {
+				alreadyExists = true
+				break
+			}
+		}
+		if !alreadyExists {
 			g.Manifest.Ignored = append(g.Manifest.Ignored, pkg)
 		}
 	}

@@ -20,6 +20,7 @@ import (
 func TestGlideConfig_Convert(t *testing.T) {
 	testCases := map[string]struct {
 		yaml glideYaml
+		customExcludeDirs []string
 		lock glideLock
 		importertest.TestCase
 	}{
@@ -33,6 +34,7 @@ func TestGlideConfig_Convert(t *testing.T) {
 					},
 				},
 			},
+			nil,
 			glideLock{
 				Imports: []glideLockedPackage{
 					{
@@ -59,6 +61,7 @@ func TestGlideConfig_Convert(t *testing.T) {
 					},
 				},
 			},
+			nil,
 			glideLock{
 				Imports: []glideLockedPackage{
 					{
@@ -85,6 +88,7 @@ func TestGlideConfig_Convert(t *testing.T) {
 					},
 				},
 			},
+			nil,
 			glideLock{},
 			importertest.TestCase{
 				WantSourceRepo: importertest.ProjectSrc,
@@ -95,6 +99,7 @@ func TestGlideConfig_Convert(t *testing.T) {
 			glideYaml{
 				Ignores: []string{importertest.Project},
 			},
+			nil,
 			glideLock{},
 			importertest.TestCase{
 				WantIgnored: []string{importertest.Project},
@@ -104,6 +109,7 @@ func TestGlideConfig_Convert(t *testing.T) {
 			glideYaml{
 				ExcludeDirs: []string{"samples"},
 			},
+			nil,
 			glideLock{},
 			importertest.TestCase{
 				WantIgnored: []string{importertest.RootProject + "/samples"},
@@ -114,6 +120,7 @@ func TestGlideConfig_Convert(t *testing.T) {
 				Name:        "github.com/golang/mismatched-package-name",
 				ExcludeDirs: []string{"samples"},
 			},
+			nil,
 			glideLock{},
 			importertest.TestCase{
 				WantIgnored: []string{importertest.RootProject + "/samples"},
@@ -123,6 +130,7 @@ func TestGlideConfig_Convert(t *testing.T) {
 			glideYaml{
 				Imports: []glidePackage{{Name: ""}},
 			},
+			nil,
 			glideLock{},
 			importertest.TestCase{
 				WantConvertErr: true,
@@ -136,6 +144,7 @@ func TestGlideConfig_Convert(t *testing.T) {
 						OS:   "windows",
 					},
 				}},
+			nil,
 			glideLock{},
 			importertest.TestCase{
 				WantConstraint: "*",
@@ -150,10 +159,47 @@ func TestGlideConfig_Convert(t *testing.T) {
 						Arch: "i686",
 					},
 				}},
+			nil,
 			glideLock{},
 			importertest.TestCase{
 				WantConstraint: "*",
 				WantWarning:    "specified an arch",
+			},
+		},
+		"basic ignore dirs show up": {
+			glideYaml{},
+			[]string {
+				".exclude1",
+				"exclude2",
+			},
+			glideLock{},
+			importertest.TestCase{
+				WantIgnored: []string {
+					importertest.RootProject + "/.exclude1",
+					importertest.RootProject + "/exclude2",
+				},
+			},
+		},
+		"overlapping ignore dirs does not duplicate": {
+			glideYaml{
+				ExcludeDirs: []string {
+					".random",
+					".gen",
+				},
+			},
+			[]string {
+				".exclude1",
+				"exclude2",
+				".random",
+			},
+			glideLock{},
+			importertest.TestCase{
+				WantIgnored: []string {
+					importertest.RootProject + "/.random",
+					importertest.RootProject + "/.gen",
+					importertest.RootProject + "/.exclude1",
+					importertest.RootProject + "/exclude2",
+				},
 			},
 		},
 	}
@@ -166,7 +212,7 @@ func TestGlideConfig_Convert(t *testing.T) {
 				g := NewImporter(logger, true, sm)
 				g.glideConfig = testCase.yaml
 				g.glideLock = testCase.lock
-				return g.convert(nil, importertest.RootProject)
+				return g.convert(nil, testCase.customExcludeDirs, importertest.RootProject)
 			})
 			if err != nil {
 				t.Fatalf("%#v", err)

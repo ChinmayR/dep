@@ -23,7 +23,7 @@ func (cmd *bootConfigCommand) Register(fs *flag.FlagSet) {}
 type bootConfigCommand struct{}
 
 func (cmd *bootConfigCommand) Run(ctx *dep.Ctx, args []string) error {
-	curPkgs, err := base.ReadCustomConfig(ctx.WorkingDir)
+	curPkgs, basicExcludeDirs, err := base.ReadCustomConfig(ctx.WorkingDir)
 	if err != nil {
 		return errors.Wrapf(err,"error loading current config")
 	}
@@ -33,7 +33,8 @@ func (cmd *bootConfigCommand) Run(ctx *dep.Ctx, args []string) error {
 		return errors.Wrapf(err,"error appending basic overrides")
 	}
 
-	err = base.WriteCustomConfig(ctx.WorkingDir, impPkgs, true, ctx.Out)
+	err = base.WriteCustomConfig(ctx.WorkingDir, impPkgs, base.AppendBasicExcludeDirs(basicExcludeDirs),
+		true, ctx.Out)
 	if err != nil {
 		return errors.Wrapf(err,"error writing custom config at %s", ctx.WorkingDir)
 	}

@@ -10,12 +10,14 @@ import (
 	"github.com/pkg/errors"
 	"fmt"
 	"log"
+	"strings"
 )
 
 const CustomConfigName = "DepConfig.yaml"
 
 type CustomConfig struct {
 	Overrides []overridePackage `yaml:"override"`
+	ExcludeDirs []string `yaml:"excludeDirs"`
 }
 
 type overridePackage struct {
@@ -24,37 +26,40 @@ type overridePackage struct {
 	Source    string `yaml:"source"`
 }
 
-func ReadCustomConfig(dir string) ([]ImportedPackage, error) {
+func ReadCustomConfig(dir string) ([]ImportedPackage, []string, error) {
 	y := filepath.Join(dir, CustomConfigName)
 	if _, err := os.Stat(y); err != nil {
 		fmt.Println("Did not detect custom configuration files...")
-		return nil, nil
+		return nil, nil, nil
 	}
 
 	fmt.Println("Detected custom configuration files...")
 	fmt.Printf("  Loading %s", y)
 	yb, err := ioutil.ReadFile(y)
 	if err != nil {
-		return nil, errors.Wrapf(err, "unable to read %s", y)
+		return nil, nil, errors.Wrapf(err, "unable to read %s", y)
 	}
 	fmt.Println(string(yb))
 	customConfig := CustomConfig{}
 	err = yaml.Unmarshal(yb, &customConfig)
 	if err != nil {
-		return nil, errors.Wrapf(err, "unable to parse %s", y)
+		return nil, nil, errors.Wrapf(err, "unable to parse %s", y)
 	}
 
 	return ParseConfig(customConfig)
 }
 
-func WriteCustomConfig(dir string, impPkgs []ImportedPackage, overwrite bool, out *log.Logger) error {
+func WriteCustomConfig(dir string, impPkgs []ImportedPackage, excludeDirs []string, overwrite bool, out *log.Logger) error {
 	y := filepath.Join(dir, CustomConfigName)
 	if _, err := os.Stat(y); err == nil && overwrite == false {
 		return errors.Errorf("custom config exists and cannot overwrite")
 	}
 
 	out.Println("Overwriting custom configuration files...")
-	yb, err := yaml.Marshal(CustomConfig{Overrides: convertImpPkgToOveridePkg(impPkgs)})
+	yb, err := yaml.Marshal(CustomConfig{
+			Overrides: convertImpPkgToOveridePkg(impPkgs),
+			ExcludeDirs: excludeDirs,
+		})
 	if err != nil {
 		return errors.Wrap(err, "unable to marshall imported packages")
 	}
@@ -79,13 +84,13 @@ func convertImpPkgToOveridePkg(impPkgs []ImportedPackage) []overridePackage {
 	return overidePkgs
 }
 
-func ParseConfig(config CustomConfig) ([]ImportedPackage, error) {
+func ParseConfig(config CustomConfig) ([]ImportedPackage, []string, error) {
 	var impPkgs []ImportedPackage
 	pkgSeen := make(map[string]bool)
 
 	for _, pkg := range config.Overrides {
 		if val, ok := pkgSeen[pkg.Name]; ok && val {
-			return nil, errors.Errorf("found multiple entries for %s in custom config", pkg.Name)
+			return nil, nil, errors.Errorf("found multiple entries for %s in custom config", pkg.Name)
 		}
 		impPkgs = append(impPkgs, ImportedPackage{
 			Name:           pkg.Name,
@@ -96,7 +101,7 @@ func ParseConfig(config CustomConfig) ([]ImportedPackage, error) {
 		pkgSeen[pkg.Name] = true
 	}
 
-	return impPkgs, nil
+	return impPkgs, config.ExcludeDirs, nil
 }
 
 /*
@@ -117,6 +122,33 @@ var basicOverrides = []overridePackage {
 		Name: "golang.org/x/tools",
 		Source: "golang.org/x/tools",
 	},
+}
+
+/*
+These are the basic directories that could be auto generated and
+we want to ignore while scanning for imports in dep. Bootstrap
+the dep config with these preset.
+ */
+var basicExcludeDirs = []string {
+	".gen",
+	".tmp",
+	"_templates",
+}
+
+func AppendBasicExcludeDirs(currentExcludeDirs []string) []string {
+	for _, basicIgnore := range basicExcludeDirs {
+		alreadyExists := false
+		for _, existingIgnore := range currentExcludeDirs {
+			if strings.EqualFold(basicIgnore, existingIgnore) {
+				alreadyExists = true
+				break
+			}
+		}
+		if !alreadyExists {
+			currentExcludeDirs = append(currentExcludeDirs, basicIgnore)
+		}
+	}
+	return currentExcludeDirs
 }
 
 func AppendBasicOverrides(impPkgs []ImportedPackage, pkgSeen map[string]bool) ([]ImportedPackage, error) {

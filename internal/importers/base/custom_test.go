@@ -4,12 +4,14 @@ import (
 	"testing"
 
 	"github.com/golang/dep/internal/importers/importertest"
+	"reflect"
 )
 
 func TestCustomConfig_Parse(t *testing.T) {
 	testCases := map[string]struct {
 		config  CustomConfig
 		impPkgs []ImportedPackage
+		excludeDirs []string
 		wantErr bool
 	}{
 		"read single override": {
@@ -20,6 +22,7 @@ func TestCustomConfig_Parse(t *testing.T) {
 						Reference: importertest.V1Constraint,
 					},
 				},
+				ExcludeDirs: AppendBasicExcludeDirs(nil),
 			},
 			impPkgs: []ImportedPackage{
 				{
@@ -28,6 +31,11 @@ func TestCustomConfig_Parse(t *testing.T) {
 					ConstraintHint: importertest.V1Constraint,
 					IsOverride:     true,
 				},
+			},
+			excludeDirs: []string {
+				".gen",
+				".tmp",
+				"_templates",
 			},
 			wantErr: false,
 		},
@@ -102,12 +110,58 @@ func TestCustomConfig_Parse(t *testing.T) {
 	for name, testCase := range testCases {
 		name := name
 		t.Run(name, func(t *testing.T) {
-			impPkgs, err := ParseConfig(testCase.config)
+			impPkgs, excludeDirs, err := ParseConfig(testCase.config)
 			if testCase.wantErr && err == nil {
 				t.Fatalf("wanted error but got none")
 			}
+			if !reflect.DeepEqual(excludeDirs, testCase.excludeDirs) {
+				t.Fatal("excludeDirs did not match")
+			}
 			if !equalImpPkgs(impPkgs, testCase.impPkgs) {
 				t.Fatal("imported packages did not match")
+			}
+		})
+	}
+}
+
+func TestCustomConfig_BasicExcludeDirs(t *testing.T) {
+	testCases := map[string]struct {
+		currentExcludeDirs []string
+		expectedExcludeDirs []string
+		wantErr bool
+	} {
+		"no overlapping exclude dirs": {
+			currentExcludeDirs: []string {},
+			expectedExcludeDirs: []string {
+				".gen",
+				".tmp",
+				"_templates",
+			},
+			wantErr: false,
+		},
+		"overlapping exclude dirs are not duplicated": {
+			currentExcludeDirs: []string {
+				".random",
+				".tmp",
+			},
+			expectedExcludeDirs: []string {
+				".random",
+				".tmp",
+				".gen",
+				"_templates",
+			},
+			wantErr: false,
+		},
+	}
+	for name, testCase := range testCases {
+		name := name
+		t.Run(name, func(t *testing.T) {
+			expectedExcludeDirs := AppendBasicExcludeDirs(testCase.currentExcludeDirs)
+			if testCase.wantErr {
+				t.Fatalf("wanted error but got none")
+			}
+			if !reflect.DeepEqual(expectedExcludeDirs, testCase.expectedExcludeDirs) {
+				t.Fatal("expectedExcludeDirs did not match")
 			}
 		})
 	}
