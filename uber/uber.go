@@ -98,7 +98,13 @@ func getGitoliteUrlWithPath(path string) *url.URL {
 func GetGitoliteRoot(path string) string {
 	if strings.Contains(path, ".git") {
 		return strings.SplitAfter(path, ".git")[0]
+	} else if len(strings.Split(path, "/")) > 3 {
+		splitPath := strings.Split(path, "/")
+		assumedPath := splitPath[0] + "/" + splitPath[1] + "/" + splitPath[2]
+		UberLogger.Printf("Found ambigious path, taking %s for %s\n", assumedPath, path)
+		return assumedPath
 	}
+	UberLogger.Printf("Found unambigious path, assuming .git for %s\n", path)
 	return path
 }
 
@@ -137,6 +143,8 @@ func CheckAndMirrorRepo(ex ExecutorInterface, gpath, remote string, gitoliteURL 
 		return nil
 	}
 
+	UberLogger.Printf("project not found at URL: %s", gitoliteURL.String())
+
 	// First, ensure the remote repo exists
 	UberLogger.Printf("%s not found on Gitolite, checking %s", gpath, remote)
 	rstdout, _, rerr := ex.ExecCommand("git", "ls-remote", remote, "HEAD")
@@ -144,6 +152,7 @@ func CheckAndMirrorRepo(ex ExecutorInterface, gpath, remote string, gitoliteURL 
 	if rerr != nil {
 		UberLogger.Printf("Upstream repo does not exist: %v", remote)
 		UberLogger.Print(rerr)
+		panic("Failed to mirror repo, this will cause problems later in the flow")
 		return rerr
 	}
 

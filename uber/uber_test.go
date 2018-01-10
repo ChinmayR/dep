@@ -8,6 +8,7 @@ import (
 	"fmt"
 	"net/url"
 	"github.com/golang/dep/uber/mocks"
+	"github.com/pkg/errors"
 )
 
 type repoTestCase struct {
@@ -86,6 +87,20 @@ func TestUber_IsGitoliteForGitolite(t *testing.T) {
 			expGpath:     "",
 			expRemote:     "",
 			expGitoliteUrl:     "ssh://gitolite@code.uber.internal/rt/filter.git",
+		},
+		{
+			given:  "code.uber.internal/rt/filter",
+			expUrl: "ssh://gitolite@code.uber.internal/rt/filter",
+			expGpath:     "",
+			expRemote:     "",
+			expGitoliteUrl:     "ssh://gitolite@code.uber.internal/rt/filter",
+		},
+		{
+			given:  "code.uber.internal/rt/filter/.gen/go/filter",
+			expUrl: "ssh://gitolite@code.uber.internal/rt/filter",
+			expGpath:     "",
+			expRemote:     "",
+			expGitoliteUrl:     "ssh://gitolite@code.uber.internal/rt/filter",
 		},
 	}
 
@@ -169,6 +184,7 @@ func TestUber_MirrorsToGitolite(t *testing.T) {
 		gpath        string // the repo path on gitolite: code.uber.internal/<gpath> ex: github/user/repo or googlesource/net
 		rewritername string
 		expected     string
+		remoteExists bool
 	}
 
 	cases := []mirrorTestCase{
@@ -178,6 +194,7 @@ func TestUber_MirrorsToGitolite(t *testing.T) {
 			gpath:        "github/test/repo",
 			rewritername: "github.com",
 			expected:     "ssh://gitolite@code.uber.internal/github/test/repo",
+			remoteExists: true,
 		},
 		{
 			importPath:   "gopkg.in/repo.v0",
@@ -185,6 +202,7 @@ func TestUber_MirrorsToGitolite(t *testing.T) {
 			gpath:        "github/go-repo/repo",
 			rewritername: "gopkg.in",
 			expected:     "ssh://gitolite@code.uber.internal/github/go-repo/repo",
+			remoteExists: true,
 		},
 		{
 			importPath:   "golang.org/x/repo",
@@ -192,6 +210,14 @@ func TestUber_MirrorsToGitolite(t *testing.T) {
 			gpath:        "googlesource/repo",
 			rewritername: "golang.org",
 			expected:     "ssh://gitolite@code.uber.internal/googlesource/repo",
+			remoteExists: true,
+		},
+		{
+			importPath:   "golang.org/x/repo",
+			gpath:        "googlesource/repo",
+			rewritername: "golang.org",
+			expected:     "ssh://gitolite@code.uber.internal/googlesource/repo",
+			remoteExists: false,
 		},
 	}
 
@@ -202,21 +228,43 @@ func TestUber_MirrorsToGitolite(t *testing.T) {
 			ex.On("ExecCommand", "git",
 				"ls-remote", "ssh://gitolite@code.uber.internal/"+c.gpath, "HEAD",
 			).Return("", "FATAL: autocreate denied", fmt.Errorf("1"))
-			//remote does exist
-			ex.On("ExecCommand", "git",
-				"ls-remote", c.remoteUrl, "HEAD",
-			).Return("", "", nil)
-			//successful creation on gitolite
-			ex.On("ExecCommand", "ssh",
-				"gitolite@code.uber.internal", "create", c.gpath,
-			).Return("", "", nil)
+
+			if c.remoteExists {
+				ex.On("ExecCommand", "git",
+					"ls-remote", c.remoteUrl, "HEAD",
+				).Return("", "", nil)
+				//successful creation on gitolite
+				ex.On("ExecCommand", "ssh",
+					"gitolite@code.uber.internal", "create", c.gpath,
+				).Return("", "", nil)
+			} else {
+				ex.On("ExecCommand", "git",
+					"ls-remote", c.remoteUrl, "HEAD",
+				).Return("", "", errors.Errorf("failing remote check"))
+			}
+
 			u, err := url.Parse(c.expected)
 			if err != nil {
 				t.Fatalf("Failed to parse URL %s", c.expected)
 			}
-			err = CheckAndMirrorRepo(ex, c.gpath, c.remoteUrl, u)
+			err = assertPanic(t, func() error {return CheckAndMirrorRepo(ex, c.gpath, c.remoteUrl, u)}, !c.remoteExists)
 			assert.Nil(t, err)
 			ex.AssertExpectations(t)
 		}(c)
 	}
+}
+
+func assertPanic(t *testing.T, f func() error, expectPanic bool) error {
+	defer func() {
+		if r := recover(); r == nil {
+			if expectPanic {
+				t.Errorf("The code did not panic when it was expected")
+			}
+		} else {
+			if !expectPanic {
+				t.Errorf("The code paniced when it was not expected")
+			}
+		}
+	}()
+	return f()
 }

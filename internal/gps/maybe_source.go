@@ -111,6 +111,8 @@ func (m maybeGitoliteSource) try(ctx context.Context, cachedir string, c singleS
 			if err2 := superv.do(ctx, "git:lv:maybe", ctListVersions, tryListVersions); err2 != nil {
 				return nil, 0, errors.Wrapf(err, "mirrored repo but repository at %s still does not exist, or is inaccessible", ustr)
 			}
+		} else {
+			return nil, 0, errors.Wrapf(err, "failed to mirror repo at %s", ustr)
 		}
 	}
 
