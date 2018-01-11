@@ -29,7 +29,7 @@ type overridePackage struct {
 func ReadCustomConfig(dir string) ([]ImportedPackage, []string, error) {
 	y := filepath.Join(dir, CustomConfigName)
 	if _, err := os.Stat(y); err != nil {
-		fmt.Println("Did not detect custom configuration files...")
+		fmt.Printf("Did not detect custom configuration files at %s\n", dir)
 		return nil, nil, nil
 	}
 
