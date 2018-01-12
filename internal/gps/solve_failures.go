@@ -9,6 +9,8 @@ import (
 	"fmt"
 	"sort"
 	"strings"
+
+	"github.com/golang/dep/uber"
 )
 
 func a2vs(a atom) string {
@@ -29,11 +31,17 @@ type noVersionError struct {
 }
 
 func (e *noVersionError) Error() string {
+	tags := uber.GetRepoTagFromWorkingDirectory()
+	tags["ProjectRoot"] = string(e.pn.ProjectRoot)
 	if len(e.fails) == 0 {
+		tags["ErrorType"] = "NoVersionsFound"
+		uber.ReportError("NoVersionError", tags)
 		return fmt.Sprintf("No versions found for project %q.", e.pn.ProjectRoot)
 	}
 
 	var buf bytes.Buffer
+	tags["ErrorType"] = "NoVersionsMetConstraints"
+	uber.ReportError("NoVersionError", tags)
 	fmt.Fprintf(&buf, "No versions of %s met constraints:", e.pn.ProjectRoot)
 	for _, f := range e.fails {
 		fmt.Fprintf(&buf, "\n\t%s: %s", f.v, f.f.Error())
@@ -76,6 +84,8 @@ type caseMismatchFailure struct {
 }
 
 func (e *caseMismatchFailure) Error() string {
+	tags := uber.GetRepoTagFromWorkingDirectory()
+	uber.ReportError("CaseMismatchFailure", tags)
 	if len(e.failsib) == 1 {
 		str := "Could not introduce %s due to a case-only variation: it depends on %q, but %q was already established as the case variant for that project root by depender %s"
 		return fmt.Sprintf(str, a2vs(e.goal.depender), e.goal.dep.Ident.ProjectRoot, e.current, a2vs(e.failsib[0].depender))
@@ -120,6 +130,8 @@ type wrongCaseFailure struct {
 }
 
 func (e *wrongCaseFailure) Error() string {
+	tags := uber.GetRepoTagFromWorkingDirectory()
+	uber.ReportError("CaseMismatchFailure", tags)
 	if len(e.badcase) == 1 {
 		str := "Could not introduce %s; imports amongst its packages establish %q as the canonical casing for root, but %s tried to import it as %q"
 		return fmt.Sprintf(str, a2vs(e.goal.depender), e.correct, a2vs(e.badcase[0].depender), e.badcase[0].dep.Ident.ProjectRoot)
@@ -169,6 +181,8 @@ type disjointConstraintFailure struct {
 }
 
 func (e *disjointConstraintFailure) Error() string {
+	tags := uber.GetRepoTagFromWorkingDirectory()
+	uber.ReportError("DisjointConstraintFailure", tags)
 	if len(e.failsib) == 1 {
 		str := "Could not introduce %s, as it has a dependency on %s with constraint %s, which has no overlap with existing constraint %s from %s"
 		return fmt.Sprintf(str, a2vs(e.goal.depender), e.goal.dep.Ident, e.goal.dep.Constraint.String(), e.failsib[0].dep.Constraint.String(), a2vs(e.failsib[0].depender))
@@ -232,6 +246,8 @@ type constraintNotAllowedFailure struct {
 }
 
 func (e *constraintNotAllowedFailure) Error() string {
+	tags := uber.GetRepoTagFromWorkingDirectory()
+	uber.ReportError("ConstraintNotAllowedFailure", tags)
 	return fmt.Sprintf(
 		"Could not introduce %s, as it has a dependency on %s with constraint %s, which does not allow the currently selected version of %s",
 		a2vs(e.goal.depender),
@@ -269,6 +285,8 @@ type versionNotAllowedFailure struct {
 }
 
 func (e *versionNotAllowedFailure) Error() string {
+	tags := uber.GetRepoTagFromWorkingDirectory()
+	uber.ReportError("VersionNotAllowedFailure", tags)
 	if len(e.failparent) == 1 {
 		return fmt.Sprintf(
 			"Could not introduce %s, as it is not allowed by constraint %s from project %s.",
@@ -306,12 +324,16 @@ type missingSourceFailure struct {
 }
 
 func (e *missingSourceFailure) Error() string {
+	tags := uber.GetRepoTagFromWorkingDirectory()
+	uber.ReportError("MissingSourceFailure", tags)
 	return fmt.Sprintf(e.prob, e.goal)
 }
 
 type badOptsFailure string
 
 func (e badOptsFailure) Error() string {
+	tags := uber.GetRepoTagFromWorkingDirectory()
+	uber.ReportError("BadOptsFailure", tags)
 	return string(e)
 }
 
@@ -331,6 +353,8 @@ type sourceMismatchFailure struct {
 }
 
 func (e *sourceMismatchFailure) Error() string {
+	tags := uber.GetRepoTagFromWorkingDirectory()
+	uber.ReportError("SourceMismatchFailure", tags)
 	var cur []string
 	for _, c := range e.sel {
 		cur = append(cur, string(c.depender.id.ProjectRoot))
@@ -375,6 +399,8 @@ type checkeeHasProblemPackagesFailure struct {
 }
 
 func (e *checkeeHasProblemPackagesFailure) Error() string {
+	tags := uber.GetRepoTagFromWorkingDirectory()
+	uber.ReportError("CheckeeHasProblemPackagesFailure", tags)
 	var buf bytes.Buffer
 	indent := ""
 
@@ -471,10 +497,15 @@ type depHasProblemPackagesFailure struct {
 }
 
 func (e *depHasProblemPackagesFailure) Error() string {
+	tags := uber.GetRepoTagFromWorkingDirectory()
+	defer uber.ReportError("DepHasProblemPackagesFailure", tags)
 	fcause := func(pkg string) string {
+		tags["Package"] = pkg
 		if err := e.prob[pkg]; err != nil {
+			tags["Cause"] = "NoUsableGoCode"
 			return fmt.Sprintf("does not contain usable Go code (%T).", err)
 		}
+		tags["Cause"] = "IsMissing"
 		return "is missing."
 	}
 
@@ -554,6 +585,8 @@ type nonexistentRevisionFailure struct {
 }
 
 func (e *nonexistentRevisionFailure) Error() string {
+	tags := uber.GetRepoTagFromWorkingDirectory()
+	uber.ReportError("NonexistentRevisionFailure", tags)
 	return fmt.Sprintf(
 		"Could not introduce %s, as it requires %s at revision %s, but that revision does not exist",
 		a2vs(e.goal.depender),
