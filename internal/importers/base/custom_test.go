@@ -35,7 +35,6 @@ func TestCustomConfig_Parse(t *testing.T) {
 			excludeDirs: []string {
 				".gen",
 				".tmp",
-				"_templates",
 			},
 			wantErr: false,
 		},
@@ -135,7 +134,6 @@ func TestCustomConfig_BasicExcludeDirs(t *testing.T) {
 			expectedExcludeDirs: []string {
 				".gen",
 				".tmp",
-				"_templates",
 			},
 			wantErr: false,
 		},
@@ -148,7 +146,6 @@ func TestCustomConfig_BasicExcludeDirs(t *testing.T) {
 				".random",
 				".tmp",
 				".gen",
-				"_templates",
 			},
 			wantErr: false,
 		},

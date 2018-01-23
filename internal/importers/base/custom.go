@@ -132,7 +132,6 @@ the dep config with these preset.
 var basicExcludeDirs = []string {
 	".gen",
 	".tmp",
-	"_templates",
 }
 
 func AppendBasicExcludeDirs(currentExcludeDirs []string) []string {
