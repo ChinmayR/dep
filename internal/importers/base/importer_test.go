@@ -12,9 +12,11 @@ import (
 	"github.com/golang/dep/internal/gps"
 	"github.com/golang/dep/internal/importers/importertest"
 	"github.com/golang/dep/internal/test"
+	"github.com/golang/dep/uber"
 )
 
 func TestBaseImporter_IsTag(t *testing.T) {
+	defer uber.SetAndUnsetEnvVar(uber.UserNonDefaultGitRefs, "yes")()
 	testcases := map[string]struct {
 		input     string
 		wantIsTag bool
@@ -75,9 +77,11 @@ func TestBaseImporter_IsTag(t *testing.T) {
 			}
 		})
 	}
+	
 }
 
 func TestBaseImporter_LookupVersionForLockedProject(t *testing.T) {
+	defer uber.SetAndUnsetEnvVar(uber.UserNonDefaultGitRefs, "yes")()
 	testcases := map[string]struct {
 		revision    gps.Revision
 		constraint  gps.Constraint
@@ -139,9 +143,11 @@ func TestBaseImporter_LookupVersionForLockedProject(t *testing.T) {
 			}
 		})
 	}
+	
 }
 
 func TestBaseImporter_ImportProjects(t *testing.T) {
+	defer uber.SetAndUnsetEnvVar(uber.UserNonDefaultGitRefs, "yes")()
 	testcases := map[string]struct {
 		importertest.TestCase
 		projects []ImportedPackage
@@ -579,4 +585,5 @@ func TestBaseImporter_ImportProjects(t *testing.T) {
 			}
 		})
 	}
+	
 }

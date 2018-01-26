@@ -22,6 +22,7 @@ import (
 	"time"
 
 	"github.com/golang/dep/internal/test"
+	"github.com/golang/dep/uber"
 )
 
 // An analyzer that passes nothing back, but doesn't error. This is the naive
@@ -136,191 +137,198 @@ func TestSourceManagerInit(t *testing.T) {
 
 func TestSourceInit(t *testing.T) {
 	// This test is a bit slow, skip it on -short
+	defer uber.SetAndUnsetEnvVar(uber.UserNonDefaultGitRefs, "yes")()
+
 	if testing.Short() {
 		t.Skip("Skipping project manager init test in short mode")
 	}
-	t.Parallel()
-
-	cpath, err := ioutil.TempDir("", "smcache")
-	if err != nil {
-		t.Fatalf("Failed to create temp dir: %s", err)
-	}
-
-	sm, err := NewSourceManager(SourceManagerConfig{
-		Cachedir: cpath,
-		Logger:   log.New(test.Writer{TB: t}, "", 0),
-	})
-	if err != nil {
-		t.Fatalf("Unexpected error on SourceManager creation: %s", err)
-	}
-
-	defer func() {
-		sm.Release()
-		err := os.RemoveAll(cpath)
+	//Parallel testing
+	t.Run("group", func(t *testing.T) {
+		cpath, err := ioutil.TempDir("", "smcache")
 		if err != nil {
-			t.Errorf("removeAll failed: %s", err)
-		}
-	}()
-
-	id := mkPI("github.com/sdboyer/gpkt").normalize()
-	pvl, err := sm.ListVersions(id)
-	if err != nil {
-		t.Errorf("Unexpected error during initial project setup/fetching %s", err)
-	}
-
-	if len(pvl) != 7 {
-		t.Errorf("Expected seven version results from the test repo, got %v", len(pvl))
-	} else {
-		expected := []PairedVersion{
-			NewVersion("v2.0.0").Pair(Revision("4a54adf81c75375d26d376459c00d5ff9b703e5e")),
-			NewVersion("v1.1.0").Pair(Revision("b2cb48dda625f6640b34d9ffb664533359ac8b91")),
-			NewVersion("v1.0.0").Pair(Revision("bf85021c0405edbc4f3648b0603818d641674f72")),
-			newDefaultBranch("master").Pair(Revision("bf85021c0405edbc4f3648b0603818d641674f72")),
-			NewBranch("v1").Pair(Revision("e3777f683305eafca223aefe56b4e8ecf103f467")),
-			NewBranch("v1.1").Pair(Revision("f1fbc520489a98306eb28c235204e39fa8a89c84")),
-			NewBranch("v3").Pair(Revision("4a54adf81c75375d26d376459c00d5ff9b703e5e")),
+			t.Fatalf("Failed to create temp dir: %s", err)
 		}
 
-		// SourceManager itself doesn't guarantee ordering; sort them here so we
-		// can dependably check output
-		SortPairedForUpgrade(pvl)
+		sm, err := NewSourceManager(SourceManagerConfig{
+			Cachedir: cpath,
+			Logger:   log.New(test.Writer{TB: t}, "", 0),
+		})
+		if err != nil {
+			t.Fatalf("Unexpected error on SourceManager creation: %s", err)
+		}
 
-		for k, e := range expected {
-			if !pvl[k].Matches(e) {
-				t.Errorf("Expected version %s in position %v but got %s", e, k, pvl[k])
+		defer func() {
+			sm.Release()
+			err := os.RemoveAll(cpath)
+			if err != nil {
+				t.Errorf("removeAll failed: %s", err)
 			}
-		}
-	}
+		}()
 
-	// Two birds, one stone - make sure the internal ProjectManager vlist cache
-	// works (or at least doesn't not work) by asking for the versions again,
-	// and do it through smcache to ensure its sorting works, as well.
-	smc := &bridge{
-		sm:     sm,
-		vlists: make(map[ProjectIdentifier][]Version),
-		s:      &solver{mtr: newMetrics()},
-	}
-
-	vl, err := smc.listVersions(id)
-	if err != nil {
-		t.Errorf("Unexpected error during initial project setup/fetching %s", err)
-	}
-
-	if len(vl) != 7 {
-		t.Errorf("Expected seven version results from the test repo, got %v", len(vl))
-	} else {
-		expected := []Version{
-			NewVersion("v2.0.0").Pair(Revision("4a54adf81c75375d26d376459c00d5ff9b703e5e")),
-			NewVersion("v1.1.0").Pair(Revision("b2cb48dda625f6640b34d9ffb664533359ac8b91")),
-			NewVersion("v1.0.0").Pair(Revision("bf85021c0405edbc4f3648b0603818d641674f72")),
-			newDefaultBranch("master").Pair(Revision("bf85021c0405edbc4f3648b0603818d641674f72")),
-			NewBranch("v1").Pair(Revision("e3777f683305eafca223aefe56b4e8ecf103f467")),
-			NewBranch("v1.1").Pair(Revision("f1fbc520489a98306eb28c235204e39fa8a89c84")),
-			NewBranch("v3").Pair(Revision("4a54adf81c75375d26d376459c00d5ff9b703e5e")),
+		id := mkPI("github.com/sdboyer/gpkt").normalize()
+		pvl, err := sm.ListVersions(id)
+		if err != nil {
+			t.Errorf("Unexpected error during initial project setup/fetching %s", err)
 		}
 
-		for k, e := range expected {
-			if !vl[k].Matches(e) {
-				t.Errorf("Expected version %s in position %v but got %s", e, k, vl[k])
+		if len(pvl) != 7 {
+			t.Errorf("Expected seven version results from the test repo, got %v", len(pvl))
+		} else {
+			expected := []PairedVersion{
+				NewVersion("v2.0.0").Pair(Revision("4a54adf81c75375d26d376459c00d5ff9b703e5e")),
+				NewVersion("v1.1.0").Pair(Revision("b2cb48dda625f6640b34d9ffb664533359ac8b91")),
+				NewVersion("v1.0.0").Pair(Revision("bf85021c0405edbc4f3648b0603818d641674f72")),
+				newDefaultBranch("master").Pair(Revision("bf85021c0405edbc4f3648b0603818d641674f72")),
+				NewBranch("v1").Pair(Revision("e3777f683305eafca223aefe56b4e8ecf103f467")),
+				NewBranch("v1.1").Pair(Revision("f1fbc520489a98306eb28c235204e39fa8a89c84")),
+				NewBranch("v3").Pair(Revision("4a54adf81c75375d26d376459c00d5ff9b703e5e")),
+			}
+
+			// SourceManager itself doesn't guarantee ordering; sort them here so we
+			// can dependably check output
+			SortPairedForUpgrade(pvl)
+
+			for k, e := range expected {
+				if !pvl[k].Matches(e) {
+					t.Errorf("Expected version %s in position %v but got %s", e, k, pvl[k])
+				}
 			}
 		}
 
-		if !vl[3].(versionPair).v.(branchVersion).isDefault {
-			t.Error("Expected master branch version to have isDefault flag, but it did not")
+		// Two birds, one stone - make sure the internal ProjectManager vlist cache
+		// works (or at least doesn't not work) by asking for the versions again,
+		// and do it through smcache to ensure its sorting works, as well.
+		smc := &bridge{
+			sm:     sm,
+			vlists: make(map[ProjectIdentifier][]Version),
+			s:      &solver{mtr: newMetrics()},
 		}
-		if vl[4].(versionPair).v.(branchVersion).isDefault {
-			t.Error("Expected v1 branch version not to have isDefault flag, but it did")
+
+		vl, err := smc.listVersions(id)
+		if err != nil {
+			t.Errorf("Unexpected error during initial project setup/fetching %s", err)
 		}
-		if vl[5].(versionPair).v.(branchVersion).isDefault {
-			t.Error("Expected v1.1 branch version not to have isDefault flag, but it did")
+
+		if len(vl) != 7 {
+			t.Errorf("Expected seven version results from the test repo, got %v", len(vl))
+		} else {
+			expected := []Version{
+				NewVersion("v2.0.0").Pair(Revision("4a54adf81c75375d26d376459c00d5ff9b703e5e")),
+				NewVersion("v1.1.0").Pair(Revision("b2cb48dda625f6640b34d9ffb664533359ac8b91")),
+				NewVersion("v1.0.0").Pair(Revision("bf85021c0405edbc4f3648b0603818d641674f72")),
+				newDefaultBranch("master").Pair(Revision("bf85021c0405edbc4f3648b0603818d641674f72")),
+				NewBranch("v1").Pair(Revision("e3777f683305eafca223aefe56b4e8ecf103f467")),
+				NewBranch("v1.1").Pair(Revision("f1fbc520489a98306eb28c235204e39fa8a89c84")),
+				NewBranch("v3").Pair(Revision("4a54adf81c75375d26d376459c00d5ff9b703e5e")),
+			}
+
+			for k, e := range expected {
+				if !vl[k].Matches(e) {
+					t.Errorf("Expected version %s in position %v but got %s", e, k, vl[k])
+				}
+			}
+
+			if !vl[3].(versionPair).v.(branchVersion).isDefault {
+				t.Error("Expected master branch version to have isDefault flag, but it did not")
+			}
+			if vl[4].(versionPair).v.(branchVersion).isDefault {
+				t.Error("Expected v1 branch version not to have isDefault flag, but it did")
+			}
+			if vl[5].(versionPair).v.(branchVersion).isDefault {
+				t.Error("Expected v1.1 branch version not to have isDefault flag, but it did")
+			}
+			if vl[6].(versionPair).v.(branchVersion).isDefault {
+				t.Error("Expected v3 branch version not to have isDefault flag, but it did")
+			}
 		}
-		if vl[6].(versionPair).v.(branchVersion).isDefault {
-			t.Error("Expected v3 branch version not to have isDefault flag, but it did")
+
+		present, err := smc.RevisionPresentIn(id, Revision("4a54adf81c75375d26d376459c00d5ff9b703e5e"))
+		if err != nil {
+			t.Errorf("Should have found revision in source, but got err: %s", err)
+		} else if !present {
+			t.Errorf("Should have found revision in source, but did not")
 		}
-	}
 
-	present, err := smc.RevisionPresentIn(id, Revision("4a54adf81c75375d26d376459c00d5ff9b703e5e"))
-	if err != nil {
-		t.Errorf("Should have found revision in source, but got err: %s", err)
-	} else if !present {
-		t.Errorf("Should have found revision in source, but did not")
-	}
+		// SyncSourceFor will ensure we have everything
+		err = smc.SyncSourceFor(id)
+		if err != nil {
+			t.Errorf("SyncSourceFor failed with unexpected error: %s", err)
+		}
 
-	// SyncSourceFor will ensure we have everything
-	err = smc.SyncSourceFor(id)
-	if err != nil {
-		t.Errorf("SyncSourceFor failed with unexpected error: %s", err)
-	}
+		// Ensure that the appropriate cache dirs and files exist
+		_, err = os.Stat(filepath.Join(cpath, "sources", "https---github.com-sdboyer-gpkt", ".git"))
+		if err != nil {
+			t.Error("Cache repo does not exist in expected location")
+		}
 
-	// Ensure that the appropriate cache dirs and files exist
-	_, err = os.Stat(filepath.Join(cpath, "sources", "https---github.com-sdboyer-gpkt", ".git"))
-	if err != nil {
-		t.Error("Cache repo does not exist in expected location")
-	}
+		os.Stat(filepath.Join(cpath, "metadata", "github.com", "sdboyer", "gpkt", "cache.json"))
 
-	os.Stat(filepath.Join(cpath, "metadata", "github.com", "sdboyer", "gpkt", "cache.json"))
+		// TODO(sdboyer) disabled until we get caching working
+		//_, err = os.Stat(filepath.Join(cpath, "metadata", "github.com", "sdboyer", "gpkt", "cache.json"))
+		//if err != nil {
+		//t.Error("Metadata cache json file does not exist in expected location")
+		//}
 
-	// TODO(sdboyer) disabled until we get caching working
-	//_, err = os.Stat(filepath.Join(cpath, "metadata", "github.com", "sdboyer", "gpkt", "cache.json"))
-	//if err != nil {
-	//t.Error("Metadata cache json file does not exist in expected location")
-	//}
+		// Ensure source existence values are what we expect
+		var exists bool
+		exists, err = sm.SourceExists(id)
+		if err != nil {
+			t.Errorf("Error on checking SourceExists: %s", err)
+		}
+		if !exists {
+			t.Error("Source should exist after non-erroring call to ListVersions")
+		}
+	})
 
-	// Ensure source existence values are what we expect
-	var exists bool
-	exists, err = sm.SourceExists(id)
-	if err != nil {
-		t.Errorf("Error on checking SourceExists: %s", err)
-	}
-	if !exists {
-		t.Error("Source should exist after non-erroring call to ListVersions")
-	}
 }
 
 func TestDefaultBranchAssignment(t *testing.T) {
+	defer uber.SetAndUnsetEnvVar(uber.UserNonDefaultGitRefs, "yes")()
 	if testing.Short() {
 		t.Skip("Skipping default branch assignment test in short mode")
 	}
-	t.Parallel()
+	//Parallel testing
+	t.Run("group", func(t *testing.T) {
+		sm, clean := mkNaiveSM(t)
+		defer clean()
 
-	sm, clean := mkNaiveSM(t)
-	defer clean()
-
-	id := mkPI("github.com/sdboyer/test-multibranch")
-	v, err := sm.ListVersions(id)
-	if err != nil {
-		t.Errorf("Unexpected error during initial project setup/fetching %s", err)
-	}
-
-	if len(v) != 3 {
-		t.Errorf("Expected three version results from the test repo, got %v", len(v))
-	} else {
-		brev := Revision("fda020843ac81352004b9dca3fcccdd517600149")
-		mrev := Revision("9f9c3a591773d9b28128309ac7a9a72abcab267d")
-		expected := []PairedVersion{
-			NewBranch("branchone").Pair(brev),
-			NewBranch("otherbranch").Pair(brev),
-			NewBranch("master").Pair(mrev),
+		id := mkPI("github.com/sdboyer/test-multibranch")
+		v, err := sm.ListVersions(id)
+		if err != nil {
+			t.Errorf("Unexpected error during initial project setup/fetching %s", err)
 		}
 
-		SortPairedForUpgrade(v)
+		if len(v) != 3 {
+			t.Errorf("Expected three version results from the test repo, got %v", len(v))
+		} else {
+			brev := Revision("fda020843ac81352004b9dca3fcccdd517600149")
+			mrev := Revision("9f9c3a591773d9b28128309ac7a9a72abcab267d")
+			expected := []PairedVersion{
+				NewBranch("branchone").Pair(brev),
+				NewBranch("otherbranch").Pair(brev),
+				NewBranch("master").Pair(mrev),
+			}
 
-		for k, e := range expected {
-			if !v[k].Matches(e) {
-				t.Errorf("Expected version %s in position %v but got %s", e, k, v[k])
+			SortPairedForUpgrade(v)
+
+			for k, e := range expected {
+				if !v[k].Matches(e) {
+					t.Errorf("Expected version %s in position %v but got %s", e, k, v[k])
+				}
+			}
+
+			if !v[0].(versionPair).v.(branchVersion).isDefault {
+				t.Error("Expected branchone branch version to have isDefault flag, but it did not")
+			}
+			if !v[0].(versionPair).v.(branchVersion).isDefault {
+				t.Error("Expected otherbranch branch version to have isDefault flag, but it did not")
+			}
+			if v[2].(versionPair).v.(branchVersion).isDefault {
+				t.Error("Expected master branch version not to have isDefault flag, but it did")
 			}
 		}
+	})
 
-		if !v[0].(versionPair).v.(branchVersion).isDefault {
-			t.Error("Expected branchone branch version to have isDefault flag, but it did not")
-		}
-		if !v[0].(versionPair).v.(branchVersion).isDefault {
-			t.Error("Expected otherbranch branch version to have isDefault flag, but it did not")
-		}
-		if v[2].(versionPair).v.(branchVersion).isDefault {
-			t.Error("Expected master branch version not to have isDefault flag, but it did")
-		}
-	}
 }
 
 func TestMgrMethodsFailWithBadPath(t *testing.T) {
@@ -573,31 +581,34 @@ func TestFSCaseSensitivityConvergesSources(t *testing.T) {
 // Regression test for #32
 func TestGetInfoListVersionsOrdering(t *testing.T) {
 	// This test is quite slow, skip it on -short
+	defer uber.SetAndUnsetEnvVar(uber.UserNonDefaultGitRefs, "yes")()
 	if testing.Short() {
 		t.Skip("Skipping slow test in short mode")
 	}
-	t.Parallel()
+	//Parallel testing
+	t.Run("group", func(t *testing.T) {
+		sm, clean := mkNaiveSM(t)
+		defer clean()
+		// setup done, now do the test
 
-	sm, clean := mkNaiveSM(t)
-	defer clean()
+		id := mkPI("github.com/sdboyer/gpkt").normalize()
 
-	// setup done, now do the test
+		_, _, err := sm.GetManifestAndLock(id, NewVersion("v1.0.0"), naiveAnalyzer{})
+		if err != nil {
+			t.Errorf("Unexpected error from GetInfoAt %s", err)
+		}
 
-	id := mkPI("github.com/sdboyer/gpkt").normalize()
+		v, err := sm.ListVersions(id)
+		if err != nil {
+			t.Errorf("Unexpected error from ListVersions %s", err)
+		}
 
-	_, _, err := sm.GetManifestAndLock(id, NewVersion("v1.0.0"), naiveAnalyzer{})
-	if err != nil {
-		t.Errorf("Unexpected error from GetInfoAt %s", err)
-	}
+		if len(v) != 7 {
+			t.Errorf("Expected seven results from ListVersions, got %v", len(v))
+		}
+	})
 
-	v, err := sm.ListVersions(id)
-	if err != nil {
-		t.Errorf("Unexpected error from ListVersions %s", err)
-	}
 
-	if len(v) != 7 {
-		t.Errorf("Expected seven results from ListVersions, got %v", len(v))
-	}
 }
 
 func TestDeduceProjectRoot(t *testing.T) {
@@ -681,101 +692,105 @@ func TestMultiFetchThreadsafe(t *testing.T) {
 	if testing.Short() {
 		t.Skip("Skipping slow test in short mode")
 	}
-	t.Parallel()
 
-	projects := []ProjectIdentifier{
-		mkPI("github.com/sdboyer/gps"),
-		mkPI("github.com/sdboyer/gpkt"),
-		{
-			ProjectRoot: ProjectRoot("github.com/sdboyer/gpkt"),
-			Source:      "https://github.com/sdboyer/gpkt",
-		},
-		mkPI("github.com/sdboyer/gogl"),
-		mkPI("github.com/sdboyer/gliph"),
-		mkPI("github.com/sdboyer/frozone"),
-		mkPI("gopkg.in/sdboyer/gpkt.v1"),
-		mkPI("gopkg.in/sdboyer/gpkt.v2"),
-		mkPI("github.com/Masterminds/VCSTestRepo"),
-		mkPI("github.com/go-yaml/yaml"),
-		mkPI("github.com/sirupsen/logrus"),
-		mkPI("github.com/Masterminds/semver"),
-		mkPI("github.com/Masterminds/vcs"),
-		//mkPI("bitbucket.org/sdboyer/withbm"),
-		//mkPI("bitbucket.org/sdboyer/nobm"),
-	}
+	defer uber.SetAndUnsetEnvVar(uber.UserNonDefaultGitRefs, "yes")()
+	//Parallel testing
+	t.Run("group", func(t *testing.T) {
+		projects := []ProjectIdentifier{
+			mkPI("github.com/sdboyer/gps"),
+			mkPI("github.com/sdboyer/gpkt"),
+			{
+				ProjectRoot: ProjectRoot("github.com/sdboyer/gpkt"),
+				Source:      "https://github.com/sdboyer/gpkt",
+			},
+			mkPI("github.com/sdboyer/gogl"),
+			mkPI("github.com/sdboyer/gliph"),
+			mkPI("github.com/sdboyer/frozone"),
+			mkPI("gopkg.in/sdboyer/gpkt.v1"),
+			mkPI("gopkg.in/sdboyer/gpkt.v2"),
+			mkPI("github.com/Masterminds/VCSTestRepo"),
+			mkPI("github.com/go-yaml/yaml"),
+			mkPI("github.com/sirupsen/logrus"),
+			mkPI("github.com/Masterminds/semver"),
+			mkPI("github.com/Masterminds/vcs"),
+			//mkPI("bitbucket.org/sdboyer/withbm"),
+			//mkPI("bitbucket.org/sdboyer/nobm"),
+		}
 
-	do := func(name string, sm SourceManager) {
-		t.Run(name, func(t *testing.T) {
-			// This gives us ten calls per op, per project, which should be(?)
-			// decently likely to reveal underlying concurrency problems
-			ops := 4
-			cnum := len(projects) * ops * 10
+		do := func(name string, sm SourceManager) {
+			t.Run(name, func(t *testing.T) {
+				// This gives us ten calls per op, per project, which should be(?)
+				// decently likely to reveal underlying concurrency problems
+				ops := 4
+				cnum := len(projects) * ops * 10
 
-			for i := 0; i < cnum; i++ {
-				// Trigger all four ops on each project, then move on to the next
-				// project.
-				id, op := projects[(i/ops)%len(projects)], i%ops
-				// The count of times this op has been been invoked on this project
-				// (after the upcoming invocation)
-				opcount := i/(ops*len(projects)) + 1
+				for i := 0; i < cnum; i++ {
+					// Trigger all four ops on each project, then move on to the next
+					// project.
+					id, op := projects[(i/ops)%len(projects)], i%ops
+					// The count of times this op has been been invoked on this project
+					// (after the upcoming invocation)
+					opcount := i/(ops*len(projects)) + 1
 
-				switch op {
-				case 0:
-					t.Run(fmt.Sprintf("deduce:%v:%s", opcount, id), func(t *testing.T) {
-						t.Parallel()
-						if _, err := sm.DeduceProjectRoot(string(id.ProjectRoot)); err != nil {
-							t.Error(err)
-						}
-					})
-				case 1:
-					t.Run(fmt.Sprintf("sync:%v:%s", opcount, id), func(t *testing.T) {
-						t.Parallel()
-						err := sm.SyncSourceFor(id)
-						if err != nil {
-							t.Error(err)
-						}
-					})
-				case 2:
-					t.Run(fmt.Sprintf("listVersions:%v:%s", opcount, id), func(t *testing.T) {
-						t.Parallel()
-						vl, err := sm.ListVersions(id)
-						if err != nil {
-							t.Fatal(err)
-						}
-						if len(vl) == 0 {
-							t.Error("no versions returned")
-						}
-					})
-				case 3:
-					t.Run(fmt.Sprintf("exists:%v:%s", opcount, id), func(t *testing.T) {
-						t.Parallel()
-						y, err := sm.SourceExists(id)
-						if err != nil {
-							t.Fatal(err)
-						}
-						if !y {
-							t.Error("said source does not exist")
-						}
-					})
-				default:
-					panic(fmt.Sprintf("wtf, %s %v", id, op))
+					switch op {
+					case 0:
+						t.Run(fmt.Sprintf("deduce:%v:%s", opcount, id), func(t *testing.T) {
+							t.Parallel()
+							if _, err := sm.DeduceProjectRoot(string(id.ProjectRoot)); err != nil {
+								t.Error(err)
+							}
+						})
+					case 1:
+						t.Run(fmt.Sprintf("sync:%v:%s", opcount, id), func(t *testing.T) {
+							t.Parallel()
+							err := sm.SyncSourceFor(id)
+							if err != nil {
+								t.Error(err)
+							}
+						})
+					case 2:
+						t.Run(fmt.Sprintf("listVersions:%v:%s", opcount, id), func(t *testing.T) {
+							t.Parallel()
+							vl, err := sm.ListVersions(id)
+							if err != nil {
+								t.Fatal(err)
+							}
+							if len(vl) == 0 {
+								t.Error("no versions returned")
+							}
+						})
+					case 3:
+						t.Run(fmt.Sprintf("exists:%v:%s", opcount, id), func(t *testing.T) {
+							t.Parallel()
+							y, err := sm.SourceExists(id)
+							if err != nil {
+								t.Fatal(err)
+							}
+							if !y {
+								t.Error("said source does not exist")
+							}
+						})
+					default:
+						panic(fmt.Sprintf("wtf, %s %v", id, op))
+					}
 				}
-			}
-		})
-	}
+			})
+		}
 
-	sm, _ := mkNaiveSM(t)
-	do("first", sm)
+		sm, _ := mkNaiveSM(t)
+		do("first", sm)
 
-	// Run the thing twice with a remade sm so that we cover both the cases of
-	// pre-existing and new clones.
-	//
-	// This triggers a release of the first sm, which is much of what we're
-	// testing here - that the release is complete and clean, and can be
-	// immediately followed by a new sm coming in.
-	sm2, clean := remakeNaiveSM(sm, t)
-	do("second", sm2)
-	clean()
+		// Run the thing twice with a remade sm so that we cover both the cases of
+		// pre-existing and new clones.
+		//
+		// This triggers a release of the first sm, which is much of what we're
+		// testing here - that the release is complete and clean, and can be
+		// immediately followed by a new sm coming in.
+		sm2, clean := remakeNaiveSM(sm, t)
+		do("second", sm2)
+		clean()
+	})
+	defer uber.SetAndUnsetEnvVar(uber.UserNonDefaultGitRefs, "yes")()
 }
 
 // Ensure that we don't see concurrent map writes when calling ListVersions.

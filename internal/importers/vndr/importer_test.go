@@ -16,9 +16,11 @@ import (
 	"github.com/golang/dep/internal/importers/importertest"
 	"github.com/golang/dep/internal/test"
 	"github.com/pkg/errors"
+	"github.com/golang/dep/uber"
 )
 
 func TestVndrConfig_Convert(t *testing.T) {
+	defer uber.SetAndUnsetEnvVar(uber.UserNonDefaultGitRefs, "yes")()
 	testCases := map[string]struct {
 		packages []vndrPackage
 		importertest.TestCase
@@ -68,9 +70,11 @@ func TestVndrConfig_Convert(t *testing.T) {
 			}
 		})
 	}
+	
 }
 
 func TestVndrConfig_Import(t *testing.T) {
+	defer uber.SetAndUnsetEnvVar(uber.UserNonDefaultGitRefs, "yes")()
 	h := test.NewHelper(t)
 	defer h.Cleanup()
 
@@ -143,6 +147,7 @@ func TestVndrConfig_Import(t *testing.T) {
 			t.Fatalf("expected %s, got %s", want, got)
 		}
 	}
+	
 }
 
 func TestParseVndrLine(t *testing.T) {
