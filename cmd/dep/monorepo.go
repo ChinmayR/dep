@@ -12,6 +12,8 @@ import (
 
 	"github.com/golang/dep"
 	"github.com/golang/dep/internal/gps"
+	"github.com/golang/dep/internal/gps/paths"
+	"github.com/golang/dep/internal/gps/pkgtree"
 	"github.com/pkg/errors"
 )
 
@@ -23,6 +25,7 @@ further merged with manifest and lock of the root package using conflict resolut
 
 type monorepoCommand struct {
 	target    string
+	verify    bool
 	skipTools bool
 	dryRun    bool
 	reset     bool
@@ -45,14 +48,15 @@ func (cmd *monorepoCommand) Hidden() bool      { return true }
 
 func (cmd *monorepoCommand) Register(fs *flag.FlagSet) {
 	fs.StringVar(&cmd.target, "add", "", "Path where dependency can be cloned from.")
+	fs.BoolVar(&cmd.verify, "verify", false, "Verify package structure of the repo making sure that all imports can be resolved.")
 	fs.BoolVar(&cmd.skipTools, "skip-tools", false, "skip importing configuration from other dependency managers.")
 	fs.BoolVar(&cmd.dryRun, "dry-run", false, "Run dependency resolution and reporting only but don't write results on disk.")
 	fs.BoolVar(&cmd.reset, "reset", false, "Root repo will be reset if this flag is set to true.")
 }
 
 func (cmd *monorepoCommand) Run(ctx *dep.Ctx, args []string) error {
-	if cmd.target == "" {
-		return errors.New("Target package must be specified, please use -add option.")
+	if cmd.target == "" && !cmd.verify {
+		return errors.New("You must either provide package location using -add option or use -verify flag.")
 	}
 
 	err := cmd.detectGoPath(ctx)
@@ -67,43 +71,114 @@ func (cmd *monorepoCommand) Run(ctx *dep.Ctx, args []string) error {
 	sm.UseDefaultSignalHandling()
 	defer sm.Release()
 
-	domain, repoName, err := resolveUrl(cmd.target, sm)
-	if err != nil {
-		return errors.Wrap(err, "resolveUrl")
-	}
-
-	cacheDir, err := ioutil.TempDir("", domain)
-	if err != nil {
-		return errors.Wrap(err, "ioutil.TempDir")
-	}
-	defer os.RemoveAll(cacheDir)
-
-	locations = monorepoLocations{dir: ctx.GOPATH, base: filepath.Join("src", domain),
-		repoName: repoName, cache: cacheDir}
-
-	if !exists(packageRoot(repoName)) {
-		defer os.RemoveAll(locations.cache)
-		if ex := exists(filepath.Join(locations.dir, ".git")); !ex {
-			initGitRepo(locations.dir, true)
-		}
-		if cmd.reset {
-			resetWorkingDirectory(false)
+	if cmd.target != "" {
+		domain, repoName, err := resolveUrl(cmd.target, sm)
+		if err != nil {
+			return errors.Wrap(err, "resolveUrl")
 		}
 
-		cachePackage(cmd.target, repoName)
-		mergeIntoMonorepo(repoName)
-	} else if ctx.Verbose {
-		ctx.Out.Printf("Skipping import phase as repository %v already exists at %v\n", cmd.target, packageRoot(repoName))
+		cacheDir, err := ioutil.TempDir("", domain)
+		if err != nil {
+			return errors.Wrap(err, "ioutil.TempDir")
+		}
+		defer os.RemoveAll(cacheDir)
+
+		locations = monorepoLocations{dir: ctx.GOPATH, base: filepath.Join("src", domain),
+			repoName: repoName, cache: cacheDir}
+
+		if !exists(packageRoot(repoName)) {
+			defer os.RemoveAll(locations.cache)
+			if ex := exists(filepath.Join(locations.dir, ".git")); !ex {
+				initGitRepo(locations.dir, true)
+			}
+			if cmd.reset {
+				resetWorkingDirectory(false)
+			}
+
+			cachePackage(cmd.target, repoName)
+			mergeIntoMonorepo(repoName)
+		} else if ctx.Verbose {
+			ctx.Out.Printf("Skipping import phase as repository %v already exists at %v\n", cmd.target, packageRoot(repoName))
+		}
+
+		if err := cmd.resolveDependencies(ctx, sm, args); err != nil {
+			return err
+		}
 	}
 
-	if err := cmd.resolveDependencies(ctx, sm, args); err != nil {
+	err = verifyConsistency(ctx, sm)
+	if err != nil {
 		return err
 	}
 
-	// TODO run verification to ensure that there are no orphaned packages left.
-	// TODO generate BUCK files.
+	return nil
+}
+
+/* Verify that all dependencies of the source code are present in the monorepo either in src or in vendor folder.
+   Verification process is as follows:
+     1. Get direct dependencies of the src folder.
+     2. Iterate through all imports for every project.
+     3. Make sure import can be found in the gopath skipping references to generated code and standard imports.
+     4. Return an error if mismatches are found.
+  Note that this method will only check for direct dependencies and it does not recursively go into vendor folder. */
+func verifyConsistency(ctx *dep.Ctx, sm *gps.SourceMgr) error {
+	unresolved := make(map[string][]string)
+	ambiguous := make(map[string][]string)
+	src := filepath.Join(ctx.GOPATH, "src")
+	vendor := filepath.Join(src, "vendor")
+	proj, err := initProject(ctx, src)
+	if err != nil {
+		return errors.Wrap(err, "initProject")
+	}
+
+	pkgT, _, err := getDirectDependencies(sm, proj)
+	if err != nil {
+		return errors.Wrap(err, "getDirectDependencies")
+	}
+
+	for _, packageOrErr := range pkgT.Packages {
+		if packageOrErr.Err != nil {
+			continue
+		}
+
+		for _, imp := range append(packageOrErr.P.Imports, packageOrErr.P.TestImports...) {
+			verifyExists(imp, src, vendor, unresolved, ambiguous, packageOrErr.P)
+		}
+	}
+
+	if len(unresolved) > 0 {
+		ctx.Err.Printf("Failed to resolve %v imports:\n", len(unresolved))
+		for pkg, imp := range unresolved {
+			ctx.Err.Printf("Package: %v, Imports: %v\n", pkg, imp)
+		}
+		return errors.New("verification failed because some imports were not resolved.")
+	}
+
+	if len(ambiguous) > 0 {
+		ctx.Err.Printf("Found %v ambiguous imports that exist both in src and in vendor:\n", len(ambiguous))
+		for pkg, imp := range ambiguous {
+			ctx.Err.Printf("Source package: %v, Imports: %v\n", pkg, imp)
+		}
+		return errors.New("verification failed because some imports were ambiguous.")
+	}
 
 	return nil
+}
+
+var existsOnDisk = exists
+
+func verifyExists(imp string, src string, vendor string, unresolved map[string][]string, ambiguous map[string][]string, pkg pkgtree.Package) {
+	if !paths.IsStandardImportPath(imp) && !strings.Contains(imp, "/.gen/") {
+		existsInSrc := existsOnDisk(filepath.Join(src, imp))
+		existsInVendor := existsOnDisk(filepath.Join(vendor, imp))
+		pkgPath := filepath.Join(pkg.ImportPath, pkg.Name)
+		if !existsInSrc && !existsInVendor {
+			unresolved[pkgPath] = append(unresolved[pkgPath], imp)
+		}
+		if existsInSrc && existsInVendor {
+			ambiguous[pkgPath] = append(ambiguous[pkgPath], imp)
+		}
+	}
 }
 
 /* Dependency resolution is a multi step process:

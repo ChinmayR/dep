@@ -1,0 +1,11 @@
+{
+  "commands": [
+    ["monorepo", "-verify"]
+  ],
+  "gopath-initial": {
+    "github.com/sdboyer/deptestdos": "a0196baa11ea047dd65037287451d36b861b00ea"
+  },
+  "vendor-final": [
+  ],
+  "error-expected": "Failed to resolve 1 imports"
+}

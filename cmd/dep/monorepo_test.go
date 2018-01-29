@@ -4,10 +4,12 @@ import (
 	"fmt"
 	"log"
 	"os"
+	"path/filepath"
 	"testing"
 
 	"github.com/golang/dep"
 	"github.com/golang/dep/internal/gps"
+	"github.com/golang/dep/internal/gps/pkgtree"
 	"github.com/pkg/errors"
 	"github.com/stretchr/testify/assert"
 )
@@ -364,6 +366,89 @@ func TestDeleteFromRootLockAndManifest(t *testing.T) {
 func TestMonorepoCommandHidden(t *testing.T) {
 	command := new(monorepoCommand)
 	assert.True(t, command.Hidden())
+}
+
+func TestVerifyExists(t *testing.T) {
+	defer func() { existsOnDisk = exists }()
+	tests := []struct {
+		summary           string
+		imp               string
+		src               string
+		vendor            string
+		pkg               pkgtree.Package
+		existingLocations []string
+		resultUnresolved  bool
+		resultAmbiguous   bool
+	}{
+		{
+			"Location exists in source.",
+			"github.com/foo/bar/baz",
+			"/go/src",
+			"/go/src/vendor",
+			pkgtree.Package{Name: "test-package", ImportPath: "code.uber.internal/devexp/test-package"},
+			[]string{"/go/src/github.com/foo/bar/baz"},
+			false, false,
+		},
+		{
+			"Location exists in vendor.",
+			"github.com/foo/bar/baz",
+			"/go/src",
+			"/go/src/vendor",
+			pkgtree.Package{Name: "test-package", ImportPath: "code.uber.internal/devexp/test-package"},
+			[]string{"/go/src/vendor/github.com/foo/bar/baz"},
+			false, false,
+		},
+		{
+			"Location exists in both src and vendor.",
+			"github.com/foo/bar/baz",
+			"/go/src",
+			"/go/src/vendor",
+			pkgtree.Package{Name: "test-package", ImportPath: "code.uber.internal/devexp/test-package"},
+			[]string{"/go/src/github.com/foo/bar/baz", "/go/src/vendor/github.com/foo/bar/baz"},
+			false, true,
+		},
+		{
+			"Location exists in both src and vendor.",
+			"github.com/foo/bar/baz",
+			"/go/src",
+			"/go/src/vendor",
+			pkgtree.Package{Name: "test-package", ImportPath: "code.uber.internal/devexp/test-package"},
+			[]string{"/go/src/github.com/boo/goo/zoo"},
+			true, false,
+		},
+		{
+			"Standard import path.",
+			"fmt",
+			"/go/src",
+			"/go/src/vendor",
+			pkgtree.Package{Name: "test-package", ImportPath: "code.uber.internal/devexp/test-package"},
+			[]string{"/go/src/github.com/boo/goo/zoo"},
+			false, false,
+		},
+	}
+	for _, test := range tests {
+		existsOnDisk = func(path string) bool {
+			for _, l := range test.existingLocations {
+				if l == path {
+					return true
+				}
+			}
+			return false
+		}
+		unresolved := make(map[string][]string)
+		ambiguous := make(map[string][]string)
+		verifyExists(test.imp, test.src, test.vendor, unresolved, ambiguous, test.pkg)
+		assert.Equal(t, test.resultUnresolved, len(unresolved) != 0, test.summary)
+		assert.Equal(t, test.resultAmbiguous, len(ambiguous) != 0, test.summary)
+		pkgPath := filepath.Join(test.pkg.ImportPath, test.pkg.Name)
+		if len(unresolved) > 0 {
+			assert.Equal(t, []string{test.imp}, unresolved[pkgPath], test.summary)
+		}
+		if len(ambiguous) > 0 {
+			assert.Equal(t, []string{test.imp}, ambiguous[pkgPath], test.summary)
+		}
+	}
+
 }
 
 func newProject(manifestConstraints map[gps.ProjectRoot]gps.ProjectProperties, lockedProjects []gps.LockedProject) *dep.Project {
