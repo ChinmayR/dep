@@ -182,6 +182,7 @@ func TestUber_MirrorsToGitolite(t *testing.T) {
 		importPath   string
 		remoteUrl    string
 		gpath        string // the repo path on gitolite: code.uber.internal/<gpath> ex: github/user/repo or googlesource/net
+		mirrorGpath  string // sanitized gpath capable of mirroring the repo on gitolite
 		rewritername string
 		expected     string
 		remoteExists bool
@@ -192,14 +193,25 @@ func TestUber_MirrorsToGitolite(t *testing.T) {
 			importPath:   "github.com/test/repo",
 			remoteUrl:    "git@github.com:test/repo",
 			gpath:        "github/test/repo",
+			mirrorGpath:  "github/test/repo",
 			rewritername: "github.com",
 			expected:     "ssh://gitolite@code.uber.internal/github/test/repo",
+			remoteExists: true,
+		},
+		{
+			importPath:   "github.com/test/repo.git",
+			remoteUrl:    "git@github.com:test/repo.git",
+			gpath:        "github/test/repo.git",
+			mirrorGpath:  "github/test/repo",
+			rewritername: "github.com",
+			expected:     "ssh://gitolite@code.uber.internal/github/test/repo.git",
 			remoteExists: true,
 		},
 		{
 			importPath:   "gopkg.in/repo.v0",
 			remoteUrl:    "git@github.com:go-repo/repo",
 			gpath:        "github/go-repo/repo",
+			mirrorGpath:  "github/go-repo/repo",
 			rewritername: "gopkg.in",
 			expected:     "ssh://gitolite@code.uber.internal/github/go-repo/repo",
 			remoteExists: true,
@@ -208,6 +220,7 @@ func TestUber_MirrorsToGitolite(t *testing.T) {
 			importPath:   "golang.org/x/repo",
 			remoteUrl:    "https://go.googlesource.com/repo",
 			gpath:        "googlesource/repo",
+			mirrorGpath:  "googlesource/repo",
 			rewritername: "golang.org",
 			expected:     "ssh://gitolite@code.uber.internal/googlesource/repo",
 			remoteExists: true,
@@ -215,6 +228,7 @@ func TestUber_MirrorsToGitolite(t *testing.T) {
 		{
 			importPath:   "golang.org/x/repo",
 			gpath:        "googlesource/repo",
+			mirrorGpath:  "googlesource/repo",
 			rewritername: "golang.org",
 			expected:     "ssh://gitolite@code.uber.internal/googlesource/repo",
 			remoteExists: false,
@@ -235,8 +249,8 @@ func TestUber_MirrorsToGitolite(t *testing.T) {
 				).Return("", "", nil)
 				//successful creation on gitolite
 				ex.On("ExecCommand", "ssh",
-					"gitolite@code.uber.internal", "create", c.gpath,
-				).Return("", "", nil)
+					"gitolite@code.uber.internal", "create", c.mirrorGpath,
+				).Return("", "", nil).Once()
 			} else {
 				ex.On("ExecCommand", "git",
 					"ls-remote", c.remoteUrl, "HEAD",

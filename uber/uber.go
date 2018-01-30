@@ -170,7 +170,8 @@ func CheckAndMirrorRepo(ex ExecutorInterface, gpath, remote string, gitoliteURL 
 	UberLogger.Printf("Remote repo %s does not exist yet on Gitolite, mirroring...", gitoliteURL)
 
 	// Create a mirror.
-	stdout, stderr, err = ex.ExecCommand("ssh", "gitolite@code.uber.internal", "create", gpath)
+	mirrorGpath := strings.Replace(gpath, ".git", "", -1)
+	stdout, stderr, err = ex.ExecCommand("ssh", "gitolite@code.uber.internal", "create", mirrorGpath)
 	UberLogger.Print(stdout)
 
 	// Return with an error if that failed.
