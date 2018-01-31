@@ -42,3 +42,10 @@ func TestDisableWorksCorrectly(t *testing.T) {
 		require.Nil(t, result)
 	})
 }
+
+func TestDisableWithNegativeExpirationError(t *testing.T) {
+	cliContext := new(MockCLIContext)
+	cliContext.On("Duration", "expiration").Return(-1 * time.Minute)
+	err := performSignDisableMessage(cliContext)
+	require.NotNil(t, err)
+}

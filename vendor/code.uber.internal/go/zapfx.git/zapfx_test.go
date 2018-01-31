@@ -88,7 +88,7 @@ func TestProductionDefaultConfig(t *testing.T) {
 	assert.Equal(t, 4, len(cfg.InitialFields), "Expected default fields.")
 	assert.Contains(t, cfg.InitialFields, "hostname", "Hostname not set.")
 	assert.Contains(t, cfg.InitialFields, "zone", "Zone not set.")
-	assert.Equal(t, "tacos", cfg.InitialFields["runtimeEnvironment"], "Runtime environment incorrect.")
+	assert.Equal(t, "tacos", cfg.InitialFields["runtime_env"], "Runtime environment incorrect.")
 	assert.Equal(t, "foo", cfg.InitialFields["service_name"], "Service name incorrect.")
 	cfg.InitialFields = nil
 	require.Equal(t, defaultProdConfig(), cfg, "Unexpected configuration")
@@ -127,7 +127,7 @@ func TestConfiguredFields(t *testing.T) {
 	assert.Contains(t, cfg.InitialFields, "hostname", "Hostname not set.")
 	assert.Equal(t, "foo", cfg.InitialFields["service_name"], "Service name incorrect.")
 	assert.Equal(t, "narnia", cfg.InitialFields["zone"], "Zone incorrect.")
-	assert.Equal(t, "tacos", cfg.InitialFields["runtimeEnvironment"], "Runtime environment incorrect.")
+	assert.Equal(t, "tacos", cfg.InitialFields["runtime_env"], "Runtime environment incorrect.")
 	assert.Equal(t, "shard01", cfg.InitialFields["shard"], "User-supplied field not preserved.")
 	cfg.InitialFields = nil
 	require.Equal(t, defaultProdConfig(), cfg, "Unexpected configuration")

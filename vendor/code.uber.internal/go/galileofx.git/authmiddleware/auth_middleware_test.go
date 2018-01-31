@@ -6,7 +6,7 @@ import (
 	"testing"
 	"time"
 
-	"code.uber.internal/go/galileofx.git/internal"
+	"code.uber.internal/engsec/galileo-go.git/galileotest"
 	"github.com/golang/mock/gomock"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
@@ -22,7 +22,7 @@ func TestYARPCMiddlewareUnaryOutbound(t *testing.T) {
 		mockCtrl := gomock.NewController(t)
 		defer mockCtrl.Finish()
 
-		g := internal.NewMockGalileo(mockCtrl)
+		g := galileotest.NewMockGalileo(mockCtrl)
 		out := transporttest.NewMockUnaryOutbound(mockCtrl)
 
 		ctx, cancel := context.WithTimeout(context.Background(), time.Second)
@@ -46,7 +46,7 @@ func TestYARPCMiddlewareUnaryOutbound(t *testing.T) {
 		mockCtrl := gomock.NewController(t)
 		defer mockCtrl.Finish()
 
-		g := internal.NewMockGalileo(mockCtrl)
+		g := galileotest.NewMockGalileo(mockCtrl)
 		out := transporttest.NewMockUnaryOutbound(mockCtrl)
 
 		ctx, cancel := context.WithTimeout(context.Background(), time.Second)
@@ -71,7 +71,7 @@ func TestYARPCMiddlewareUnaryInbound(t *testing.T) {
 		mockCtrl := gomock.NewController(t)
 		defer mockCtrl.Finish()
 
-		g := internal.NewMockGalileo(mockCtrl)
+		g := galileotest.NewMockGalileo(mockCtrl)
 		handler := transporttest.NewMockUnaryHandler(mockCtrl)
 
 		ctx, cancel := context.WithTimeout(context.Background(), time.Second)
@@ -91,7 +91,7 @@ func TestYARPCMiddlewareUnaryInbound(t *testing.T) {
 		mockCtrl := gomock.NewController(t)
 		defer mockCtrl.Finish()
 
-		g := internal.NewMockGalileo(mockCtrl)
+		g := galileotest.NewMockGalileo(mockCtrl)
 		handler := transporttest.NewMockUnaryHandler(mockCtrl)
 
 		ctx, cancel := context.WithTimeout(context.Background(), time.Second)
@@ -105,16 +105,17 @@ func TestYARPCMiddlewareUnaryInbound(t *testing.T) {
 			Procedure: "KeyValue::setValue",
 		}, &transporttest.FakeResponseWriter{}, handler)
 		require.Error(t, err, "expected failure")
-		assert.Contains(t, err.Error(),
+		status := yarpcerrors.FromError(err)
+		assert.Contains(t, status.Message(),
 			`access denied to procedure "KeyValue::setValue" of service "someservice": great sadness`)
-		assert.Equal(t, yarpcerrors.CodeUnauthenticated, yarpcerrors.ErrorCode(err), "error code must match")
+		assert.Equal(t, yarpcerrors.CodeUnauthenticated, status.Code(), "error code must match")
 	})
 
 	t.Run("health check exempt", func(t *testing.T) {
 		mockCtrl := gomock.NewController(t)
 		defer mockCtrl.Finish()
 
-		g := internal.NewMockGalileo(mockCtrl)
+		g := galileotest.NewMockGalileo(mockCtrl)
 		healthCheckHandler := transporttest.NewMockUnaryHandler(mockCtrl)
 
 		ctx, cancel := context.WithTimeout(context.Background(), time.Second)
@@ -146,7 +147,7 @@ func TestYARPCMiddlewareOnewayOutbound(t *testing.T) {
 		mockCtrl := gomock.NewController(t)
 		defer mockCtrl.Finish()
 
-		g := internal.NewMockGalileo(mockCtrl)
+		g := galileotest.NewMockGalileo(mockCtrl)
 		out := transporttest.NewMockOnewayOutbound(mockCtrl)
 
 		ctx, cancel := context.WithTimeout(context.Background(), time.Second)
@@ -167,7 +168,7 @@ func TestYARPCMiddlewareOnewayOutbound(t *testing.T) {
 		mockCtrl := gomock.NewController(t)
 		defer mockCtrl.Finish()
 
-		g := internal.NewMockGalileo(mockCtrl)
+		g := galileotest.NewMockGalileo(mockCtrl)
 		out := transporttest.NewMockOnewayOutbound(mockCtrl)
 
 		ctx, cancel := context.WithTimeout(context.Background(), time.Second)
@@ -192,7 +193,7 @@ func TestYARPCMiddlewareOnewayInbound(t *testing.T) {
 		mockCtrl := gomock.NewController(t)
 		defer mockCtrl.Finish()
 
-		g := internal.NewMockGalileo(mockCtrl)
+		g := galileotest.NewMockGalileo(mockCtrl)
 		handler := transporttest.NewMockOnewayHandler(mockCtrl)
 
 		ctx, cancel := context.WithTimeout(context.Background(), time.Second)
@@ -212,7 +213,7 @@ func TestYARPCMiddlewareOnewayInbound(t *testing.T) {
 		mockCtrl := gomock.NewController(t)
 		defer mockCtrl.Finish()
 
-		g := internal.NewMockGalileo(mockCtrl)
+		g := galileotest.NewMockGalileo(mockCtrl)
 		handler := transporttest.NewMockOnewayHandler(mockCtrl)
 
 		ctx, cancel := context.WithTimeout(context.Background(), time.Second)
@@ -226,8 +227,9 @@ func TestYARPCMiddlewareOnewayInbound(t *testing.T) {
 			Procedure: "KeyValue::setValue",
 		}, handler)
 		require.Error(t, err, "expected failure")
-		assert.Contains(t, err.Error(),
+		status := yarpcerrors.FromError(err)
+		assert.Contains(t, status.Message(),
 			`access denied to procedure "KeyValue::setValue" of service "someservice": great sadness`)
-		assert.Equal(t, yarpcerrors.CodeUnauthenticated, yarpcerrors.ErrorCode(err), "error code must match")
+		assert.Equal(t, yarpcerrors.CodeUnauthenticated, status.Code(), "error code must match")
 	})
 }

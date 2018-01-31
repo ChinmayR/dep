@@ -1,4 +1,4 @@
-// Copyright (c) 2017 Uber Technologies, Inc.
+// Copyright (c) 2018 Uber Technologies, Inc.
 //
 // Permission is hereby granted, free of charge, to any person obtaining a copy
 // of this software and associated documentation files (the "Software"), to deal
@@ -29,6 +29,8 @@ import (
 
 	"github.com/opentracing/opentracing-go"
 	"github.com/opentracing/opentracing-go/ext"
+	opentracinglog "github.com/opentracing/opentracing-go/log"
+	"go.uber.org/yarpc"
 	"go.uber.org/yarpc/api/transport"
 	"go.uber.org/yarpc/internal/bufferpool"
 	"go.uber.org/yarpc/internal/iopool"
@@ -44,15 +46,17 @@ func popHeader(h http.Header, n string) string {
 
 // handler adapts a transport.Handler into a handler for net/http.
 type handler struct {
-	router      transport.Router
-	tracer      opentracing.Tracer
-	grabHeaders map[string]struct{}
+	router            transport.Router
+	tracer            opentracing.Tracer
+	grabHeaders       map[string]struct{}
+	bothResponseError bool
 }
 
 func (h handler) ServeHTTP(w http.ResponseWriter, req *http.Request) {
 	responseWriter := newResponseWriter(w)
 	service := popHeader(req.Header, ServiceHeader)
 	procedure := popHeader(req.Header, ProcedureHeader)
+	bothResponseError := popHeader(req.Header, AcceptsBothResponseErrorHeader) == AcceptTrue
 	status := yarpcerrors.FromError(errors.WrapHandlerError(h.callHandler(responseWriter, req, service, procedure), service, procedure))
 	if status == nil {
 		responseWriter.Close(http.StatusOK)
@@ -67,10 +71,14 @@ func (h handler) ServeHTTP(w http.ResponseWriter, req *http.Request) {
 	if status.Name() != "" {
 		responseWriter.AddSystemHeader(ErrorNameHeader, status.Name())
 	}
-	// TODO: would prefer to have error message be on a header so we can
-	// have non-nil responses with errors, discuss
-	_, _ = fmt.Fprintln(responseWriter, status.Message())
-	responseWriter.AddSystemHeader("Content-Type", "text/plain; charset=utf8")
+	if bothResponseError && h.bothResponseError {
+		responseWriter.AddSystemHeader(BothResponseErrorHeader, AcceptTrue)
+		responseWriter.AddSystemHeader(ErrorMessageHeader, status.Message())
+	} else {
+		responseWriter.ResetBuffer()
+		_, _ = fmt.Fprintln(responseWriter, status.Message())
+		responseWriter.AddSystemHeader("Content-Type", "text/plain; charset=utf8")
+	}
 	httpStatusCode, ok := _codeToStatusCode[status.Code()]
 	if !ok {
 		httpStatusCode = http.StatusInternalServerError
@@ -123,16 +131,16 @@ func (h handler) callHandler(responseWriter *responseWriter, req *http.Request, 
 		return err
 	}
 
+	if parseTTLErr != nil {
+		return parseTTLErr
+	}
+	if err := transport.ValidateRequestContext(ctx); err != nil {
+		return err
+	}
 	switch spec.Type() {
 	case transport.Unary:
 		defer span.Finish()
-		if parseTTLErr != nil {
-			return parseTTLErr
-		}
 
-		if err := transport.ValidateUnaryContext(ctx); err != nil {
-			return err
-		}
 		err = transport.DispatchUnaryHandler(ctx, spec.Unary(), start, treq, responseWriter)
 
 	case transport.Oneway:
@@ -176,7 +184,7 @@ func handleOnewayRequest(
 func updateSpanWithErr(span opentracing.Span, err error) {
 	if err != nil {
 		span.SetTag("error", true)
-		span.LogEvent(err.Error())
+		span.LogFields(opentracinglog.String("event", err.Error()))
 	}
 }
 
@@ -188,16 +196,20 @@ func (h handler) createSpan(ctx context.Context, req *http.Request, treq *transp
 	parentSpanCtx, _ := tracer.Extract(opentracing.HTTPHeaders, carrier)
 	// parentSpanCtx may be nil, ext.RPCServerOption handles a nil parent
 	// gracefully.
+	tags := opentracing.Tags{
+		"rpc.caller":    treq.Caller,
+		"rpc.service":   treq.Service,
+		"rpc.encoding":  treq.Encoding,
+		"rpc.transport": "http",
+	}
+	for k, v := range yarpc.OpentracingTags {
+		tags[k] = v
+	}
 	span := tracer.StartSpan(
 		treq.Procedure,
 		opentracing.StartTime(start),
-		opentracing.Tags{
-			"rpc.caller":    treq.Caller,
-			"rpc.service":   treq.Service,
-			"rpc.encoding":  treq.Encoding,
-			"rpc.transport": "http",
-		},
 		ext.RPCServerOption(parentSpanCtx), // implies ChildOf
+		tags,
 	)
 	ext.PeerService.Set(span, treq.Caller)
 	ctx = opentracing.ContextWithSpan(ctx, span)
@@ -207,7 +219,7 @@ func (h handler) createSpan(ctx context.Context, req *http.Request, treq *transp
 // responseWriter adapts a http.ResponseWriter into a transport.ResponseWriter.
 type responseWriter struct {
 	w      http.ResponseWriter
-	buffer *bytes.Buffer
+	buffer *bufferpool.Buffer
 }
 
 func newResponseWriter(w http.ResponseWriter) *responseWriter {
@@ -234,11 +246,17 @@ func (rw *responseWriter) AddSystemHeader(key string, value string) {
 	rw.w.Header().Set(key, value)
 }
 
+func (rw *responseWriter) ResetBuffer() {
+	if rw.buffer != nil {
+		rw.buffer.Reset()
+	}
+}
+
 func (rw *responseWriter) Close(httpStatusCode int) {
 	rw.w.WriteHeader(httpStatusCode)
 	if rw.buffer != nil {
 		// TODO: what to do with error?
-		_, _ = rw.w.Write(rw.buffer.Bytes())
+		_, _ = rw.buffer.WriteTo(rw.w)
 		bufferpool.Put(rw.buffer)
 	}
 }

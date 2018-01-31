@@ -1,4 +1,4 @@
-// Copyright (c) 2017 Uber Technologies, Inc.
+// Copyright (c) 2018 Uber Technologies, Inc.
 //
 // Permission is hereby granted, free of charge, to any person obtaining a copy
 // of this software and associated documentation files (the "Software"), to deal
@@ -63,6 +63,16 @@
 // the container.
 //
 // 	fx.Provide(myservicefx.Client("myservice"))
+//
+// The Fx package also provides an UberFx-compatible constructor for
+// registering service procedures. This expects an instance of the service
+// interface to be available in the container and provides the list of
+// procedures resulting from that to the "yarpcfx" value group.
+//
+// 	fx.Provide(
+// 		myservicefx.Server(),
+// 		NewMyServiceHandler,  // func(...) myserviceserver.Interface
+// 	)
 //
 // Automatically Building Clients
 //

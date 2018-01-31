@@ -4,6 +4,7 @@ import (
 	"context"
 	"net/http"
 
+	"code.uber.internal/engsec/galileo-go.git/internal"
 	"go.uber.org/zap"
 )
 
@@ -12,6 +13,9 @@ import (
 //
 // It uses the endpoint-specific configuration for the given request, or the
 // global configuration if no endpoint-specific configuration is found.
+//
+// Compares Rpc-Caller and X-Uber-Source headers against derelict services list.
+// Value of Rpc-Caller is used when both headers are present.
 func AuthenticateHTTPRequest(ctx context.Context, r *http.Request, g Galileo) error {
 	var allowedEntities []string
 	if ecfg, err := g.Endpoint(r.URL.Path); err == nil {
@@ -25,5 +29,14 @@ func AuthenticateHTTPRequest(ctx context.Context, r *http.Request, g Galileo) er
 		}
 	}
 
-	return g.AuthenticateIn(ctx, allowedEntities)
+	return g.AuthenticateIn(ctx, AllowedEntities(allowedEntities...), CallerName(extractCallerName(r)))
+}
+
+// extractCallerName returns name of the service sending the request as
+// indicated by request headers. Empty string means unknown.
+func extractCallerName(r *http.Request) string {
+	if source := r.Header.Get(internal.CallerHeader); source != "" {
+		return source
+	}
+	return r.Header.Get(internal.XUberSourceHeader)
 }

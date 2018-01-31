@@ -1,5 +1,12 @@
 # Changelog
 
+## v1.2.0 (2018-01-08)
+
+- Add canonical import path directive. This will provide better error messages
+  if incorrect import paths are used to import uberfx.
+- Add `netmetricsfx`, a telemetry client designed for the software networking
+  team.
+
 ## v1.1.0 (2017-09-20)
 
 - Add `galileofx`, which automatically adds support for authenticated RPCs.

@@ -1,7 +1,6 @@
 package handlers
 
 import (
-	"bytes"
 	"context"
 	"crypto/ecdsa"
 	"encoding/json"
@@ -12,11 +11,11 @@ import (
 	"time"
 
 	"code.uber.internal/engsec/wonka-go.git"
+	"code.uber.internal/engsec/wonka-go.git/internal/claimhelper"
+	"code.uber.internal/engsec/wonka-go.git/internal/rpc"
 	"code.uber.internal/engsec/wonka-go.git/internal/xhttp"
 	"code.uber.internal/engsec/wonka-go.git/wonkacrypter"
-	"code.uber.internal/engsec/wonka-go.git/wonkamaster/claims"
 	"code.uber.internal/engsec/wonka-go.git/wonkamaster/common"
-	"code.uber.internal/engsec/wonka-go.git/wonkamaster/rpc"
 	"code.uber.internal/engsec/wonka-go.git/wonkamaster/wonkadb"
 	"code.uber.internal/engsec/wonka-go.git/wonkamaster/wonkassh"
 
@@ -34,6 +33,7 @@ type resolveHandler struct {
 	host          string
 	eccPrivateKey *ecdsa.PrivateKey
 	usshCAKeys    []ssh.PublicKey
+	certAuth      *common.CertAuthOverride
 }
 
 func (h resolveHandler) logAndMetrics() (*zap.Logger, tally.Scope) {
@@ -49,6 +49,7 @@ func newResolveHandler(cfg common.HandlerConfig) xhttp.Handler {
 		db:            cfg.DB,
 		pulloClient:   cfg.Pullo,
 		usshCAKeys:    cfg.Ussh,
+		certAuth:      cfg.CertAuthenticationOverride,
 	}
 }
 
@@ -101,7 +102,7 @@ func (h resolveHandler) ServeHTTP(ctx context.Context, w http.ResponseWriter, r 
 
 	if etime.After(time.Now().Add(maxClaimTime)) {
 		h.log.Warn("capped overlog etime", zap.Any("etime", etime.String()))
-		etime = time.Now().Add(2 * time.Hour)
+		etime = time.Now().Add(maxClaimTime)
 	}
 
 	claimReq := wonka.ClaimRequest{
@@ -116,8 +117,9 @@ func (h resolveHandler) ServeHTTP(ctx context.Context, w http.ResponseWriter, r 
 		claimReq, claimType)
 	if err != nil {
 		// this should never happen. an entity should always be able to request
-		// an everyone or an identity claim, and both of those are part of the request
-		writeResponse(w, h, err, wonka.ClaimRejectedNoAccess, http.StatusForbidden)
+		// an everyone or an identity claim, and both of those are part of the
+		// request. Might be an error connecting to pullo.
+		writeResponse(w, h, err, wonka.ClaimRejectedNoAccess, http.StatusInternalServerError)
 		return
 	}
 
@@ -125,7 +127,13 @@ func (h resolveHandler) ServeHTTP(ctx context.Context, w http.ResponseWriter, r 
 		zap.String("claim", claimReq.Claim))
 
 	// respond with a claim here.
-	encryptedToken, err := claims.NewSignedClaim(claimReq, h.eccPrivateKey, pubKey)
+	claim, err := claimhelper.NewSignedClaim(claimReq, h.eccPrivateKey)
+	if err != nil {
+		writeResponse(w, h, err, wonka.ClaimSigningError, http.StatusInternalServerError)
+		return
+	}
+
+	encryptedToken, err := claimhelper.EncryptClaim(claim, h.eccPrivateKey, pubKey)
 	if err != nil {
 		writeResponse(w, h, err, wonka.ClaimSigningError, http.StatusInternalServerError)
 		return
@@ -160,11 +168,6 @@ func (h resolveHandler) authRequest(req wonka.ResolveRequest) (*ecdsa.PublicKey,
 }
 
 func (h resolveHandler) authEnrolledEntity(req wonka.ResolveRequest, pubKey *ecdsa.PublicKey) (claimRequestType, error) {
-	pubKey, err := wonka.KeyFromCompressed(req.PublicKey)
-	if err != nil {
-		return invalidClaim, fmt.Errorf("error pulling out key: %v", err)
-	}
-
 	verifyReq := req
 	verifyReq.Signature = nil
 	toVerify, err := json.Marshal(verifyReq)
@@ -185,25 +188,13 @@ func (h resolveHandler) authUssh(req wonka.ResolveRequest, pubKey *ecdsa.PublicK
 		return invalidClaim, fmt.Errorf("error pulling out certificate: %v", err)
 	}
 
-	// Check the USSH certificate against the CA for validity
-	certChecker := ssh.CertChecker{
-		IsUserAuthority: func(k ssh.PublicKey) bool {
-			for _, ca := range h.usshCAKeys {
-				if bytes.Equal(k.Marshal(), ca.Marshal()) {
-					return true
-				}
-			}
-			return false
-		},
-	}
-
 	certName := strings.Split(req.EntityName, "@")
 	if len(certName) != 2 {
 		return invalidClaim, errors.New("wonkamaster: invalid personnel entity name. http://t.uber.com/wm-ipen")
 	}
 
-	if err := certChecker.CheckCert(certName[0], cert); err != nil {
-		return invalidClaim, fmt.Errorf("ssh certcheck failure: %v", err)
+	if err := wonkassh.CheckUserCert(certName[0], cert, h.usshCAKeys); err != nil {
+		return invalidClaim, err
 	}
 
 	verifyReq := req
@@ -232,14 +223,11 @@ func (h resolveHandler) authUssh(req wonka.ResolveRequest, pubKey *ecdsa.PublicK
 	return requestType, nil
 }
 
+// authCertificate authenticates a resolve request backed by a certiifcate.
 func (h resolveHandler) authCertificate(req wonka.ResolveRequest, pubKey *ecdsa.PublicKey) (claimRequestType, error) {
-	cert, err := wonka.UnmarshalCertificate(req.Certificate)
+	cert, err := authenticateCertificate(req.Certificate, req.EntityName, h.certAuth, h.log)
 	if err != nil {
-		return invalidClaim, fmt.Errorf("error pulling out certificate: %v", err)
-	}
-
-	if err := cert.CheckCertificate(); err != nil {
-		return invalidClaim, fmt.Errorf("invalid certificate: %v", err)
+		return invalidClaim, err
 	}
 
 	verifyReq := req

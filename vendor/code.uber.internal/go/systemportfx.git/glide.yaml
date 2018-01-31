@@ -4,6 +4,8 @@ import:
   version: ^1
 - package: code.uber.internal/go/versionfx.git
   version: ^1
+- package: code.uber.internal/go/httpfx.git
+  version: ^2
 - package: go.uber.org/fx
   version: ^1
 - package: go.uber.org/zap

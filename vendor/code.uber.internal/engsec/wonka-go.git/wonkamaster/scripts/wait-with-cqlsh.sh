@@ -21,6 +21,13 @@ fi
 : ${interval:=1}
 : ${tries:=10}
 
+if ! type -t cqlsh &> /dev/null; then
+    echo "ERROR:: cqlsh is not installed, try 'brew install cassandra'"
+    echo "ERROR:: See wonkamaster/DEVELOPING.md for more details."
+    exit 1
+fi
+
+
 for i in $(seq 1 $tries)
 do
     if ! cqlsh --cqlversion "$cqlversion" "$host" "$port" -e "SHOW HOST" 2>/dev/null

@@ -3,7 +3,7 @@ import:
 - package: github.com/AlekSi/gocov-xml
   version: d2f6da892a0d5e0b587526abf51349ad654ade51
 - package: github.com/Masterminds/glide
-  version: 9ff4cf310f478d923ab6bd3521b5a95128020522
+  version: bd6391b107f040f9d40340a0c551111b77ae5c5b
   repo: gitolite@code.uber.internal:devexp/glide
   vcs: git
 - package: github.com/Masterminds/vcs
@@ -15,7 +15,7 @@ import:
   subpackages:
   - gocov
 - package: github.com/golang/lint
-  version: c5fb716d6688a859aae56d26d3e6070808df29f7
+  version: e5d664eb928e9d79eea4a648ca451da7208d5789
   subpackages:
   - golint
 - package: github.com/jstemmer/go-junit-report
@@ -29,7 +29,7 @@ import:
   subpackages:
   - thrift/thrift-gen
 - package: golang.org/x/tools
-  version: 77187f3c2d7724523287779ae0a022fa20721b04
+  version: e531a2a1c15f94033f6fa87666caeb19a688175f
   subpackages:
   - go/gcimporter15
 - package: github.com/golang/mock
@@ -43,15 +43,15 @@ import:
 - package: github.com/pquerna/ffjson
   version: f60b597ded7e7542b36fe20999dfd48166abd5ae
 - package: code.uber.internal/devexp/homebrew_bottler
-  version: eac925f698d1c542e8786c07ae9177cd392e00ce
+  version: 33738294c414f1ad8d39fb35688dcbeca485b76d
   vcs: git
 - package: code.uber.internal/infra/glide-exec
-  version: 584e2e5564abdca108f6d6eae2c3f85c6bbfe838
+  version: e5b8cf090e3f6b0286533577e9d6466d2a9f7a7a
   vcs: git
 - package: github.com/kisielk/errcheck
   version: db0ca22445717d1b2c51ac1034440e0a2a2de645
 - package: honnef.co/go/tools
-  version: 6bc9a2adc0446cbdfb39f633068ecf88dd42a407
+  version: bf3d85daf373f9ad9fc6da6da7c010f9ee3e8e0c
   repo: https://github.com/dominikh/go-tools
   vcs: git
   subpackages:
@@ -62,7 +62,7 @@ import:
 - package: github.com/golang/protobuf
   version: 18c9bb3261723cd5401db4d0c9fbc5c3b6c70fe8
 - package: github.com/gogo/protobuf
-  version: 100ba4e885062801d56799d78530b73b178a78f3
+  version: 342cbe0a04158f6dcb03ca0079991a51a4248c02
 - package: github.com/jteeuwen/go-bindata
   version: a0ff2567cfb70903282db057e799fd826784d41d
 - package: code.uber.internal/infra/prototools.git

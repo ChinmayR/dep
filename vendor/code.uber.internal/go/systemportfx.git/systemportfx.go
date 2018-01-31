@@ -1,16 +1,16 @@
 // Package systemportfx provides a simple HTTP mux for registering
 // administrative and introspection handlers.
-package systemportfx
+package systemportfx // import "code.uber.internal/go/systemportfx.git"
 
 import (
 	"context"
 	"fmt"
 	"math"
-	"net"
 	"net/http"
 	"strconv"
 
 	envfx "code.uber.internal/go/envfx.git"
+	"code.uber.internal/go/httpfx.git/httpserver"
 	versionfx "code.uber.internal/go/versionfx.git"
 	"go.uber.org/fx"
 	"go.uber.org/zap"
@@ -18,7 +18,7 @@ import (
 
 const (
 	// Version is the current package version.
-	Version = "1.1.0"
+	Version = "1.3.0"
 
 	_name = "systemportfx"
 )
@@ -77,50 +77,22 @@ func New(p Params) (Result, error) {
 	}
 
 	server := &http.Server{
+		Addr:     fmt.Sprintf(":%d", port),
 		Handler:  mux,
 		ErrorLog: zap.NewStdLog(logger),
 	}
-
-	// The standard library's net/http.Server really, really wants to live in
-	// the main function - the usual server.ListenAndServe blocks until
-	// shutdown. Fitting it into Fx's lifecycle requires closing over some
-	// shared state.
-	errCh := make(chan error, 1)
+	handle := httpserver.NewHandle(server)
 	p.Lifecycle.Append(fx.Hook{
-		OnStart: func(context.Context) error {
-			// Most errors that occur when starting an http.Server are actually
-			// Listen errors. If we encounter one of those, we can abort
-			// immediately.
-			ln, err := net.Listen("tcp", fmt.Sprintf(":%d", port))
-			if err != nil {
+		OnStart: func(ctx context.Context) error {
+			if err := handle.Start(ctx); err != nil {
 				return fmt.Errorf("error starting system port mux on port %d: %v", port, err)
 			}
-			go func() {
-				// Serve blocks until it encounters an error or until the server shuts
-				// down, so we need to call it in a separate goroutine. Errors here
-				// (apart from http.ErrServerClosed) are rare.
-				err := server.Serve(ln)
-				if err != http.ErrServerClosed {
-					// Log errors immediately instead of waiting until OnStop. If this
-					// happens following a deploy, Sentry and M3 should trigger a
-					// rollback.
-					logger.Error("error serving on system port", zap.Error(err))
-				}
-				errCh <- err
-			}()
-			logger.Info("started HTTP server on system port", zap.Stringer("port", ln.Addr()))
+			logger.Info("started HTTP server on system port", zap.Stringer("addr", handle.Addr()))
 			return nil
 		},
-		OnStop: func(ctx context.Context) error {
-			if err := server.Shutdown(ctx); err != nil {
-				return err
-			}
-			if err := <-errCh; err != http.ErrServerClosed {
-				return err
-			}
-			return nil
-		},
+		OnStop: handle.Shutdown,
 	})
+
 	return Result{Mux: mux}, nil
 }
 

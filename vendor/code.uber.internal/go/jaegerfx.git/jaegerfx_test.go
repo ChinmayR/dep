@@ -1,12 +1,19 @@
 package jaegerfx
 
 import (
+	"bytes"
+	"io"
+	"io/ioutil"
+	"net/http"
+	"net/http/httptest"
 	"testing"
 
 	envfx "code.uber.internal/go/envfx.git"
 	servicefx "code.uber.internal/go/servicefx.git"
 	versionfx "code.uber.internal/go/versionfx.git"
 	opentracing "github.com/opentracing/opentracing-go"
+	"github.com/opentracing/opentracing-go/ext"
+	"github.com/opentracing/opentracing-go/mocktracer"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 	"github.com/uber-go/tally"
@@ -134,4 +141,78 @@ func TestGlobalTracerIsChanged(t *testing.T) {
 	tr := opentracing.GlobalTracer()
 	_, ok := tr.(*opentracing.NoopTracer)
 	require.False(t, ok, "global tracer must not be no-op")
+}
+
+func TestHTTPMiddlewareRoundTrip(t *testing.T) {
+	tracer := mocktracer.New()
+	tracer.RegisterInjector(opentracing.HTTPHeaders,
+		&mocktracer.TextMapPropagator{HTTPHeaders: true})
+
+	var out struct {
+		Start   func(http.RoundTripper) http.RoundTripper `name:"trace.start"`
+		End     func(http.RoundTripper) http.RoundTripper `name:"trace.end"`
+		Handler func(http.Handler) http.Handler           `name:"trace"`
+	}
+
+	app := fxtest.New(
+		t,
+		fx.Provide(
+			zap.NewNop,
+			func() opentracing.Tracer { return tracer },
+			newHTTPMiddleware,
+		),
+		fx.Extract(&out),
+	)
+	defer app.RequireStart().RequireStop()
+
+	handler := out.Handler(http.HandlerFunc(func(w http.ResponseWriter, req *http.Request) {
+		defer req.Body.Close()
+
+		headers := req.Header
+		assert.NotEmpty(t, headers.Get("Mockpfx-Ids-Spanid"), "missing span id from request")
+		assert.NotEmpty(t, headers.Get("Mockpfx-Ids-Traceid"), "missing trace id from request")
+
+		span := opentracing.SpanFromContext(req.Context())
+		assert.NotNil(t, span, "span must not be nil")
+
+		_, err := io.Copy(w, req.Body)
+		assert.NoError(t, err, "failed to write response body")
+	}))
+
+	server := httptest.NewServer(handler)
+	defer server.Close()
+
+	client := &http.Client{Transport: out.Start(out.End(http.DefaultTransport))}
+	res, err := client.Post(server.URL, "text/plain", bytes.NewBufferString("hello"))
+	require.NoError(t, err, "request failed")
+
+	body, err := ioutil.ReadAll(res.Body)
+	require.NoError(t, err, "failed to read response body")
+	require.NoError(t, res.Body.Close(), "failed to close response body")
+	assert.Equal(t, "hello", string(body), "response body did not match")
+
+	spans := tracer.FinishedSpans()
+	require.Len(t, spans, 2, "expected exactly one span to be emitted")
+
+	var gotClient, gotServer bool
+	for _, span := range spans {
+		assert.Equal(t, "POST", span.OperationName, "OperationName did not match")
+		assert.Equal(t, uint16(200), span.Tag("http.status_code"), "status code tag did not match")
+		assert.Equal(t, "POST", span.Tag("http.method"), "method tag did not match")
+
+		switch kind := span.Tag("span.kind"); kind {
+		case ext.SpanKindEnum("client"):
+			assert.False(t, gotClient, "got two client spans instead of one")
+			gotClient = true
+			assert.Equal(t, server.URL, span.Tag("http.url"), "url tag did not match")
+		case ext.SpanKindEnum("server"):
+			assert.False(t, gotServer, "got two server spans instead of one")
+			gotServer = true
+			assert.Equal(t, "/", span.Tag("http.url"), "url tag did not match")
+		default:
+			require.FailNow(t, "unexpected span kind %q", kind)
+		}
+	}
+	require.True(t, gotClient, "expected a client span but received none")
+	require.True(t, gotServer, "expected a server span but received none")
 }

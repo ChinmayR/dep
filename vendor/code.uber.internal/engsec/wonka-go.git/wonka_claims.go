@@ -9,7 +9,9 @@ import (
 	"strings"
 	"time"
 
+	"code.uber.internal/engsec/wonka-go.git/internal"
 	"code.uber.internal/engsec/wonka-go.git/wonkacrypter"
+
 	"go.uber.org/zap"
 	"golang.org/x/crypto/ssh"
 )
@@ -21,9 +23,6 @@ const (
 
 var (
 	defaultClaimTTL = 24 * time.Hour
-	maxClaimTTL     = 24 * time.Hour
-
-	errVerifyOnly = errors.New("cannot request claims")
 
 	// clockSkew tries to account for, well, clock skew. So
 	// ValidAfter + clockSkew > time.Now() and
@@ -55,65 +54,101 @@ func UnmarshalClaim(c string) (*Claim, error) {
 	return &claim, nil
 }
 
-// Inspect returns true if the claim token is good for a destination listed in
-// allowedDests and contain a claim listed in requiredClaims. Returns nil when
-// everything is ok with the token. Otherwise returns an error indicating the
-// problem.
-func (c *Claim) Inspect(allowedDests, requiredClaims []string) error {
-	for _, dest := range allowedDests {
-		if err := c.Check(dest, requiredClaims); err != nil {
-			return err
-		}
+// GetInvalidityReason accepts an error returned by Claim.Validate, Claim.Check,
+// or Claim.Inspect, and returns a low cardinality machine readable reason for
+// the validation failure. Return value ok is true when given error has a
+// reason, false otherwise.
+func GetInvalidityReason(err error) (reason string, ok bool) {
+	verr, ok := err.(*internal.ValidationError)
+	// Returning false tells caller there is no invalidity reason, so
+	// they can use whatever their default is.
+	// Wonka should never produce a nil ValidationError, we check to be
+	// extra safe against seg faults.
+	if !ok || verr == nil || verr.Reason() == "" {
+		return "", false
 	}
 
-	return nil
+	return verr.Reason(), true
 }
 
-// Check checks that a claim token is valid, the destination is dest, and that
-// it grants a claim listed in requiredClaims.  Returns nil when everything is
-// ok with the token. Otherwise returns an error indicating the problem.
-func (c *Claim) Check(dest string, requiredClaims []string) error {
+// Inspect checks that a claim token is valid, has a destination listed in
+// allowedDests, and that it grants a claim listed in allowedClaims. Returns
+// nil when everything is ok with the token. Otherwise returns an error
+// indicating the problem.
+// You may be able to get more information about errors returned by Inspect by
+// using GetInvalidityReason.
+func (c *Claim) Inspect(allowedDests, allowedClaims []string) error {
 	if err := c.Validate(); err != nil {
 		return err
 	}
 
 	// now check destination
-	if !strings.EqualFold(c.Destination, dest) {
-		return fmt.Errorf("claim token destination is not %q", dest)
+	destOk := false
+	for _, dest := range allowedDests {
+		if strings.EqualFold(c.Destination, dest) {
+			destOk = true
+			break
+		}
+	}
+	if !destOk {
+		return internal.NewValidationErrorf(
+			internal.InvalidWrongDestination,
+			"claim token destination %q is not among allowed destinations %q",
+			c.Destination, allowedDests,
+		)
 	}
 
-	grantedClaims := make(map[string]struct{}, 1)
+	grantedClaims := make(map[string]struct{}, len(c.Claims))
 	for _, gc := range c.Claims {
 		grantedClaims[strings.ToLower(gc)] = struct{}{}
 	}
 
-	for _, ac := range requiredClaims {
+	for _, ac := range allowedClaims {
 		if _, ok := grantedClaims[strings.ToLower(ac)]; ok {
 			return nil
 		}
 	}
 
-	return fmt.Errorf(
-		"claim token grants no required claims. requiredClaims=%q; grantedClaims=%q", requiredClaims, c.Claims,
+	return internal.NewValidationErrorf(
+		internal.InvalidNoCommonClaims,
+		"no common claims between token and configured allowed_entities. allowed_entities=%q; granted_claims=%q",
+		allowedClaims, c.Claims,
 	)
+}
+
+// Check checks that a claim token is valid, the destination is dest, and that
+// it grants a claim listed in allowedClaims. Returns nil when everything is
+// ok with the token. Otherwise returns an error indicating the problem.
+// You may be able to get more information about errors returned by Check by
+// using GetInvalidityReason.
+func (c *Claim) Check(dest string, allowedClaims []string) error {
+	return c.Inspect([]string{dest}, allowedClaims)
 }
 
 // Validate checks that a claim is signed by wonkamaster, and not expired.
 // Returns nil when token is valid, otherwise returns an error indicating the
 // problem.
+// You may be able to get more information about errors returned by Validate by
+// using GetInvalidityReason.
 func (c *Claim) Validate() error {
 	now := time.Now()
 	createTime := time.Unix(c.ValidAfter, 0)
 	expireTime := time.Unix(c.ValidBefore, 0)
 
 	if now.Add(clockSkew).Before(createTime) {
-		return fmt.Errorf("claim token not valid yet: entity=%q, createTime=%d, now=%d",
-			c.EntityName, c.ValidAfter, now.Unix())
+		return internal.NewValidationErrorf(
+			internal.InvalidFromFuture,
+			"claim token not valid yet: entity=%q, createTime=%d, now=%d",
+			c.EntityName, c.ValidAfter, now.Unix(),
+		)
 	}
 
 	if now.Add(-clockSkew).After(expireTime) {
-		return fmt.Errorf("claim token expired: entity=%q, expireTime=%d, now=%d",
-			c.EntityName, c.ValidBefore, now.Unix())
+		return internal.NewValidationErrorf(
+			internal.InvalidExpired,
+			"claim token expired: entity=%q, expireTime=%d, now=%d",
+			c.EntityName, c.ValidBefore, now.Unix(),
+		)
 	}
 
 	claim := Claim{
@@ -127,14 +162,17 @@ func (c *Claim) Validate() error {
 
 	toVerify, err := json.Marshal(claim)
 	if err != nil {
-		return fmt.Errorf("error marshalling claim for signature check: %v", err)
+		return internal.NewValidationErrorf(
+			internal.InvalidMarshalError,
+			"error marshalling claim for signature check: %v", err,
+		)
 	}
 
 	if wonkacrypter.VerifyAny(toVerify, c.Signature, WonkaMasterPublicKeys) {
 		return nil // valid token
 	}
 
-	return errors.New("claim token has invalid signature")
+	return internal.NewValidationErrorf(internal.InvalidSignature, "claim token has invalid signature")
 }
 
 // ClaimRequest requests a new wonka claim.
@@ -158,10 +196,6 @@ func (w *uberWonka) doRequestClaim(ctx context.Context, cr ClaimRequest) (ret *C
 		}
 		m.Counter(name).Inc(1)
 	}()
-
-	if w.verifyOnly {
-		return nil, errVerifyOnly
-	}
 
 	if len(w.implicitClaims) != 0 {
 		cr.Claim = fmt.Sprintf("%s,%s", cr.Claim, strings.Join(w.implicitClaims, ","))
@@ -214,7 +248,7 @@ func (w *uberWonka) doRequestClaim(ctx context.Context, cr ClaimRequest) (ret *C
 	}
 
 	var cResp ClaimResponse
-	if err := w.httpRequest(ctx, claimEndpoint, cr, &cResp); err != nil {
+	if err := w.httpRequester.Do(ctx, claimEndpoint, cr, &cResp); err != nil {
 		w.log.Error("error sending http/s request", zap.Error(err))
 		return nil, fmt.Errorf("error from %s: %v", claimEndpoint, err)
 	}
@@ -292,32 +326,18 @@ func (w *uberWonka) ClaimResolveTTL(ctx context.Context, entityName string, ttl 
 		Certificate:     marshalledCert,
 	}
 
-	if w.ussh != nil {
-		req.USSHCertificate = ssh.MarshalAuthorizedKey(w.ussh)
-		toSign, err := json.Marshal(req)
-		if err != nil {
-			return nil, fmt.Errorf("error marshalling request to sign: %v", err)
-		}
-		sig, err := w.sshSignMessage(toSign)
-		if err != nil {
-			return nil, fmt.Errorf("error ssh signing request: %v", err)
-		}
-		req.Signature = sig.Blob
-		req.USSHSignatureType = sig.Format
-	} else {
-		toSign, err := json.Marshal(req)
-		if err != nil {
-			return nil, fmt.Errorf("error marshalling request to sign: %v", err)
-		}
+	toSign, err := json.Marshal(req)
+	if err != nil {
+		return nil, fmt.Errorf("error marshalling request to sign: %v", err)
+	}
 
-		req.Signature, err = wonkacrypter.New().Sign(toSign, key)
-		if err != nil {
-			return nil, fmt.Errorf("error signing resolve request: %v", err)
-		}
+	req.Signature, err = wonkacrypter.New().Sign(toSign, key)
+	if err != nil {
+		return nil, fmt.Errorf("error signing resolve request: %v", err)
 	}
 
 	var resp ClaimResponse
-	if err := w.httpRequest(ctx, resolveEndpoint, req, &resp); err != nil {
+	if err := w.httpRequester.Do(ctx, resolveEndpoint, req, &resp); err != nil {
 		return nil, fmt.Errorf("error from %s: %v", resolveEndpoint, err)
 	}
 
@@ -390,6 +410,6 @@ func (w *uberWonka) requestClaim(ctx context.Context, impersonatedEntity string,
 }
 
 // ClaimImpersonateTTL will try to request a claim good for the named entity, on behalf of an impersonated user
-func (w *uberWonka) ClaimImpersonateTTL(ctx context.Context, impersonatedEntity string, entityName string, ttl time.Duration) (*Claim, error) {
-	return w.requestClaim(ctx, impersonatedEntity, entityName, ttl)
+func (w *uberWonka) ClaimImpersonateTTL(ctx context.Context, impersonatedEntity string, destination string, ttl time.Duration) (*Claim, error) {
+	return w.requestClaim(ctx, impersonatedEntity, destination, ttl)
 }

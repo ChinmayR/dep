@@ -103,6 +103,14 @@ func DecryptAny(cipherText []byte, ecPriv *ecdsa.PrivateKey, ecPubs []*ecdsa.Pub
 }
 
 func (c wonkaCrypter) Encrypt(plainText []byte, ecPriv *ecdsa.PrivateKey, ecPub *ecdsa.PublicKey) ([]byte, error) {
+	if ecPriv == nil {
+		return nil, errors.New("nil private key")
+	}
+
+	if ecPub == nil {
+		return nil, errors.New("nil public key")
+	}
+
 	block, err := SharedSecret(ecPriv, ecPub)
 	if err != nil {
 		c.log.Error("generating block from shared secret", zap.Error(err))
@@ -124,6 +132,14 @@ func (c wonkaCrypter) Encrypt(plainText []byte, ecPriv *ecdsa.PrivateKey, ecPub 
 }
 
 func (c wonkaCrypter) Decrypt(cipherText []byte, ecPriv *ecdsa.PrivateKey, ecPub *ecdsa.PublicKey) ([]byte, error) {
+	if ecPriv == nil {
+		return nil, errors.New("nil private key")
+	}
+
+	if ecPub == nil {
+		return nil, errors.New("nil public key")
+	}
+
 	if textLen := len(cipherText); textLen < aes.BlockSize {
 		c.log.Error("ciphertext too short", zap.Any("datalength", textLen))
 		return nil, errors.New("ciphertext too short")
@@ -160,6 +176,10 @@ func padding(desiredLen int, b *big.Int, sig []byte) []byte {
 }
 
 func (c wonkaCrypter) Sign(data []byte, ecPriv *ecdsa.PrivateKey) ([]byte, error) {
+	if ecPriv == nil {
+		return nil, errors.New("nil private key")
+	}
+
 	h := crypto.SHA256.New()
 	h.Write(data)
 
@@ -177,6 +197,10 @@ func (c wonkaCrypter) Sign(data []byte, ecPriv *ecdsa.PrivateKey) ([]byte, error
 }
 
 func (c wonkaCrypter) Verify(data, sig []byte, ecPub *ecdsa.PublicKey) bool {
+	if ecPub == nil {
+		return false
+	}
+
 	// TODO(pmoody): see about removing these numeric constants.
 	if len(sig) != 64 {
 		c.log.Error("invalid signature length",
@@ -201,6 +225,14 @@ func (c wonkaCrypter) Verify(data, sig []byte, ecPub *ecdsa.PublicKey) bool {
 // SharedSecret returns secret that's shared between the given
 // ecdsa private and public keys.
 func SharedSecret(priv *ecdsa.PrivateKey, pub *ecdsa.PublicKey) (cipher.Block, error) {
+	if priv == nil {
+		return nil, errors.New("nil private key")
+	}
+
+	if pub == nil {
+		return nil, errors.New("nil public key")
+	}
+
 	if priv.PublicKey.Curve != pub.Curve {
 		return nil, errors.New("bad keys")
 	} else if !priv.PublicKey.IsOnCurve(pub.X, pub.Y) {

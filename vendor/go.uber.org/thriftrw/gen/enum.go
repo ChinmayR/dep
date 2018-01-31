@@ -1,4 +1,4 @@
-// Copyright (c) 2017 Uber Technologies, Inc.
+// Copyright (c) 2018 Uber Technologies, Inc.
 //
 // Permission is hereby granted, free of charge, to any person obtaining a copy
 // of this software and associated documentation files (the "Software"), to deal
@@ -105,6 +105,11 @@ func enum(g Generator, spec *compile.EnumSpec) error {
 				default:
 					return <$fmt>.Errorf("unknown enum value %q for %q", value, "<$enumName>")
 			}
+		}
+
+		// Ptr returns a pointer to this enum value.
+		func (<$v> <$enumName>) Ptr() *<$enumName> {
+			return &<$v>
 		}
 
 		// ToWire translates <$enumName> into a Thrift-level intermediate

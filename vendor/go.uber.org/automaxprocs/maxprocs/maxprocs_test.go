@@ -120,20 +120,47 @@ func TestSet(t *testing.T) {
 		assert.Contains(t, buf.String(), "quota undefined", "unexpected log output")
 	})
 
+	t.Run("QuotaUndefined return maxProcs=7", func(t *testing.T) {
+		buf, logOpt := testLogger()
+		quotaOpt := stubProcs(func(int) (int, iruntime.CPUQuotaStatus, error) {
+			return 7, iruntime.CPUQuotaUndefined, nil
+		})
+		prev := currentMaxProcs()
+		undo, err := Set(logOpt, quotaOpt)
+		defer undo()
+		require.NoError(t, err, "Set failed")
+		assert.Equal(t, prev, currentMaxProcs(), "shouldn't alter GOMAXPROCS")
+		assert.Contains(t, buf.String(), "quota undefined", "unexpected log output")
+	})
+
 	t.Run("QuotaTooSmall", func(t *testing.T) {
 		buf, logOpt := testLogger()
 		quotaOpt := stubProcs(func(min int) (int, iruntime.CPUQuotaStatus, error) {
 			return min, iruntime.CPUQuotaMinUsed, nil
 		})
-		undo, err := Set(logOpt, quotaOpt)
+		undo, err := Set(logOpt, quotaOpt, Min(5))
 		defer undo()
 		require.NoError(t, err, "Set failed")
-		assert.Equal(t, iruntime.MinGOMAXPROCS, currentMaxProcs(), "should use min allowed GOMAXPROCS")
+		assert.Equal(t, 5, currentMaxProcs(), "should use min allowed GOMAXPROCS")
+		assert.Contains(t, buf.String(), "using minimum allowed", "unexpected log output")
+	})
+
+	t.Run("Min unused", func(t *testing.T) {
+		buf, logOpt := testLogger()
+		quotaOpt := stubProcs(func(min int) (int, iruntime.CPUQuotaStatus, error) {
+			return min, iruntime.CPUQuotaMinUsed, nil
+		})
+		// Min(-1) should be ignored.
+		undo, err := Set(logOpt, quotaOpt, Min(5), Min(-1))
+		defer undo()
+		require.NoError(t, err, "Set failed")
+		assert.Equal(t, 5, currentMaxProcs(), "should use min allowed GOMAXPROCS")
 		assert.Contains(t, buf.String(), "using minimum allowed", "unexpected log output")
 	})
 
 	t.Run("QuotaUsed", func(t *testing.T) {
 		opt := stubProcs(func(min int) (int, iruntime.CPUQuotaStatus, error) {
+			assert.Equal(t, 1, min, "Default minimum value should be 1")
 			return 42, iruntime.CPUQuotaUsed, nil
 		})
 		undo, err := Set(opt)

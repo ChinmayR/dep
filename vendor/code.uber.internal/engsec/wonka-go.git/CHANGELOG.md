@@ -1,6 +1,78 @@
 # Changelog
 
-## v1.2.0-dev (2017-10-05)
+## v1.6.0 (2018-01-18)
+
+- Added WonkaClientCertPath and WonkaClientKeyPath config variables.
+- Removed dependency on "go.uber.org/atomic" package.
+- Fixed an issue that could cause wonka to refresh certificates too often.
+- Claims for AD groups are no longer case-sensitive (wonkamaster change).
+
+## v1.5.1 (2017-12-22)
+
+- Fix bug where wonkad would refresh certificates too often.
+
+## v1.5.0 (2017-12-07)
+
+- Add testdata.EnrollEntity helper for directly adding entities to Wonka's
+  database.
+- Augment claim validation errors with reason.
+- Start during panic: Wonka client will start even when globally disabled.
+- Return after panic: Wonka client can now return to normal functional mode
+  after global disable.
+- Fix issue where Wonka client can start without a private key.
+- Don't ussh sign resolve requests.
+
+## v1.4.5 (2017-11-30)
+- Skip unit tests altogether for build debian step
+
+## v1.4.4 (2017-11-30)
+- Skip unit tests failing in production
+
+## v1.4.3 (2017-11-23)
+
+- Fix bug loading keys from secrets.yaml
+- Add host:global to M3 metrics, and move version tag from M3 to logs.
+- Fix bug so claim.Inspect now works as described and allows claims with one of
+  multiple destinations.
+
+## v1.4.2 (2017-11-14)
+
+- Init will now succeed while globally disabled.
+- Local testing for global disable, aka panic button.
+
+## v1.4.1 (2017-11-08)
+
+- add more tests
+
+## v1.4.0 (2017-11-03)
+
+- deprecate the Sign, Verify, Encrypt & Decrypt methods on the wonka interface.
+- cut down logspam.
+- more better tests. massive coverage improvement.
+- upgrade everything to wonka certs.
+- fix entity name == cert.entityname.
+- add cookies (replacement for claims).
+- added wonkamaster pubkey and url to config options (instead of using env vars).
+- fix security flaw in ussh cert checking
+- move claims package to internal (non-public).
+- wonkamaster uses staging key when in staging environment.
+
+## v1.3.1 (2017-10-26)
+
+- Remove dependency on fx ^1 by internalizing envfx because UberFx-beta and Glue-beta
+  are not compatible with fx ^1.
+
+## v1.3.0 (2017-10-17)
+
+- better errors from wonkad.
+- remove wonkabar.uber.com, wonka-services require cerberus to test from outside of prod.
+- better test coverage.
+- respect the panic button in updateDerelicts()
+- try to work around langley bug in loadKey()
+- fix --generate-keys option for wonkacli
+- update gobuild
+
+## v1.2.0 (2017-10-05)
 
 - better test coverage.
 - cancel the background goroutines (cert refresh, derelict checking, globally disabled).
@@ -8,9 +80,9 @@
 - globally disabled is now base32 encoded.
 
 ## v1.1.2 (2017-09-26)
-- Remove derelict goroutine to mitigate live-site. See https://outages.uberinternal.com/incidents/586a638f-a49c-4d27-9fd8-2c442d46a36e. 
+- Remove derelict goroutine to mitigate live-site. See https://outages.uberinternal.com/incidents/586a638f-a49c-4d27-9fd8-2c442d46a36e.
 
-## v1.1.1-dev (2017-09-25)
+## v1.1.1 (2017-09-25)
 
 - omitempty for implicitclaims
 
@@ -19,7 +91,7 @@
 - implicit claims
 - add EntityCrypter
 
-## v1.0.1-dev (2017-09-20)
+## v1.0.1 (2017-09-20)
 
 - bug fix when checking for derelicts.
 
@@ -42,7 +114,7 @@
 - Add wonka.IsGloballyDisabled.
 - Fix impersonated claim requests.
 
-## v0.16.1-dev (2017-09-11)
+## v0.16.1 (2017-09-11)
 
 - add staging configuration
 - a number of client segfault fixes

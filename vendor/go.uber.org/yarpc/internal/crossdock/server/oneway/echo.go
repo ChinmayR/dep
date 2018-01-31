@@ -1,4 +1,4 @@
-// Copyright (c) 2017 Uber Technologies, Inc.
+// Copyright (c) 2018 Uber Technologies, Inc.
 //
 // Permission is hereby granted, free of charge, to any person obtaining a copy
 // of this software and associated documentation files (the "Software"), to deal
@@ -74,6 +74,8 @@ func (o *onewayHandler) callHome(ctx context.Context, callBackAddr string, body 
 	}
 	defer out.Stop()
 
+	ctx, cancel := context.WithTimeout(ctx, time.Second)
+	defer cancel()
 	_, err := out.CallOneway(ctx, &transport.Request{
 		Caller:    "oneway-server",
 		Service:   "oneway-client",

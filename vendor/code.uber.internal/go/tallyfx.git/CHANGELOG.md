@@ -1,5 +1,18 @@
 # Changelog
 
+## v1.2.2 (2017-11-15)
+
+- Release off master branch.
+
+## v1.2.1 (2017-11-15)
+
+- Bump max queue size to 4096 to match Go tally.
+
+## v1.2.0 (2017-11-06)
+
+- Add canonical import path directive. This will provide better error messages
+  if incorrect import paths are used to import the package.
+
 ## v1.1.2 (2017-09-25)
 
 - Rename runtime environment tag to runtime_env to match

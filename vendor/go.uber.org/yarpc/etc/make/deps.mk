@@ -13,13 +13,14 @@ EXTRA_GO_BIN_DEPS = \
 	github.com/golang/lint/golint \
 	github.com/wadey/gocovmerge \
 	golang.org/x/tools/cmd/cover \
-	go.uber.org/tools/parallel-exec
+	go.uber.org/tools/parallel-exec \
+	honnef.co/go/tools/cmd/staticcheck
 
 # all we want is go get -u github.com/Masterminds/glide
 # but have to pin to 0.12.3 due to https://github.com/Masterminds/glide/issues/745
 GLIDE_VERSION := 0.12.3
 THRIFT_VERSION := 1.0.0-dev
-PROTOC_VERSION := 3.4.0
+PROTOC_VERSION := 3.5.1
 RAGEL_VERSION := 6.10
 
 GLIDE_OS := $(UNAME_OS)
@@ -124,6 +125,7 @@ $(foreach i,$(EXTRA_GO_BIN_DEPS),$(eval $(call deprule,$(i))))
 THRIFTRW = $(BIN)/thriftrw
 GOLINT = $(BIN)/golint
 ERRCHECK = $(BIN)/errcheck
+STATICCHECK = $(BIN)/staticcheck
 COVER = $(BIN)/cover
 GOCOVMERGE = $(BIN)/gocovmerge
 PARALLEL_EXEC = $(BIN)/parallel-exec

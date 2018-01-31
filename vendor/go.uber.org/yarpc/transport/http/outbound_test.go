@@ -1,4 +1,4 @@
-// Copyright (c) 2017 Uber Technologies, Inc.
+// Copyright (c) 2018 Uber Technologies, Inc.
 //
 // Permission is hereby granted, free of charge, to any person obtaining a copy
 // of this software and associated documentation files (the "Software"), to deal
@@ -23,19 +23,41 @@ package http
 import (
 	"bytes"
 	"context"
+	"errors"
 	"io/ioutil"
 	"net/http"
 	"net/http/httptest"
 	"strconv"
 	"sync"
 	"testing"
+	"time"
 
+	"github.com/golang/mock/gomock"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
+	"go.uber.org/yarpc/api/peer/peertest"
 	"go.uber.org/yarpc/api/transport"
 	"go.uber.org/yarpc/encoding/raw"
 	"go.uber.org/yarpc/internal/testtime"
+	"go.uber.org/yarpc/yarpcerrors"
 )
+
+func TestNewOutbound(t *testing.T) {
+	ctrl := gomock.NewController(t)
+	chooser := peertest.NewMockChooser(ctrl)
+
+	out := NewOutbound(chooser)
+	require.NotNil(t, out)
+	assert.Equal(t, chooser, out.Chooser())
+}
+
+func TestNewSingleOutboundPanic(t *testing.T) {
+	require.Panics(t, func() {
+		// invalid url should cause panic
+		NewTransport().NewSingleOutbound(":")
+	},
+		"expected to panic")
+}
 
 func TestCallSuccess(t *testing.T) {
 	successServer := httptest.NewServer(http.HandlerFunc(
@@ -351,5 +373,76 @@ func TestCallWithoutStarting(t *testing.T) {
 		},
 	)
 
-	assert.Equal(t, context.DeadlineExceeded, err)
+	assert.Equal(t, yarpcerrors.FailedPreconditionErrorf("error waiting for http unary outbound to start for service: service: context finished while waiting for instance to start: context deadline exceeded"), err)
+}
+
+func TestGetPeerForRequestErr(t *testing.T) {
+	ctrl := gomock.NewController(t)
+	defer ctrl.Finish()
+
+	tests := []struct {
+		name string
+		peer *peertest.MockPeer
+		err  error
+	}{
+		{
+			name: "error choosing peer",
+		},
+		{
+			name: "error casting peer",
+			peer: peertest.NewMockPeer(ctrl),
+			err:  errors.New("err"),
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			chooser := peertest.NewMockChooser(ctrl)
+
+			out := NewTransport().NewSingleOutbound("http://127.0.0.1:9999")
+			out.chooser = chooser
+
+			ctx := context.Background()
+			treq := &transport.Request{}
+
+			chooser.EXPECT().Choose(ctx, treq).Return(tt.peer, nil, tt.err)
+
+			_, _, err := out.getPeerForRequest(ctx, treq)
+			require.Error(t, err)
+		})
+	}
+}
+
+func TestWithCoreHeaders(t *testing.T) {
+	endpoint := "http://127.0.0.1:9999"
+	out := NewTransport().NewSingleOutbound(endpoint)
+	require.NoError(t, out.Start())
+
+	httpReq := httptest.NewRequest("", endpoint, nil)
+
+	shardKey := "sharding"
+	routingKey := "routing"
+	routingDelegate := "delegate"
+
+	treq := &transport.Request{
+		ShardKey:        shardKey,
+		RoutingKey:      routingKey,
+		RoutingDelegate: routingDelegate,
+	}
+	result := out.withCoreHeaders(httpReq, treq, time.Second)
+
+	assert.Equal(t, shardKey, result.Header.Get(ShardKeyHeader))
+	assert.Equal(t, routingKey, result.Header.Get(RoutingKeyHeader))
+	assert.Equal(t, routingDelegate, result.Header.Get(RoutingDelegateHeader))
+}
+
+func TestNoRequest(t *testing.T) {
+	tran := NewTransport()
+	out := tran.NewSingleOutbound("localhost:0")
+
+	_, err := out.Call(context.Background(), nil)
+	assert.Equal(t, yarpcerrors.InvalidArgumentErrorf("request for http unary outbound was nil"), err)
+
+	_, err = out.CallOneway(context.Background(), nil)
+	assert.Equal(t, yarpcerrors.InvalidArgumentErrorf("request for http oneway outbound was nil"), err)
 }

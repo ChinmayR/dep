@@ -131,6 +131,84 @@ func TestCrypterSignVerify(t *testing.T) {
 	}
 }
 
+func TestCrypterVerifyAny(t *testing.T) {
+	withKeys(t, func(k1, k2 *ecdsa.PrivateKey) {
+		data := make([]byte, 64)
+		_, err := rand.Read(data)
+		require.NoError(t, err, "reading data: %v", err)
+
+		sig, err := wonkacrypter.New().Sign(data, k1)
+		require.NoError(t, err, "sign: %v", err)
+
+		ok := wonkacrypter.VerifyAny(data, sig, []*ecdsa.PublicKey{&k2.PublicKey, &k1.PublicKey})
+		require.True(t, ok, "should verify any")
+
+		ok = wonkacrypter.VerifyAny(data, sig, []*ecdsa.PublicKey{&k2.PublicKey, &k2.PublicKey})
+		require.False(t, ok, "should not verify any")
+	})
+}
+
+func TestSharedSecretNilKeysShouldError(t *testing.T) {
+	_, err := wonkacrypter.SharedSecret(nil, nil)
+	require.Error(t, err, "shared secret with nil private key should error")
+
+	key, err := ecdsa.GenerateKey(elliptic.P256(), rand.Reader)
+	require.NoError(t, err, "generating key: %v", err)
+
+	_, err = wonkacrypter.SharedSecret(key, nil)
+	require.Error(t, err, "shared secret with nil public key should error")
+}
+
+func TestCrypterEncryptWithNilKeysShouldError(t *testing.T) {
+	_, err := wonkacrypter.New().Encrypt([]byte("hello"), nil, nil)
+	require.Error(t, err, "should not permit nil private key")
+
+	withKeys(t, func(k1, _ *ecdsa.PrivateKey) {
+		_, err := wonkacrypter.New().Encrypt([]byte("hello"), k1, nil)
+		require.Error(t, err, "should not permit nil public key")
+	})
+}
+
+func TestCrypterDecryptWithNilKeysShouldError(t *testing.T) {
+	_, err := wonkacrypter.New().Decrypt([]byte("hello"), nil, nil)
+	require.Error(t, err, "should not permit nil private key")
+
+	withKeys(t, func(k1, _ *ecdsa.PrivateKey) {
+		_, err := wonkacrypter.New().Decrypt([]byte("hello"), k1, nil)
+		require.Error(t, err, "should not permit nil public key")
+	})
+}
+
+func TestCrypterSigningWithNilKeyShouldError(t *testing.T) {
+	_, err := wonkacrypter.New().Sign([]byte("hello"), nil)
+	require.Error(t, err, "should not permit nil private key")
+}
+
+func TestCrypterVerifyingWithNilKeyShouldError(t *testing.T) {
+	result := wonkacrypter.New().Verify([]byte("hello"), []byte("world"), nil)
+	require.False(t, result, "should not permit nil public key")
+}
+
+func TestCrypterDecryptAny(t *testing.T) {
+	withKeys(t, func(k1, k2 *ecdsa.PrivateKey) {
+		data := make([]byte, 64)
+		_, err := rand.Read(data)
+		require.NoError(t, err, "reading data: %v", err)
+
+		cipherText, err := wonkacrypter.New().Encrypt(data, k1, &k2.PublicKey)
+		require.NoError(t, err, "encrypt: %v", err)
+		require.False(t, bytes.Equal(data, []byte(cipherText)))
+
+		plainText, err := wonkacrypter.DecryptAny(cipherText, k1, []*ecdsa.PublicKey{&k1.PublicKey, &k2.PublicKey})
+		require.NoError(t, err, "decrypt: %v", err)
+		require.True(t, bytes.Equal(plainText, data))
+
+		plainText, err = wonkacrypter.DecryptAny(cipherText, k1, []*ecdsa.PublicKey{&k1.PublicKey, &k1.PublicKey})
+		require.Error(t, err, "decrypt: %v", err)
+		require.False(t, bytes.Equal(plainText, data))
+	})
+}
+
 func BenchmarkCrypterSign(b *testing.B) {
 	withKeys(b, func(k1, _ *ecdsa.PrivateKey) {
 		data := make([]byte, 64)

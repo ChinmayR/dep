@@ -1,5 +1,16 @@
 # Changelog
 
+## v1.3.0 (2017-12-04)
+
+- Improved messages for errors thrown by Dig under a many scenarios to be more
+  informative.
+
+## v1.2.0 (2017-11-07)
+
+- `dig.In` and `dig.Out` now support value groups, making it possible to
+  produce many values of the same type from different constructors. See package
+  documentation for more information.
+
 ## v1.1.0 (2017-09-15)
 
 - Added the `dig.RootCause` function which allows retrieving the original

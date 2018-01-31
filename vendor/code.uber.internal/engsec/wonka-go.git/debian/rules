@@ -1,4 +1,9 @@
 #!/usr/bin/make -f
 
+override_dh_auto_build:
+	dh_auto_build -- bins
+
+override_dh_auto_test:
+
 %:
 	dh $@

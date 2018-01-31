@@ -1,10 +1,49 @@
 // Package jaegerfx configures tracing using Uber's open-source Jaeger
 // library.
-package jaegerfx
+//
+// HTTP Client Support
+//
+// jaegerfx automatically integrates with HTTP clients produced by httpfx.
+//
+// HTTP Server Support
+//
+// See https://go.uberinternal.com/pkg/code.uber.internal/go/httpfx.git/ for
+// information on how to add Galileo and Jaeger support to your HTTP servers.
+//
+// Break glass
+//
+// If you're building your own HTTP clients instead of using the one provided
+// by httpfx, you can instrument them with the functionality provided by
+// httpfx by using the InstrumentClient function produced by httpfx.
+//
+//   type clientParams struct {
+//     fx.In
+//
+//     InstrumentClient func(*http.Client, ...func(http.RoundTripper) http.RoundTripper)
+//     ...
+//   }
+//
+//   func newClient(p clientParams) *http.Client {
+//     client := &http.Client{}
+//     ...
+//
+//     // This adds Jaeger and Galileo support to the HTTP client.
+//     client.Transport = p.InstrumentClient(client.Transport)
+//   }
+//
+// See https://go.uberinternal.com/pkg/code.uber.internal/go/httpfx.git/ for
+// more information.
+//
+// See Also
+//
+// https://go.uberinternal.com/pkg/code.uber.internal/go/httpfx.git/
+// https://go.uberinternal.com/pkg/code.uber.internal/go/jaegerfx.git/jaegerhttp/.
+package jaegerfx // import "code.uber.internal/go/jaegerfx.git"
 
 import (
 	"context"
 	"fmt"
+	"net/http"
 
 	envfx "code.uber.internal/go/envfx.git"
 	servicefx "code.uber.internal/go/servicefx.git"
@@ -19,11 +58,13 @@ import (
 	"go.uber.org/fx"
 	"go.uber.org/multierr"
 	"go.uber.org/zap"
+
+	"code.uber.internal/go/jaegerfx.git/jaegerhttp"
 )
 
 const (
 	// Version is the current package version.
-	Version = "1.1.0"
+	Version = "1.2.0"
 	// ConfigurationKey is the portion of the service configuration that this
 	// package reads.
 	ConfigurationKey = "tracing"
@@ -43,7 +84,7 @@ const (
 //  tracing:
 //    disabled: true
 var Module = fx.Options(
-	fx.Provide(New),
+	fx.Provide(New, newHTTPMiddleware),
 	fx.Invoke(setGlobalTracer),
 )
 
@@ -78,6 +119,23 @@ type Result struct {
 	fx.Out
 
 	Tracer opentracing.Tracer
+}
+
+// HTTPMiddleware provides tracing middleware for HTTP.
+type HTTPMiddleware struct {
+	fx.Out
+
+	// The Start and End middlewares for tracing. The Start middleware MUST
+	// run before the End middleware. Ideally, the Start middleware is the
+	// first middleware to run and End, the last.
+	//
+	//   client.Transport = WrapClientStart(WrapClientEnd(transport))
+	WrapClientStart func(http.RoundTripper) http.RoundTripper `name:"trace.start"`
+	WrapClientEnd   func(http.RoundTripper) http.RoundTripper `name:"trace.end"`
+
+	// A tracing middleware for HTTP server handlers. Ideally, this is the
+	// first middleware to run on incoming requests.
+	WrapHandler func(http.Handler) http.Handler `name:"trace"`
 }
 
 // New exports functionality similar to Module, but allows the caller to wrap
@@ -134,7 +192,17 @@ func New(p Params) (Result, error) {
 	p.Lifecycle.Append(fx.Hook{OnStop: func(context.Context) error {
 		return closer.Close()
 	}})
-	return Result{Tracer: tracer}, nil
+	return Result{
+		Tracer: tracer,
+	}, nil
+}
+
+func newHTTPMiddleware(t opentracing.Tracer, log *zap.Logger) HTTPMiddleware {
+	return HTTPMiddleware{
+		WrapClientStart: jaegerhttp.StartSpanMiddleware(t),
+		WrapClientEnd:   jaegerhttp.InjectSpanMiddleware(t),
+		WrapHandler:     jaegerhttp.ExtractSpanMiddleware(t, jaegerhttp.ExtractSpanLogger(log)),
+	}
 }
 
 func setGlobalTracer(tracer opentracing.Tracer) {

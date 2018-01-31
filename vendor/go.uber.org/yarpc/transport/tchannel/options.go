@@ -1,4 +1,4 @@
-// Copyright (c) 2017 Uber Technologies, Inc.
+// Copyright (c) 2018 Uber Technologies, Inc.
 //
 // Permission is hereby granted, free of charge, to any person obtaining a copy
 // of this software and associated documentation files (the "Software"), to deal
@@ -21,11 +21,13 @@
 package tchannel
 
 import (
+	"net"
 	"time"
 
 	"github.com/opentracing/opentracing-go"
 	backoffapi "go.uber.org/yarpc/api/backoff"
 	"go.uber.org/yarpc/internal/backoff"
+	"go.uber.org/zap"
 )
 
 // Option allows customizing the YARPC TChannel transport.
@@ -48,7 +50,9 @@ var _ Option = (TransportOption)(nil)
 type transportOptions struct {
 	ch                  Channel
 	tracer              opentracing.Tracer
+	logger              *zap.Logger
 	addr                string
+	listener            net.Listener
 	name                string
 	connTimeout         time.Duration
 	connBackoffStrategy backoffapi.Strategy
@@ -75,6 +79,15 @@ func (TransportOption) tchannelOption() {}
 func Tracer(tracer opentracing.Tracer) TransportOption {
 	return func(t *transportOptions) {
 		t.tracer = tracer
+	}
+}
+
+// Logger sets a logger to use for internal logging.
+//
+// The default is to not write any logs.
+func Logger(logger *zap.Logger) TransportOption {
+	return func(t *transportOptions) {
+		t.logger = logger
 	}
 }
 
@@ -105,6 +118,16 @@ func WithChannel(ch Channel) TransportOption {
 func ListenAddr(addr string) TransportOption {
 	return func(options *transportOptions) {
 		options.addr = addr
+	}
+}
+
+// Listener sets a net.Listener to use for the channel. This only applies to
+// NewTransport (will not work with NewChannelTransport).
+//
+// The default is to depend on the ListenAddr (no-op).
+func Listener(l net.Listener) TransportOption {
+	return func(t *transportOptions) {
+		t.listener = l
 	}
 }
 

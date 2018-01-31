@@ -1,6 +1,23 @@
-// Package authmiddleware provides Galileo YARPC middleware for authenticating inbound and outbound requests.
-// This middleware is usable in any framework that uses YARPC under the hood.
-package authmiddleware
+// Package authmiddleware provides Galileo YARPC middleware for authenticating
+// inbound and outbound requests.
+//
+// Servers and clients built with yarpcfx will automatically have Galileo
+// support. To manually instrument a YARPC application with Galileo support,
+// build a Middleware with New and pass that into your yarpc.Config as the
+// inbound and outbound unary and oneway middleware.
+//
+//   m := authmiddleware.New(g)
+//   dispatcher := yarpc.New(yarpc.Config{
+//     InboundMiddleware: yarpc.InboundMiddleware{
+//       Unary: m,
+//       Oneway: m,
+//     },
+//     OutboundMiddleware: yarpc.OutboundMiddleware{
+//       Unary: m,
+//       Oneway: m,
+//     },
+//   })
+package authmiddleware // import "code.uber.internal/go/galileofx.git/authmiddleware"
 
 import (
 	"context"
@@ -22,8 +39,8 @@ type authenticator interface {
 // being provided by the library.
 var _ authenticator = (galileo.Galileo)(nil)
 
-// Middleware is a middleware that authenticates outgoing YARPC requests
-// and validates that incoming requsets are authenticated.
+// Middleware is a middleware that authenticates outgoing YARPC requests and
+// validates that incoming requests are authenticated.
 type Middleware struct {
 	g authenticator
 }

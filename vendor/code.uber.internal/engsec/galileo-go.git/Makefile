@@ -6,7 +6,11 @@ PROJECT_ROOT = code.uber.internal/engsec/galileo-go.git
 
 LINT_EXCLUDES = .tmp vendor
 
-GALILEO_FILES = $(wildcard *.go) $(wildcard galileotest/*.go) $(wildcard internal/*.go)
+GALILEO_FILES = $(wildcard *.go) $(wildcard galileotest/*.go) \
+				$(wildcard internal/*/*.go) \
+				$(wildcard internal/*.go)
+
+lint:: errcheck staticcheck unused
 
 # list all executables
 PROGS =

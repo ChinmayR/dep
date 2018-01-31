@@ -1,11 +1,17 @@
 package galileofx
 
 import (
+	"errors"
+	"io"
+	"io/ioutil"
+	"net/http"
+	"net/http/httptest"
+	"strings"
 	"testing"
 
 	galileo "code.uber.internal/engsec/galileo-go.git"
+	"code.uber.internal/engsec/galileo-go.git/galileotest"
 	envfx "code.uber.internal/go/envfx.git"
-	"code.uber.internal/go/galileofx.git/internal"
 	servicefx "code.uber.internal/go/servicefx.git"
 	versionfx "code.uber.internal/go/versionfx.git"
 	"github.com/golang/mock/gomock"
@@ -138,15 +144,27 @@ func TestDisabled(t *testing.T) {
 			cfg:  map[string]interface{}{"enabled": true},
 			env:  envfx.EnvTest,
 		},
+		{
+			desc:     "staging explicitly disabled",
+			cfg:      map[string]interface{}{"enabled": false},
+			env:      envfx.EnvStaging,
+			wantNoop: true,
+		},
+		{
+			desc:     "prod explicitly disabled",
+			cfg:      map[string]interface{}{"enabled": false},
+			env:      envfx.EnvProduction,
+			wantNoop: true,
+		},
 	}
 
 	for _, tt := range tests {
-		t.Run(tt.env, func(t *testing.T) {
+		t.Run(tt.desc, func(t *testing.T) {
 			mockCtrl := gomock.NewController(t)
 			defer mockCtrl.Finish()
 
 			defer setGalileoCreate(func(galileo.Configuration) (galileo.Galileo, error) {
-				return internal.NewMockGalileo(mockCtrl), nil
+				return galileotest.NewMockGalileo(mockCtrl), nil
 			})()
 
 			cfg := map[string]interface{}{"galileo": tt.cfg}
@@ -181,7 +199,7 @@ func TestDisabled(t *testing.T) {
 func expectGalileoConfig(t *testing.T, ctrl *gomock.Controller, want galileo.Configuration) (done func()) {
 	return setGalileoCreate(func(got galileo.Configuration) (galileo.Galileo, error) {
 		assert.Equal(t, want, got, "galileo configuration must match")
-		return internal.NewMockGalileo(ctrl), nil
+		return galileotest.NewMockGalileo(ctrl), nil
 	})
 }
 
@@ -189,4 +207,69 @@ func staticProvider(data map[string]interface{}) func() (config.Provider, error)
 	return func() (config.Provider, error) {
 		return config.NewStaticProvider(data)
 	}
+}
+
+func TestHTTPMiddlewareRoundTrip(t *testing.T) {
+	mockCtrl := gomock.NewController(t)
+	defer mockCtrl.Finish()
+
+	g := galileotest.NewMockGalileo(mockCtrl)
+	var out struct {
+		Client  func(http.RoundTripper) http.RoundTripper `name:"auth"`
+		Handler func(http.Handler) http.Handler           `name:"auth"`
+	}
+
+	app := fxtest.New(
+		t,
+		fx.Provide(
+			func() galileo.Galileo { return g },
+			zap.NewNop,
+			newHTTPMiddleware,
+		),
+		fx.Extract(&out),
+	)
+	defer app.RequireStart().RequireStop()
+
+	client := &http.Client{Transport: out.Client(http.DefaultTransport)}
+	mux := http.NewServeMux()
+	mux.HandleFunc("/health", func(w http.ResponseWriter, r *http.Request) {
+		io.WriteString(w, "ok")
+	})
+	mux.HandleFunc("/", func(w http.ResponseWriter, r *http.Request) {
+		io.Copy(w, r.Body)
+	})
+
+	server := httptest.NewServer(out.Handler(mux))
+	defer server.Close()
+
+	t.Run("health does not need authentication", func(t *testing.T) {
+		res, err := client.Get(server.URL + "/health")
+		require.NoError(t, err, "request should succeed")
+		assert.Equal(t, 200, res.StatusCode, "status code should match")
+		body, err := ioutil.ReadAll(res.Body)
+		require.NoError(t, err, "failed to read response body")
+		assert.Equal(t, "ok", string(body), "response body did not match")
+	})
+
+	t.Run("unauthenticated requests are rejected", func(t *testing.T) {
+		g.EXPECT().
+			AuthenticateIn(gomock.Any()).
+			Return(errors.New("unauthenticated request"))
+
+		res, err := client.Get(server.URL)
+		require.NoError(t, err, "request should succeed")
+		assert.Equal(t, 403, res.StatusCode, "status code should match")
+	})
+
+	t.Run("authenticated requests are allowed", func(t *testing.T) {
+		g.EXPECT().
+			AuthenticateIn(gomock.Any()).
+			Return(nil)
+
+		res, err := client.Post(server.URL, "text/plain", strings.NewReader("hello"))
+		assert.Equal(t, 200, res.StatusCode, "status code should match")
+		body, err := ioutil.ReadAll(res.Body)
+		require.NoError(t, err, "failed to read response body")
+		assert.Equal(t, "hello", string(body), "response body did not match")
+	})
 }

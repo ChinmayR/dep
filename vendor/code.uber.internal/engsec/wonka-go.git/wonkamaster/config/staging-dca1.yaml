@@ -1,2 +1,8 @@
 sentry:
   dsn: http://94e1fd1cc22e413b957bcbdea4c443e6:6de6e1f70e1a45b98a67f3bf412f6972@usentry.local.uber.internal/2716
+
+# TODO: replace `hosts` with uns path
+cassandra:
+  hosts: ["10.188.1.13", "10.14.138.141", "10.187.24.11"]
+  port: 10203
+  keyspace: "wonkamaster"

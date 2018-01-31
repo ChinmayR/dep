@@ -1,7 +1,7 @@
 // Package healthfx registers health check handlers on the server provided by
 // systemportfx. It also provides a means for multiple network servers within
 // a process to maintain a consistent notion of application health.
-package healthfx
+package healthfx // import "code.uber.internal/go/healthfx.git"
 
 import (
 	"context"
@@ -21,7 +21,7 @@ import (
 )
 
 // Version is the current package version.
-const Version = "1.1.0"
+const Version = "1.2.0"
 
 // Module provides a *health.Coordinator and a *WaitSet, which allow network
 // servers to coordinate their notions of application health, and also

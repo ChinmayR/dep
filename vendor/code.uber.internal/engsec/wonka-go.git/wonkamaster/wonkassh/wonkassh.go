@@ -4,12 +4,26 @@ import (
 	"bytes"
 	"encoding/base64"
 	"fmt"
+	"net"
 
 	"go.uber.org/zap"
 	"golang.org/x/crypto/ssh"
 )
 
-// CertFromRequest returns the base64 encodied ssh key as an ssh certificate if it's a ussh
+// Returns a function which takes a key and compares it against the supplied
+// list of caKeys. The result is intended to be provided as IsUserAuthority.
+func isUserAuthority(caKeys []ssh.PublicKey) func(ssh.PublicKey) bool {
+	return func(k ssh.PublicKey) bool {
+		for _, ca := range caKeys {
+			if bytes.Equal(k.Marshal(), ca.Marshal()) {
+				return true
+			}
+		}
+		return false
+	}
+}
+
+// CertFromRequest returns the base64 encoded ssh key as an ssh certificate if it's a ussh
 // certificate.
 // TODO(pmoody): pull this from ussh.git instead
 func CertFromRequest(certificate string, usshCAKeys []ssh.PublicKey) (*ssh.Certificate, error) {
@@ -25,21 +39,8 @@ func CertFromRequest(certificate string, usshCAKeys []ssh.PublicKey) (*ssh.Certi
 		return nil, fmt.Errorf("rejecting non-cert request")
 	}
 
-	// Check the USSH certificate against the CA for validity
-	certChecker := ssh.CertChecker{
-		IsUserAuthority: func(k ssh.PublicKey) bool {
-			for _, ca := range usshCAKeys {
-				if bytes.Equal(k.Marshal(), ca.Marshal()) {
-					return true
-				}
-			}
-			return false
-		},
-	}
-
-	// Run the cert check - allow any principal but still run all other checks
-	if err := certChecker.CheckCert(cert.ValidPrincipals[0], cert); err != nil {
-		return nil, fmt.Errorf("cert check failed: %v", err)
+	if err := CheckUserCert(cert.ValidPrincipals[0], cert, usshCAKeys); err != nil {
+		return nil, err
 	}
 
 	return cert, nil
@@ -58,4 +59,48 @@ func VerifyUSSHSignature(cert *ssh.Certificate, toVerify, sig, sigType string) e
 	}
 
 	return cert.Key.Verify([]byte(toVerify), sshSig)
+}
+
+// CheckUserCert verifies that the ssh user certificate was signed by an accepted ssh certificate authority.
+func CheckUserCert(name string, cert *ssh.Certificate, caKeys []ssh.PublicKey) error {
+	// Check the USSH certificate against the CA for validity
+	certChecker := ssh.CertChecker{
+		IsUserAuthority: isUserAuthority(caKeys),
+	}
+
+	c := connMD{user: name}
+	if _, err := certChecker.Authenticate(c, cert); err != nil {
+		return fmt.Errorf("error authenticating: %v", err)
+	}
+
+	return nil
+}
+
+// connMD implements the ssh.ConnMetadata interface
+type connMD struct {
+	user string
+}
+
+func (c connMD) User() string {
+	return c.user
+}
+
+func (connMD) SessionID() []byte {
+	return nil
+}
+
+func (connMD) ClientVersion() []byte {
+	return nil
+}
+
+func (connMD) ServerVersion() []byte {
+	return nil
+}
+
+func (connMD) RemoteAddr() net.Addr {
+	return &net.TCPAddr{IP: net.IP{127, 0, 0, 1}, Port: 22}
+}
+
+func (connMD) LocalAddr() net.Addr {
+	return &net.TCPAddr{IP: net.IP{127, 0, 0, 1}, Port: 22}
 }

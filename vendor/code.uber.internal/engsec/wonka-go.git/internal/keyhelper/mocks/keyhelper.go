@@ -10,8 +10,8 @@ type KeyHelper struct {
 	mock.Mock
 }
 
-// RSAAndECC provides a mock function with given fields: _a0
-func (_m *KeyHelper) RSAAndECC(_a0 string) (*rsa.PrivateKey, string, string, error) {
+// RSAAndECCFromFile provides a mock function with given fields: _a0
+func (_m *KeyHelper) RSAAndECCFromFile(_a0 string) (*rsa.PrivateKey, string, string, error) {
 	ret := _m.Called(_a0)
 
 	var r0 *rsa.PrivateKey

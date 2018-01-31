@@ -1,11 +1,12 @@
-package load
+package load // import "code.uber.internal/go/configfx.git/load"
 
 import (
-	"errors"
 	"os"
 	"path/filepath"
 
 	"go.uber.org/config"
+
+	"code.uber.internal/go/configfx.git/internal/err"
 )
 
 // LookUpFunc is a type alias for a function to look for environment variables,
@@ -72,7 +73,7 @@ func FromFiles(dirs []string, files []FileInfo, lookUp LookUpFunc) (config.Provi
 	}
 
 	if len(providers) == 0 {
-		return nil, errors.New("no providers were loaded")
+		return nil, err.NoConfig{Dirs: dirs}
 	}
 
 	return config.NewProviderGroup("files", providers...)

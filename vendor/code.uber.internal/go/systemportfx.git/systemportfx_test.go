@@ -52,8 +52,8 @@ func TestModuleSuccess(t *testing.T) {
 			require.Equal(t, 1, len(records), "Unexpected number of logged messages.")
 			context := records[0].Context
 			require.Equal(t, 2, len(context), "Unexpected number of fields on startup log.")
-			assert.Equal(t, "port", context[1].Key, "Expected second log field to be port.")
-			addr := context[1].Interface.(fmt.Stringer).String()
+			assert.Equal(t, "addr", context[1].Key, "Expected second log field to be addr.")
+			addr := context[1].Interface
 
 			if tt.wantWarning {
 				warnings := logs.FilterMessageSnippet("ephemeral port").TakeAll()
@@ -61,7 +61,7 @@ func TestModuleSuccess(t *testing.T) {
 				require.Equal(t, zap.WarnLevel, warnings[0].Level, "Unexpected log level.")
 			}
 
-			resp, err := http.Get(fmt.Sprintf("http://%s/", addr))
+			resp, err := http.Get(fmt.Sprintf("http://%v/", addr))
 			require.NoError(t, err, "Request to systemport failed.")
 			defer resp.Body.Close()
 			body, err := ioutil.ReadAll(resp.Body)

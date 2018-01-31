@@ -1,31 +1,35 @@
-hash: f2570116025f4621910ab80ba035cfeb217252411b1da95bb6644427937b79d4
-updated: 2017-08-16T17:39:53.209254557-07:00
+hash: 4b84cdaba6da3be4bd28fb8f20a622959b1f25cc876958753e9483e549a19ecb
+updated: 2017-11-15T11:10:41.820602492-08:00
 imports:
 - name: code.uber.internal/go/envfx.git
-  version: 870cd725e0f175d1562799f5495b89a4ce459230
+  version: 4582e883c6b95269f9365bcd438005f039380b0c
 - name: github.com/pkg/errors
   version: 645ef00459ed84a119197bfb8d8205042c6df63d
 - name: go.uber.org/atomic
-  version: 4e336646b2ef9fc6e47be8e21594178f98e5ebcf
+  version: 8474b86a5a6f79c443ce4b2992817ff32cf208b8
 - name: go.uber.org/config
-  version: 4636f4a401ee0ed6207eb8a605b3dba15ce060b3
+  version: 13f07c9f1403bf93fae59c057f2d66b16333d462
 - name: go.uber.org/dig
-  version: 5e65f1a430fd50d4291edc5ee9811f7dd520d77d
+  version: a752dd97d0e0718ba977eaaca94a23a4d28b7a08
 - name: go.uber.org/fx
-  version: 3cdc81a59a7bbc63d452ec37dbc8ef3af23e6073
+  version: a47f1657ce04f3d82db1ef230ffbb292b15af0ee
   subpackages:
   - internal/fxlog
   - internal/fxreflect
   - internal/lifecycle
 - name: go.uber.org/multierr
   version: 3c4937480c32f4c13a875a1829af76c98ca3d40a
+- name: golang.org/x/text
+  version: 6eab0e8f74e86c598ec3b6fad4888e0c11482d48
+  subpackages:
+  - transform
 - name: gopkg.in/validator.v2
-  version: 07ffaad256c8e957050ad83d6472eb97d785013d
+  version: 460c83432a98c35224a6fe352acf8b23e067ad06
 - name: gopkg.in/yaml.v2
-  version: 25c4ec802a7d637f88d584ab26798e94ad14c13b
+  version: eb3733d160e74a9c7e442f435eb3bea458e1d19f
 testImports:
 - name: github.com/davecgh/go-spew
-  version: 04cdfd42973bb9c8589fd6a731800cf222fde1a9
+  version: 6d212800a42e8ab5c146b8ace3490ee17e5225f9
   subpackages:
   - spew
 - name: github.com/pmezard/go-difflib
@@ -33,7 +37,7 @@ testImports:
   subpackages:
   - difflib
 - name: github.com/stretchr/testify
-  version: 05e8a0eda380579888eb53c394909df027f06991
+  version: 69483b4bd14f5845b5a1e55bca19e954e827f1d0
   subpackages:
   - assert
   - require

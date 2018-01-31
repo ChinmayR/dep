@@ -8,7 +8,10 @@
 FAUX_VENDOR_REWRITE := $(BUILD_DIR)/.faux.vendor.rewrite
 $(FAUX_VENDOR_REWRITE):
 	@echo Rewriting obsolete logrus imports...
-	@find vendor/ -name '*.go' | xargs gofmt -w -r '"github.com/Sirupsen/logrus" -> "github.com/sirupsen/logrus"' || true
+	@grep -r --include='*.go' --files-with-matches 'Sirupsen' vendor | xargs gofmt -w -r '"github.com/Sirupsen/logrus" -> "github.com/sirupsen/logrus"' || true
 	@touch $@
 
 $(FAUX_VENDOR):: $(FAUX_VENDOR_REWRITE)
+
+clean::
+	rm -f $(FAUX_VENDOR_REWRITE)

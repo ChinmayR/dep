@@ -1,6 +1,6 @@
 // Package zapfx provides a structured logger configured to match the ELK
 // team's preferred schema.
-package zapfx
+package zapfx // import "code.uber.internal/go/zapfx.git"
 
 import (
 	"context"
@@ -18,7 +18,7 @@ import (
 
 const (
 	// Version is the current package version.
-	Version = "1.1.0"
+	Version = "1.2.0"
 	// ConfigurationKey is the portion of the service configuration that this
 	// package reads.
 	ConfigurationKey = "logging"
@@ -188,7 +188,7 @@ func newConfiguration(
 	c.defaultField("service_name", sfx.Name) // snake-case for ELK schema
 	c.defaultField("hostname", env.Hostname)
 	c.defaultField("zone", env.Zone)
-	c.defaultField("runtimeEnvironment", env.RuntimeEnvironment)
+	c.defaultField("runtime_env", env.RuntimeEnvironment)
 	return c, nil
 }
 

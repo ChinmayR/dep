@@ -1,4 +1,4 @@
-// Copyright (c) 2017 Uber Technologies, Inc.
+// Copyright (c) 2018 Uber Technologies, Inc.
 //
 // Permission is hereby granted, free of charge, to any person obtaining a copy
 // of this software and associated documentation files (the "Software"), to deal
@@ -62,17 +62,21 @@ func (h jsonHandler) Handle(ctx context.Context, treq *transport.Request, rw tra
 		return err
 	}
 
-	if err, _ := results[1].Interface().(error); err != nil {
+	// we want to return the appErr if it exists as this is what
+	// the previous behavior was so we deprioritize this error
+	var encodeErr error
+	if result := results[0].Interface(); result != nil {
+		if err := json.NewEncoder(rw).Encode(result); err != nil {
+			encodeErr = errors.ResponseBodyEncodeError(treq, err)
+		}
+	}
+
+	if appErr, _ := results[1].Interface().(error); appErr != nil {
 		rw.SetApplicationError()
-		return err
+		return appErr
 	}
 
-	result := results[0].Interface()
-	if err := json.NewEncoder(rw).Encode(result); err != nil {
-		return errors.ResponseBodyEncodeError(treq, err)
-	}
-
-	return nil
+	return encodeErr
 }
 
 func (h jsonHandler) HandleOneway(ctx context.Context, treq *transport.Request) error {

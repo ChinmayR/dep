@@ -1,0 +1,12 @@
+/.tmp
+/.idea
+*.out
+*.test
+*.xml
+*.swp
+.idea/
+*.iml
+*.cov
+*.html
+.gen/
+vendor/

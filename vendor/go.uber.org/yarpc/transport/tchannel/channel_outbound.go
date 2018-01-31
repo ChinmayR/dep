@@ -1,4 +1,4 @@
-// Copyright (c) 2017 Uber Technologies, Inc.
+// Copyright (c) 2018 Uber Technologies, Inc.
 //
 // Permission is hereby granted, free of charge, to any person obtaining a copy
 // of this software and associated documentation files (the "Software"), to deal
@@ -28,6 +28,7 @@ import (
 	"go.uber.org/yarpc/api/transport"
 	"go.uber.org/yarpc/internal/introspection"
 	"go.uber.org/yarpc/internal/iopool"
+	intyarpcerrors "go.uber.org/yarpc/internal/yarpcerrors"
 	"go.uber.org/yarpc/pkg/errors"
 	"go.uber.org/yarpc/pkg/lifecycle"
 	"go.uber.org/yarpc/yarpcerrors"
@@ -104,8 +105,11 @@ func (o *ChannelOutbound) IsRunning() bool {
 
 // Call sends an RPC over this TChannel outbound.
 func (o *ChannelOutbound) Call(ctx context.Context, req *transport.Request) (*transport.Response, error) {
+	if req == nil {
+		return nil, yarpcerrors.InvalidArgumentErrorf("request for tchannel channel outbound was nil")
+	}
 	if err := o.once.WaitUntilRunning(ctx); err != nil {
-		return nil, err
+		return nil, intyarpcerrors.AnnotateWithInfo(yarpcerrors.FromError(err), "error waiting for tchannel channel outbound to start for service: %s", req.Service)
 	}
 	if _, ok := ctx.(tchannel.ContextWithHeaders); ok {
 		return nil, errDoNotUseContextWithHeaders
@@ -149,7 +153,7 @@ func (o *ChannelOutbound) Call(ctx context.Context, req *transport.Request) (*tr
 	}
 
 	if err != nil {
-		return nil, err
+		return nil, toYARPCError(req, err)
 	}
 
 	// Inject tracing system baggage
@@ -162,7 +166,7 @@ func (o *ChannelOutbound) Call(ctx context.Context, req *transport.Request) (*tr
 	}
 
 	if err := writeBody(req.Body, call); err != nil {
-		return nil, err
+		return nil, toYARPCError(req, err)
 	}
 
 	res := call.Response()
@@ -181,7 +185,7 @@ func (o *ChannelOutbound) Call(ctx context.Context, req *transport.Request) (*tr
 		if err, ok := err.(tchannel.SystemError); ok {
 			return nil, fromSystemError(err)
 		}
-		return nil, err
+		return nil, toYARPCError(req, err)
 	}
 
 	return &transport.Response{
@@ -244,5 +248,5 @@ func getResponseErrorAndDeleteHeaderKeys(headers transport.Headers) error {
 	}
 	errorName, _ := headers.Get(ErrorNameHeaderKey)
 	errorMessage, _ := headers.Get(ErrorMessageHeaderKey)
-	return yarpcerrors.Newf(errorCode, errorMessage).WithName(errorName)
+	return intyarpcerrors.NewWithNamef(errorCode, errorName, errorMessage)
 }

@@ -5,13 +5,16 @@ import (
 	"crypto/ecdsa"
 	"crypto/elliptic"
 	"crypto/rand"
+	"crypto/rsa"
 	"crypto/x509"
 	"fmt"
+
 	"testing"
 	"time"
 
 	"code.uber.internal/engsec/wonka-go.git"
 
+	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
 
@@ -115,6 +118,171 @@ func TestMarshalCert(t *testing.T) {
 	require.Nil(t, reunmarshalled)
 }
 
+func TestCertPublicKey(t *testing.T) {
+	var testCases = []struct {
+		name     string
+		validate func(*testing.T)
+	}{
+		{
+			name: "errors when cert public key exists but is not ecdsa",
+			validate: func(t *testing.T) {
+				k, err := rsa.GenerateKey(rand.Reader, 4096)
+				require.NoError(t, err)
+				keyBytes, err := x509.MarshalPKIXPublicKey(&k.PublicKey)
+				require.NoError(t, err, "marshalling pubkey: %v", err)
+
+				cert := wonka.Certificate{
+					Key: keyBytes,
+				}
+				key, err := cert.PublicKey()
+				require.Nil(t, key)
+				require.Error(t, err)
+			},
+		},
+	}
+	for _, tc := range testCases {
+		t.Run(tc.name, func(t *testing.T) {
+			tc.validate(t)
+		})
+	}
+}
+
+func TestCertCheckCertificate(t *testing.T) {
+
+	k, err := ecdsa.GenerateKey(elliptic.P256(), rand.Reader)
+	require.NoError(t, err, "generate key: %v", err)
+
+	keyBytes, err := x509.MarshalPKIXPublicKey(&k.PublicKey)
+	require.NoError(t, err, "marshalling pubkey: %v", err)
+
+	oldWonkaMasterKeys := wonka.WonkaMasterPublicKeys
+	wonka.WonkaMasterPublicKeys = []*ecdsa.PublicKey{&k.PublicKey}
+	defer func() {
+		wonka.WonkaMasterPublicKeys = oldWonkaMasterKeys
+	}()
+	var testCases = []struct {
+		name     string
+		validate func(*testing.T)
+	}{
+		{
+			name: "errors when cert is not yet valid.",
+			validate: func(t *testing.T) {
+				c := &wonka.Certificate{
+					EntityName: "name",
+					Host:       "host",
+					Key:        keyBytes,
+					ValidAfter: uint64(time.Now().Add(10 * time.Minute).Unix()),
+				}
+				c.SignCertificate(k)
+				err := c.CheckCertificate()
+				require.Error(t, err)
+			},
+		},
+		{
+			name: "errors when cert is now expired.",
+			validate: func(t *testing.T) {
+				c := &wonka.Certificate{
+					EntityName:  "name",
+					Host:        "host",
+					Key:         keyBytes,
+					ValidBefore: uint64(time.Now().AddDate(0, -1, 0).Unix()),
+				}
+				c.SignCertificate(k)
+				err := c.CheckCertificate()
+				require.Error(t, err)
+			},
+		},
+	}
+	for _, tc := range testCases {
+		t.Run(tc.name, func(t *testing.T) {
+			tc.validate(t)
+		})
+	}
+}
+
+func TestNewCertificateSignatureErrors(t *testing.T) {
+	var testCases = []struct {
+		name     string
+		validate func(*testing.T)
+	}{
+		{
+			name: "errors when cert public key is missing",
+			validate: func(t *testing.T) {
+				cert := wonka.Certificate{}
+				csr, err := wonka.NewCertificateSignature(cert, nil, nil)
+				assert.Nil(t, csr, "csr was not nil")
+				require.Error(t, err)
+			},
+		},
+		{
+			name: "errors when cert public key exists but does not match the private key",
+			validate: func(t *testing.T) {
+				k, err := ecdsa.GenerateKey(elliptic.P256(), rand.Reader)
+				require.NoError(t, err, "generate key: %v", err)
+
+				keyBytes, err := x509.MarshalPKIXPublicKey(&k.PublicKey)
+				require.NoError(t, err, "marshalling pubkey: %v", err)
+
+				cert := wonka.Certificate{
+					Key: keyBytes,
+				}
+
+				anotherKey, err := ecdsa.GenerateKey(elliptic.P256(), rand.Reader)
+				require.NoError(t, err, "generate key: %v", err)
+
+				csr, err := wonka.NewCertificateSignature(cert, anotherKey, nil)
+				assert.Nil(t, csr, "csr was not nil")
+				require.Error(t, err)
+			},
+		},
+	}
+	for _, tc := range testCases {
+		t.Run(tc.name, func(t *testing.T) {
+			tc.validate(t)
+		})
+	}
+}
+
+func TestVerifyCertificateSignatureErrors(t *testing.T) {
+	var testCases = []struct {
+		name     string
+		validate func(*testing.T)
+	}{
+		{
+			name: "errors when cert public key is missing",
+			validate: func(t *testing.T) {
+				cert := wonka.CertificateSignature{}
+				err := wonka.VerifyCertificateSignature(cert)
+				require.Error(t, err)
+			},
+		},
+		{
+			name: "errors when cert public key is present but signature is doesn't match",
+			validate: func(t *testing.T) {
+				k, err := ecdsa.GenerateKey(elliptic.P256(), rand.Reader)
+				require.NoError(t, err)
+				keyBytes, err := x509.MarshalPKIXPublicKey(&k.PublicKey)
+				require.NoError(t, err, "marshalling pubkey: %v", err)
+
+				cert := wonka.Certificate{
+					Key: keyBytes,
+				}
+
+				cs := wonka.CertificateSignature{
+					Certificate: cert,
+				}
+				err = wonka.VerifyCertificateSignature(cs)
+				require.Error(t, err)
+			},
+		},
+	}
+	for _, tc := range testCases {
+		t.Run(tc.name, func(t *testing.T) {
+			tc.validate(t)
+		})
+	}
+}
+
 func TestCertSignature(t *testing.T) {
 	var testVars = []struct {
 		name     string
@@ -133,6 +301,7 @@ func TestCertSignature(t *testing.T) {
 			k, err := ecdsa.GenerateKey(elliptic.P256(), rand.Reader)
 			require.NoError(t, err)
 			wonka.WonkaMasterPublicKeys = []*ecdsa.PublicKey{&k.PublicKey}
+			defer func() { wonka.WonkaMasterPublicKeys = oldPubKeys }()
 
 			cert, privKey, err := wonka.NewCertificate(wonka.CertEntityName(m.name))
 			require.NoError(t, err)
@@ -147,9 +316,32 @@ func TestCertSignature(t *testing.T) {
 			require.NotNil(t, sig)
 
 			err = wonka.VerifyCertificateSignature(*sig)
-			require.True(t, (err == nil) == !m.shouldErr)
+			if m.shouldErr {
+				require.Error(t, err)
+			} else {
+				require.NoError(t, err)
+			}
+		})
+	}
+}
 
-			wonka.WonkaMasterPublicKeys = oldPubKeys
+func TestSignCertificateErrors(t *testing.T) {
+	var testCases = []struct {
+		name     string
+		validate func(*testing.T)
+	}{
+		{
+			name: "errors when cert public key is missing",
+			validate: func(t *testing.T) {
+				cert := wonka.Certificate{}
+				err := cert.SignCertificate(nil)
+				require.Error(t, err)
+			},
+		},
+	}
+	for _, tc := range testCases {
+		t.Run(tc.name, func(t *testing.T) {
+			tc.validate(t)
 		})
 	}
 }

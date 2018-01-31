@@ -1,5 +1,5 @@
 // Package versionfx provides simple version heartbeating for packages.
-package versionfx
+package versionfx // import "code.uber.internal/go/versionfx.git"
 
 import (
 	"context"
@@ -21,7 +21,7 @@ import (
 
 const (
 	// Version is the current package version.
-	Version = "1.1.0"
+	Version = "1.3.0"
 
 	_name     = "versionfx"
 	_interval = 10 * time.Second
@@ -41,6 +41,8 @@ type spec struct {
 // central telemetry systems. It's designed to let package authors track the
 // versions of their code running in production, and potentially identify
 // services using deprecated or buggy releases.
+//
+// Nil *Reporters are safe no-op implementations.
 type Reporter struct {
 	versionsMu sync.RWMutex
 	versions   map[string]spec
@@ -63,7 +65,12 @@ func newReporter(scope tally.Scope, ticks <-chan time.Time) *Reporter {
 
 // Report adds a version hearbeat for a particular package. It returns an
 // error if the package already has a version registered.
+//
+// Nil *Reporters always return a nil error.
 func (r *Reporter) Report(pkg, version string) error {
+	if r == nil {
+		return nil
+	}
 	r.versionsMu.Lock()
 	defer r.versionsMu.Unlock()
 
@@ -86,7 +93,12 @@ func (r *Reporter) Report(pkg, version string) error {
 }
 
 // Version returns the reported version for a package.
+//
+// Nil *Reporters always return the empty string.
 func (r *Reporter) Version(pkg string) string {
+	if r == nil {
+		return ""
+	}
 	r.versionsMu.RLock()
 	defer r.versionsMu.RUnlock()
 	if r.versions == nil {

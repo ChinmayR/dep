@@ -1,5 +1,5 @@
 // Package servicefx provides static metadata about the running service.
-package servicefx
+package servicefx // import "code.uber.internal/go/servicefx.git"
 
 import (
 	"errors"
@@ -13,7 +13,7 @@ import (
 
 const (
 	// Version is the current package version.
-	Version = "1.0.1"
+	Version = "1.1.0"
 	// ConfigurationKey is the portion of the service configuration that this
 	// package reads.
 	ConfigurationKey = "service"

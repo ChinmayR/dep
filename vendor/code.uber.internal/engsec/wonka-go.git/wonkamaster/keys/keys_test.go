@@ -8,8 +8,10 @@ import (
 	"crypto/rsa"
 	"crypto/x509"
 	"encoding/base64"
+	"strings"
 	"testing"
 
+	"code.uber.internal/engsec/wonka-go.git/wonkacrypter"
 	"code.uber.internal/engsec/wonka-go.git/wonkamaster/wonkatestdata"
 	"github.com/stretchr/testify/require"
 	"go.uber.org/zap"
@@ -51,21 +53,31 @@ func TestSigning(t *testing.T) {
 	require.Equal(t, len(data), n, "wrong number of bytes read")
 	toSign := base64.StdEncoding.EncodeToString(data)
 
-	k := wonkatestdata.PrivateKey()
+	rsaKey := wonkatestdata.PrivateKey()
+	eccKey := wonkatestdata.ECCKey()
 
 	for _, algo := range []string{"SHA1", "SHA256"} {
-		sig, err := SignData(k, algo, toSign)
+		sig, err := SignData(rsaKey, algo, toSign)
 		require.NoError(t, err, "signing: %v", err)
 
-		err = VerifySignature(&k.PublicKey, string(sig), algo, toSign)
+		err = VerifySignature(&rsaKey.PublicKey, string(sig), algo, toSign)
+		require.NoError(t, err, "data should verify: %v", err)
+
+		// verify ec signed stuff
+		rawSig, err := wonkacrypter.New().Sign([]byte(toSign), eccKey)
+		require.NoError(t, err, "signing: %v", err)
+
+		sig = []byte(base64.StdEncoding.EncodeToString(rawSig))
+
+		err = VerifySignature(&eccKey.PublicKey, string(sig), algo, toSign)
 		require.NoError(t, err, "data should verify: %v", err)
 	}
 
-	_, err = SignData(k, "foo", toSign)
+	_, err = SignData(rsaKey, "foo", toSign)
 	require.Error(t, err, "invalid algorithm should err: %v", err)
 	require.Contains(t, err.Error(), "unsupported hashing algorithm in SignData: 'foo'")
 
-	err = VerifySignature(&k.PublicKey, "sig", "foo", toSign)
+	err = VerifySignature(&rsaKey.PublicKey, "sig", "foo", toSign)
 	require.Error(t, err, "invalid algorithm should err: %v", err)
 	require.Contains(t, err.Error(), "unsupported hashing algorithm in VerifySignature: 'foo'")
 }
@@ -84,6 +96,7 @@ func TestKeyHashing(t *testing.T) {
 	log.Info("rsa public key", zap.Any("hash", ret))
 
 	sshPub, err := ssh.NewPublicKey(&rsaKey.PublicKey)
+	require.NoError(t, err)
 	ret = KeyHash(sshPub)
 	require.NotEmpty(t, ret, "ssh public key should hash")
 	log.Info("ssh public key", zap.Any("hash", ret))
@@ -96,4 +109,56 @@ func TestKeyHashing(t *testing.T) {
 
 	ret = KeyHash("foo")
 	require.Empty(t, ret, "invalid key should not hash")
+}
+
+func TestVerifySignatureEmptySignatureShouldError(t *testing.T) {
+	k, err := rsa.GenerateKey(rand.Reader, 1024)
+	require.NoError(t, err, "generating key: %v", err)
+
+	err = VerifySignature(k.PublicKey, "", "", "")
+	require.Error(t, err, "empty signature should error")
+}
+
+func TestParsePublicKeyInvalidPemShouldError(t *testing.T) {
+	_, err := ParsePublicKey("invalid")
+	require.Error(t, err, "invalid key should error")
+}
+
+func TestParsePublicKeyInvalidKeyShouldError(t *testing.T) {
+	_, err := ParsePublicKey("dGVzdA==")
+	require.Error(t, err, "invalid key should error")
+}
+
+func TestParsePublicKey(t *testing.T) {
+	key, err := rsa.GenerateKey(rand.Reader, 1024)
+	require.NoError(t, err, "generating keys should not fail")
+
+	pubKey, err := x509.MarshalPKIXPublicKey(key.Public())
+	require.NoError(t, err, "public key should marshal")
+
+	buf := new(bytes.Buffer)
+	encoder := base64.NewEncoder(base64.StdEncoding, buf)
+	encoder.Write(pubKey)
+	encoder.Close()
+
+	result, err := ParsePublicKey(buf.String())
+	require.NoError(t, err, "valid key should parse")
+	require.Equal(t, key.PublicKey, *result, "key should be equal")
+}
+
+func TestRSAPemBytes(t *testing.T) {
+	key, err := rsa.GenerateKey(rand.Reader, 1024)
+	require.NoError(t, err, "generating keys should not fail")
+
+	pubKey, err := x509.MarshalPKIXPublicKey(key.Public())
+	require.NoError(t, err, "public key should marshal")
+
+	buf := new(bytes.Buffer)
+	encoder := base64.NewEncoder(base64.StdEncoding, buf)
+	encoder.Write(pubKey)
+	encoder.Close()
+
+	encodedPem := RSAPemBytes(&key.PublicKey)
+	noNewlines := strings.Replace(encodedPem, "\n", "", -1)
+	require.Equal(t, buf.String(), noNewlines)
 }

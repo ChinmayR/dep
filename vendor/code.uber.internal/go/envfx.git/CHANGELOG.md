@@ -1,5 +1,20 @@
 # Changelog
 
+## v1.3.0 (2017-12-11)
+
+- Add an IsMesos method to more easily check whether the process is running on
+  the compute cluster.
+
+## v1.2.1 (2017-11-15)
+
+- Fix LookupEnv wrapper to handle unset environment variables properly.
+
+## v1.2.0 (2017-11-15)
+
+- Add canonical import path directive. This will provide better error messages
+  if incorrect import paths are used to import envfx.
+- Add LookupEnv wrapper for os.LookupEnv. See docs for more information.
+
 ## v1.1.0 (2017-08-13)
 
 - Add `RuntimeEnvironment`.

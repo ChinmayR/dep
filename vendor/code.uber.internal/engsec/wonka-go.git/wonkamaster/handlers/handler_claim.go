@@ -1,10 +1,10 @@
 package handlers
 
 import (
-	"bytes"
 	"context"
 	"crypto"
 	"crypto/ecdsa"
+	"encoding/base64"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -14,11 +14,12 @@ import (
 	"time"
 
 	"code.uber.internal/engsec/wonka-go.git"
+	"code.uber.internal/engsec/wonka-go.git/internal/claimhelper"
+	"code.uber.internal/engsec/wonka-go.git/internal/rpc"
 	"code.uber.internal/engsec/wonka-go.git/internal/timehelper"
 	"code.uber.internal/engsec/wonka-go.git/internal/xhttp"
-	"code.uber.internal/engsec/wonka-go.git/wonkamaster/claims"
+	"code.uber.internal/engsec/wonka-go.git/wonkacrypter"
 	"code.uber.internal/engsec/wonka-go.git/wonkamaster/common"
-	"code.uber.internal/engsec/wonka-go.git/wonkamaster/rpc"
 	"code.uber.internal/engsec/wonka-go.git/wonkamaster/wonkadb"
 	"code.uber.internal/engsec/wonka-go.git/wonkamaster/wonkassh"
 
@@ -55,6 +56,7 @@ type claimHandler struct {
 	usshHostKeyCallback ssh.HostKeyCallback
 	impersonators       map[string]struct{}
 	host                string
+	certAuth            *common.CertAuthOverride
 }
 
 func (h claimHandler) logAndMetrics() (*zap.Logger, tally.Scope) {
@@ -79,6 +81,7 @@ func newClaimHandler(cfg common.HandlerConfig) xhttp.Handler {
 		usshHostKeyCallback: cfg.UsshHostSigner,
 		impersonators:       i,
 		host:                cfg.Host,
+		certAuth:            cfg.CertAuthenticationOverride,
 	}
 
 	return h
@@ -119,36 +122,39 @@ func (h claimHandler) ServeHTTP(ctx context.Context, w http.ResponseWriter, r *h
 		zap.String("entity", req.EntityName),
 		zap.String("claims_requested", req.Claim))
 
-	version := 1
-	if strings.EqualFold(r.URL.Path, "/claim/v2") {
-		version = 2
-	} else {
-		// check whether anyone is using the /claim/v1 endpoint
-		tagCounter(h.metrics, "call", tag("version", "1"), tag("entity", req.EntityName))
-	}
-
 	var pubKey crypto.PublicKey
 	var err error
 	reqType := serviceClaim
 
 	if len(req.Certificate) != 0 {
 		// do certificate auth here
-		pubKey, err = h.wonkaCertAuth(req, req.Certificate)
+		cert, err := authenticateCertificate(req.Certificate, req.EntityName, h.certAuth, h.log)
 		if err != nil {
 			writeResponse(w, h, err, wonka.ResultRejected, http.StatusForbidden)
 			return
 		}
 
-		cert, _ := wonka.UnmarshalCertificate(req.Certificate)
+		pubKey, err = cert.PublicKey()
+		if err != nil {
+			tagError(h.metrics, err)
+			err = fmt.Errorf("error extracting public key from certificate: %v", err)
+			writeResponse(w, h, err, wonka.ResultRejected, http.StatusForbidden)
+			return
+		}
+
 		h.log = h.log.With(
 			zap.String("authtype", "WonkaCertificate"),
 			zap.String("host", cert.Host),
 			zap.Int64("serial", int64(cert.Serial)),
 			zap.String("runtime", cert.Tags[wonka.TagRuntime]),
 			zap.String("taskid", cert.Tags[wonka.TagTaskID]))
+		if cert.Type == wonka.EntityTypeUser {
+			h.log.Debug("wonka certificate for user claim request")
+			reqType = userClaim
+		}
 	} else if req.USSHSignature != "" {
 		var cert *ssh.Certificate
-		cert, pubKey, reqType, err = h.usshAuth(version, &req)
+		cert, pubKey, reqType, err = h.usshAuth(&req)
 		if err != nil {
 			writeResponse(w, h, err, wonka.ResultRejected, http.StatusForbidden)
 			return
@@ -170,10 +176,13 @@ func (h claimHandler) ServeHTTP(ctx context.Context, w http.ResponseWriter, r *h
 			return
 		}
 
-		pubKey, _, err = claims.VerifyClaimRequest(version, req, *dbe)
+		pubKey, err = wonka.KeyFromCompressed(dbe.ECCPublicKey)
 		if err != nil {
-			// VerifyClaimRequest has already logged the error
-			// It's ok to double log. writeResponse gets us metrics also.
+			writeResponse(w, h, err, wonka.ResultRejected, http.StatusInternalServerError)
+			return
+		}
+
+		if err := h.verifyClaimRequest(req, pubKey.(*ecdsa.PublicKey)); err != nil {
 			writeResponse(w, h, err, err.Error(), http.StatusForbidden)
 			return
 		}
@@ -189,9 +198,7 @@ func (h claimHandler) ServeHTTP(ctx context.Context, w http.ResponseWriter, r *h
 		}
 		// if we have an authorized impersonation, the request type is whatever the impersonated
 		// entity is.
-		// this is admittedly pretty hacky.
-		// TODO(pmoody): T1049913
-		if strings.Contains(req.EntityName, "@") {
+		if isPersonnelClaim(req.EntityName) {
 			reqType = userClaim
 		}
 	}
@@ -237,8 +244,16 @@ func (h claimHandler) ServeHTTP(ctx context.Context, w http.ResponseWriter, r *h
 	}
 	req.Claim = approvedClaims
 
-	encryptedToken, err := claims.NewSignedClaim(req, h.eccPrivateKey, pubKey)
+	claim, err := claimhelper.NewSignedClaim(req, h.eccPrivateKey)
 	if err != nil {
+		fmt.Printf("err %v\n", err)
+		writeResponse(w, h, err, wonka.ClaimSigningError, http.StatusInternalServerError)
+		return
+	}
+
+	encryptedToken, err := claimhelper.EncryptClaim(claim, h.eccPrivateKey, pubKey)
+	if err != nil {
+		fmt.Printf("err here %v\n", err)
 		writeResponse(w, h, err, wonka.ClaimSigningError, http.StatusInternalServerError)
 		return
 	}
@@ -269,51 +284,49 @@ func isEntityInDeprecatedGroup(claimRequested, requestingEntity string) bool {
 		strings.EqualFold(requestingEntity, "michelangelo-rest")
 }
 
-func (h claimHandler) wonkaCertAuth(req wonka.ClaimRequest, b []byte) (crypto.PublicKey, error) {
-	cert, err := wonka.UnmarshalCertificate(b)
+func (h claimHandler) verifyClaimRequest(cr wonka.ClaimRequest, pubKey *ecdsa.PublicKey) error {
+	toVerify := cr
+	toVerify.Signature = ""
+	toVerify.USSHCertificate = ""
+	toVerify.USSHSignature = ""
+	toVerify.USSHSignatureType = ""
+
+	toVerifyBytes, err := json.Marshal(toVerify)
 	if err != nil {
-		tagError(h.metrics, err)
-		return nil, fmt.Errorf("error unmarshalling cert: %v", err)
+		return fmt.Errorf("error marshalling claim request to verify: %v", err)
 	}
 
-	if err := cert.CheckCertificate(); err != nil {
-		tagError(h.metrics, err)
-		return nil, fmt.Errorf("wonka cert doesn't validate: %v", err)
-	}
-
-	if req.EntityName != cert.EntityName {
-		tagError(h.metrics, fmt.Errorf("invalid enitty name. %s != %s",
-			req.EntityName, cert.EntityName))
-		return nil, fmt.Errorf("invalid entity name in claim request")
-	}
-
-	pubKey, err := cert.PublicKey()
+	sig, err := base64.StdEncoding.DecodeString(cr.Signature)
 	if err != nil {
-		tagError(h.metrics, err)
-		return nil, fmt.Errorf("error pulling out public key: %v", err)
+		return fmt.Errorf("error base64 decoding signature: %v", err)
 	}
-	return pubKey, nil
+
+	if ok := wonkacrypter.New().Verify(toVerifyBytes, sig, pubKey); !ok {
+		return fmt.Errorf("claim request signature doesn't verify")
+	}
+
+	return nil
 }
 
 // userAuth validates the ussh signature on the claim request, if present.
-func (h claimHandler) usshAuth(version int, c *wonka.ClaimRequest) (*ssh.Certificate, crypto.PublicKey, claimRequestType, error) {
+func (h claimHandler) usshAuth(c *wonka.ClaimRequest) (*ssh.Certificate, crypto.PublicKey, claimRequestType, error) {
 	var dbe wonka.Entity
 	dbe.EntityName = c.EntityName
 	dbe.CreateTime = time.Unix(c.Ctime, 0)
 	dbe.ExpireTime = time.Unix(c.Etime, 0)
 	dbe.PublicKey = c.SessionPubKey
 
-	if version == 2 {
-		dbe.ECCPublicKey = c.SessionPubKey
-	}
-
 	h.log.Info("user auth test",
 		zap.Any("entity", c.EntityName),
 		zap.Any("claim", c.Claim),
 	)
 
-	pubKey, _, err := claims.VerifyClaimRequest(version, *c, dbe)
+	pubKey, err := wonka.KeyFromCompressed(c.SessionPubKey)
 	if err != nil {
+		return nil, nil, invalidClaim, fmt.Errorf("error parsing ecc pubkey: %v", err)
+	}
+
+	if err := h.verifyClaimRequest(*c, pubKey); err != nil {
 		return nil, nil, invalidClaim, fmt.Errorf("validating inner claim failed: %v", err)
 	}
 
@@ -351,12 +364,16 @@ func (h claimHandler) usshAuth(version int, c *wonka.ClaimRequest) (*ssh.Certifi
 }
 
 func (h claimHandler) verifyUssh(cr *wonka.ClaimRequest, cert *ssh.Certificate) error {
-	toVerify, err := json.Marshal(claims.ClaimRequestForUSSHVerify(*cr))
+	toVerify := *cr
+	toVerify.USSHSignature = ""
+	toVerify.USSHSignatureType = ""
+
+	toVerifyBytes, err := json.Marshal(toVerify)
 	if err != nil {
 		return fmt.Errorf("json marshal failure: %v", err)
 	}
 
-	err = wonkassh.VerifyUSSHSignature(cert, string(toVerify), cr.USSHSignature, cr.USSHSignatureType)
+	err = wonkassh.VerifyUSSHSignature(cert, string(toVerifyBytes), cr.USSHSignature, cr.USSHSignatureType)
 	if err != nil {
 		return fmt.Errorf("ussh signature check failed: %v", err)
 	}
@@ -365,25 +382,13 @@ func (h claimHandler) verifyUssh(cr *wonka.ClaimRequest, cert *ssh.Certificate) 
 }
 
 func (h claimHandler) usshUserVerify(cr *wonka.ClaimRequest, cert *ssh.Certificate) error {
-	// Check the USSH certificate against the CA for validity
-	certChecker := ssh.CertChecker{
-		IsUserAuthority: func(k ssh.PublicKey) bool {
-			for _, ca := range h.usshCAKeys {
-				if bytes.Equal(k.Marshal(), ca.Marshal()) {
-					return true
-				}
-			}
-			return false
-		},
-	}
-
 	certName := strings.Split(cr.EntityName, "@")
 	if len(certName) != 2 {
 		return errors.New("wonkamaster: invalid personnel entity name. http://t.uber.com/wm-ipen")
 	}
 
-	if err := certChecker.CheckCert(certName[0], cert); err != nil {
-		return fmt.Errorf("ssh certcheck failure: %v", err)
+	if err := wonkassh.CheckUserCert(certName[0], cert, h.usshCAKeys); err != nil {
+		return err
 	}
 
 	err := h.verifyUssh(cr, cert)

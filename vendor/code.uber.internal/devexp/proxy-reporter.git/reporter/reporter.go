@@ -166,7 +166,11 @@ func (b *backend) postHTTP(values url.Values) {
 	for i := 0; i < _retryCount; i++ {
 		rsp, err := b.client.PostForm(b.addr, values)
 		if err != nil {
-			fmt.Fprintf(os.Stderr, "Error posting request: %v\n", err)
+			if i < _retryCount-1 {
+				fmt.Fprintf(os.Stderr, "Error posting request: (%v), retrying...\n", err)
+			} else {
+				fmt.Fprintf(os.Stderr, "Error posting request: (%v), no retries remain\n", err)
+			}
 			continue
 		}
 
@@ -175,6 +179,7 @@ func (b *backend) postHTTP(values url.Values) {
 		}
 
 		if rsp.StatusCode < http.StatusBadRequest {
+			fmt.Fprintf(os.Stderr, "Success posting request with values %s\n", values)
 			return
 		}
 

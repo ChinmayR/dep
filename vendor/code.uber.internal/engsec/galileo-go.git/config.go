@@ -4,6 +4,7 @@ import (
 	"context"
 	"time"
 
+	"code.uber.internal/engsec/galileo-go.git/internal/claimtools"
 	opentracing "github.com/opentracing/opentracing-go"
 	"github.com/uber-go/tally"
 	"go.uber.org/zap"
@@ -23,30 +24,34 @@ const (
 	initialSkipDuration = time.Minute
 	// maxSkipDuration is the longest we'll try to skip auth for an entity.
 	maxSkipDuration = 30 * time.Minute
-
-	// maxDisableDuration is the longest we honor a disable message.
-	maxDisableDuration = 24 * time.Hour
-)
-
-// TODO(pmoody): these should go away when flipr supports the disable flag.
-var (
-	disableCheckPeriod = time.Minute
 )
 
 // Configuration of Galileo for ServiceName entity. Defines which entities are
 // authorized for which endpoints, what to do on authorization failure, etc.
 type Configuration struct {
-	// ServiceName is the name of this Galileo entity.
+	// ServiceName is the name of this Galileo entity. Outbound requests will be
+	// authenticated to prove they come from this identity.
 	ServiceName string `yaml:"servicename"`
 
-	// AllowedEntities is the list of entities who can read and write from all
-	// endpoints. Use Endpoints to override this configuration for a specific
-	// endpoint.
+	// ServiceAliases are alternative names for this service. Useful when your
+	// service advertises as multiple names. Inbound requests will be required
+	// to have a token with a destination from this list.
+	// If ServiceAliases is not set, only tokens with destination equal to
+	// ServiceName will be accepted.
+	// When setting ServiceAliases, be sure to include ServiceName, for example:
+	//   galileo:
+	//     servicename: gopro
+	//     servicealiases: [gopro, populous]
+	ServiceAliases []string `yaml:"servicealiases"`
+
+	// AllowedEntities is the list of entities who can make authenticated read
+	// and write requests to all endpoints. Use Endpoints to override this
+	// configuration for a specific endpoint.
 	AllowedEntities []string `yaml:"allowedentities"`
 
 	// Endpoints is endpoint-specific configuration for HTTP endpoints.
-	// For each endpoint: specify the list of entities who can access it, and
-	// which HTTP verbs they can use.
+	// For each endpoint: specify the list of entities who can make
+	// authenticated calls to it, and which HTTP verbs they can use.
 	Endpoints map[string]EndpointCfg `yaml:"endpoints"`
 
 	// EnforcePercentage allows partial enforcement of authentication.
@@ -79,6 +84,9 @@ type Configuration struct {
 	// will not check inbound auth baggage and will not try to decorate outbound
 	// requests with auth baggage.
 	Disabled bool `yaml:"disabled"`
+
+	// Cache sets the caching configuration settings.
+	Cache claimtools.CacheConfig `yaml:"cache"`
 }
 
 // EndpointCfg defines configuration for a specific HTTP endpoint: the list
@@ -118,9 +126,17 @@ type Galileo interface {
 	// provided context and verifies that the request should be allowed, based
 	// on the Galileo configuration.
 	//
-	// Optionally, a series of names of entities that are allowed to make this
-	// request may be passed to the call. If no names are passed, the globally
-	// configured list of entities will be checked.
+	// Authentication baggage will be removed from the context.
+	//
+	// An error is returned if the request was unauthorized. Errors returned
+	// by this function can be used with the GetAllowedEntities function to
+	// determine the list of entities that would have been allowed to make
+	// that request.
+	//
+	// Accepts zero or more CredentialValidationOption or string arguments.
+	// Strings passed to AuthenticateIn are names of entities that are allowed
+	// to make this request, instead of the entities configured with this
+	// Galileo object.
 	//
 	//  if err := g.AuthenticateIn(ctx); err != nil {
 	//    return fmt.Errorf("unauthorized request: %v", err)
@@ -130,9 +146,6 @@ type Galileo interface {
 	//    return fmt.Errorf("unauthorized request: %v", err)
 	//  }
 	//
-	// An error is returned if the request was unauthorized. Errors returned
-	// by this function can be used with the GetAllowedEntities function to
-	// determine the list of entities that would have been allowed to make
-	// that request.
+	// See docs for individual CredentialValidationOptions for more options.
 	AuthenticateIn(ctx context.Context, allowedEntities ...interface{}) error
 }

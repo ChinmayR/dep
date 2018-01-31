@@ -2,6 +2,7 @@ package main
 
 import (
 	"code.uber.internal/engsec/wonka-go.git/wonkamaster/common"
+	"code.uber.internal/engsec/wonka-go.git/wonkamaster/middleware"
 	"code.uber.internal/engsec/wonka-go.git/wonkamaster/wonkadb"
 )
 
@@ -25,21 +26,24 @@ type HostCA struct {
 }
 
 type appConfig struct {
-	Verbose        bool
-	Nemo           dbConfig                `yaml:"nemo"`
-	WonkaMasterKey masterKey               `yaml:"wonkamasterkey"`
-	Port           int                     `yaml:"port"`
-	DBHost         string                  `yaml:"dbhost"`
-	DBPort         int                     `yaml:"dbport"`
-	Cassandra      wonkadb.CassandraConfig `yaml:"cassandra"`
+	Verbose               bool
+	Nemo                  dbConfig                `yaml:"nemo"`
+	WonkaMasterKey        masterKey               `yaml:"wonkamasterkey"`
+	WonkaMasterKeyStaging masterKey               `yaml:"wonkamasterkey-staging"`
+	Port                  int                     `yaml:"port"`
+	DBHost                string                  `yaml:"dbhost"`
+	DBPort                int                     `yaml:"dbport"`
+	Cassandra             wonkadb.CassandraConfig `yaml:"cassandra"`
 	// PulloConfig is a static listing of group memberships. If this is set,
 	// the real pullo is not consulted at all. This is probalby only useful
 	// for testing wonkamaster locally.
-	PulloConfig       map[string][]string        `yaml:"pulloconfig"`
-	Impersonators     []string                   `yaml:"impersonators"`
-	UsshHostSigner    HostCA                     `yaml:"ussh_host_signer"`
-	UsshUserSigner    UserCA                     `yaml:"ussh_user_signer"`
-	Derelicts         map[string]string          `yaml:"derelicts"`
-	Launchers         map[string]common.Launcher `yaml:"launchers"`
-	HoseCheckInterval int                        `yaml:"hose_check_interval"`
+	PulloConfig               map[string][]string        `yaml:"pulloconfig"`
+	Impersonators             []string                   `yaml:"impersonators"`
+	UsshHostSigner            HostCA                     `yaml:"ussh_host_signer"`
+	UsshUserSigner            UserCA                     `yaml:"ussh_user_signer"`
+	Derelicts                 map[string]string          `yaml:"derelicts"`
+	Launchers                 map[string]common.Launcher `yaml:"launchers"`
+	HoseCheckInterval         int                        `yaml:"hose_check_interval"`
+	Rates                     middleware.RateConfig      `yaml:"rate"`
+	CertAuthentiationOverride *common.CertAuthOverride   `yaml:"cert_auth_override"`
 }

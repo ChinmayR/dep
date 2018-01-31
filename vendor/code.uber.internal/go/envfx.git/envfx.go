@@ -1,5 +1,5 @@
 // Package envfx provides information about the running service's environment.
-package envfx
+package envfx // import "code.uber.internal/go/envfx.git"
 
 import (
 	"bytes"
@@ -20,7 +20,7 @@ const (
 
 const (
 	// Version is the current package version.
-	Version = "1.1.0"
+	Version = "1.3.0"
 
 	_environmentKey        = "UBER_ENVIRONMENT"
 	_runtimeEnvironmentKey = "UBER_RUNTIME_ENVIRONMENT"
@@ -33,6 +33,7 @@ const (
 	_appIDKey              = "UDEPLOY_APP_ID"
 	_pipelineKey           = "UBER_PIPELINE"
 	_clusterKey            = "UBER_CLUSTER"
+	_instanceIDKey         = "UDEPLOY_INSTANCE_ID"
 
 	_environmentFile = "/etc/uber/environment"
 	_pipelineFile    = "/etc/uber/pipeline"
@@ -73,6 +74,7 @@ func New() Result {
 			Pipeline:           getPipeline(),
 			Cluster:            getCluster(),
 			Pod:                getPod(),
+			InstanceID:         getInstanceID(),
 			configDirs:         getConfigDirs(),
 		},
 	}
@@ -80,10 +82,13 @@ func New() Result {
 
 // Context describes the service's runtime environment, pulling information
 // from environment variables and Puppet-managed files as necessary.
+//
+// Detailed definitions for many of these fields can be found in the Panama
+// glossary: t.uber.com/panama-terms
 type Context struct {
 	Environment        string // enum for host-level environment (development, test, production, staging)
 	RuntimeEnvironment string // user-specified service runtime environment (t.uber.com/environments-for-compute)
-	Zone               string // t.uber.com/panama-terms
+	Zone               string
 	Hostname           string
 	Deployment         string // t.uber.com/udeploy_env
 	ContainerName      string // Mesos-only
@@ -92,6 +97,7 @@ type Context struct {
 	Pipeline           string
 	Cluster            string
 	Pod                string
+	InstanceID         string // Mesos-only
 
 	configDirs []string
 }
@@ -105,6 +111,29 @@ func (c Context) ConfigDirs() []string {
 	cp := make([]string, len(c.configDirs))
 	copy(cp, c.configDirs)
 	return cp
+}
+
+// LookupEnv is a thin wrapper around os.LookupEnv. For some Uber-specific
+// information, it falls back to Puppet-managed files on disk if the usual
+// $UBER_* environment variable isn't set. This is relevant only for low-level
+// infrastructure deployed without uDeploy.
+func (c Context) LookupEnv(key string) (string, bool) {
+	switch key {
+	case _environmentKey:
+		return c.Environment, c.Environment != ""
+	case _zoneKey:
+		return c.Zone, c.Zone != ""
+	case _pipelineKey:
+		return c.Pipeline, c.Zone != ""
+	default:
+		return os.LookupEnv(key)
+	}
+}
+
+// IsMesos uses the presence of a container name environment variable to
+// detect whether the process is running on Mesos.
+func (c Context) IsMesos() bool {
+	return c.ContainerName != ""
 }
 
 func getEnvironment() string {
@@ -202,4 +231,9 @@ func getPod() string {
 	}
 
 	return string(bytes.TrimSpace(line))
+}
+
+func getInstanceID() string {
+	// Keep envfx minimal and let the consumer handle parsing.
+	return os.Getenv(_instanceIDKey)
 }

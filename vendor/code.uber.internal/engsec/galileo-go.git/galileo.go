@@ -1,7 +1,5 @@
 package galileo
 
-// TODO(pmoody): remove the static functions that require a global galileo instance.
-
 import (
 	"context"
 	"errors"
@@ -11,9 +9,13 @@ import (
 	"time"
 
 	"code.uber.internal/engsec/galileo-go.git/internal"
+	"code.uber.internal/engsec/galileo-go.git/internal/atomic"
+	"code.uber.internal/engsec/galileo-go.git/internal/claimtools"
+	"code.uber.internal/engsec/galileo-go.git/internal/contexthelper"
+	"code.uber.internal/engsec/galileo-go.git/internal/telemetry"
 
-	wonka "code.uber.internal/engsec/wonka-go.git"
-	opentracing "github.com/opentracing/opentracing-go"
+	"code.uber.internal/engsec/wonka-go.git"
+	"github.com/opentracing/opentracing-go"
 	"github.com/uber-go/tally"
 	"go.uber.org/zap"
 )
@@ -30,12 +32,21 @@ func newGalileo(cfg Configuration, w wonka.Wonka) (Galileo, error) {
 		cfg.EnforcePercentage = float32((int(cfg.EnforcePercentage) % 100)) / 100.0
 	}
 
+	if len(cfg.ServiceAliases) == 0 {
+		cfg.ServiceAliases = []string{cfg.ServiceName}
+	}
+
 	// seeding with time.Now() is fine because this doesn't require any
 	// sort of cryptographic security
 	rand.Seed(int64(time.Now().Nanosecond()))
 
+	inboundCache, err := claimtools.NewInboundCache(cfg.Cache)
+	if err != nil {
+		return nil, err
+	}
 	g := &uberGalileo{
 		serviceName:       cfg.ServiceName,
+		serviceAliases:    cfg.ServiceAliases,
 		allowedEntities:   cfg.AllowedEntities,
 		metrics:           cfg.Metrics,
 		w:                 w,
@@ -44,13 +55,12 @@ func newGalileo(cfg Configuration, w wonka.Wonka) (Galileo, error) {
 		skippedEntities:   make(map[string]skippedEntity, 1),
 		skipLock:          &sync.RWMutex{},
 		log:               cfg.Logger,
-		enforcePercentage: cfg.EnforcePercentage,
-		disabled:          0,
+		enforcePercentage: atomic.NewFloat64(float64(cfg.EnforcePercentage)),
+		disabled:          false,
 		endpointCfg:       cfg.Endpoints,
 		tracer:            cfg.Tracer,
+		inboundClaimCache: inboundCache,
 	}
-
-	go g.checkDisableStatus(wonka.WonkaMasterPublicKey)
 
 	return g, nil
 }
@@ -67,26 +77,27 @@ func (cfg *Configuration) initLogAndMetrics() error {
 	if cfg.Logger == nil {
 		cfg.Logger = zap.L()
 	}
-	cfg.Logger = cfg.Logger.With(zap.Namespace("galileo"), zap.String("entity", cfg.ServiceName))
-	cfg.Metrics = cfg.Metrics.Tagged(map[string]string{"component": "galileo", "entity": cfg.ServiceName})
+	cfg.Logger = cfg.Logger.With(
+		zap.Namespace("galileo"),
+		zap.String("entity", cfg.ServiceName),
+		zap.String("version", internal.LibraryVersion()),
+	)
+	cfg.Metrics = cfg.Metrics.Tagged(map[string]string{
+		"component": "galileo",
+		"entity":    telemetry.SanitizeEntityName(cfg.ServiceName),
+		// Override host for Galileo's scope in case caller set per-host metrics
+		// because Galileo already has large metric cardinality.
+		"host":           "global",
+		"metricsversion": telemetry.MetricsVersion,
+	})
 	return nil
 }
 
-// CreateWithContext creates a new Galileo instance for cfg.ServiceName and uses
-// the provided context to enroll that instance in Wonka. Enroll updates the
-// allowed entities.
+// CreateWithContext creates a new Galileo instance for cfg.ServiceName and
+// passes provided context to Wonka initialization.
 func CreateWithContext(ctx context.Context, cfg Configuration) (Galileo, error) {
 	if err := cfg.initLogAndMetrics(); err != nil {
 		return nil, err
-	}
-
-	// isDisabled calls some logging and metrics handlers so these need to be initialized first.
-	if cfg.Disabled {
-		return &uberGalileo{
-			disabled: 1,
-			metrics:  cfg.Metrics,
-			log:      cfg.Logger,
-		}, nil
 	}
 
 	// Require ServiceName field
@@ -103,6 +114,27 @@ func CreateWithContext(ctx context.Context, cfg Configuration) (Galileo, error) 
 		return nil, errors.New("jaeger must be initialized before calling galileo")
 	}
 
+	cfg.Metrics.Tagged(map[string]string{
+		"language": "go",
+		"galileo":  internal.Version,
+		"wonka":    wonka.Version,
+	}).Counter("version").Inc(1)
+
+	// isDisabled calls some logging and metrics handlers so these need to be initialized first.
+	if cfg.Disabled {
+		cfg.Logger.Debug("galileo instance created",
+			zap.Bool("disabled", true),
+			zap.String("name", cfg.ServiceName),
+		)
+		return &uberGalileo{
+			disabled:    true,
+			serviceName: cfg.ServiceName,
+			metrics:     cfg.Metrics,
+			log:         cfg.Logger,
+			tracer:      cfg.Tracer,
+		}, nil
+	}
+
 	wonkaCfg := wonka.Config{
 		EntityName:     cfg.ServiceName,
 		PrivateKeyPath: cfg.PrivateKeyPath,
@@ -116,50 +148,31 @@ func CreateWithContext(ctx context.Context, cfg Configuration) (Galileo, error) 
 		return nil, fmt.Errorf("error initializing wonka for galileo: %v", err)
 	}
 
-	if cfg.PrivateKeyPath != "" && len(cfg.AllowedEntities) > 0 {
-		if _, err := w.Enroll(ctx, "none" /* location */, cfg.AllowedEntities); err != nil {
-			return nil, fmt.Errorf("error enrolling: %v", err)
-		}
-	}
-
 	// finally, create our galileo instance
 	g, err := newGalileo(cfg, w)
 	if err != nil {
-		return nil, fmt.Errorf("error creating galileo instance: %v", err)
+		return nil, fmt.Errorf("error creating galileo: %v", err)
 	}
 
-	cfg.Logger.Debug("galileo: instance created", zap.String("name", g.Name()))
+	cfg.Logger.Debug("galileo instance created",
+		zap.Bool("disabled", false),
+		zap.String("name", g.Name()),
+	)
 
-	cfg.Metrics.Tagged(map[string]string{
-		"stage":   "initialized",
-		"version": Version,
-	}).Counter("galileo-go").Inc(1)
+	cfg.Metrics.Tagged(map[string]string{"stage": "initialized"}).Counter("running").Inc(1)
 
 	return g, nil
 }
 
-// Create creates a new Galileo instance and uses the Background context for
-// enrollment.
+// Create creates a new Galileo instance using Background context.
 func Create(cfg Configuration) (Galileo, error) {
 	return CreateWithContext(context.Background(), cfg)
 }
 
-// GetClaim returns the service auth claim (wonka token) attached to this context.
+// GetClaim returns the service auth claim (wonka token) attached to this
+// context, and removes it from the context.
 func GetClaim(ctx context.Context) (*wonka.Claim, error) {
-	claimAttr, err := internal.ClaimFromContext(ctx)
-	if err != nil {
-		return nil, err
-	}
-	if claimAttr == "" {
-		return nil, errors.New("galileo: no wonka claim found")
-	}
-
-	claim, err := wonka.UnmarshalClaim(claimAttr)
-	if err != nil {
-		return nil, errors.New("galileo: error unmarshailing wonka claim")
-	}
-
-	return claim, nil
+	return contexthelper.ClaimFromContext(ctx)
 }
 
 // GetLogger returns the zap.Logger associated with this instance of Galileo.
@@ -172,7 +185,7 @@ func GetLogger(g Galileo) *zap.Logger {
 	return zap.L()
 }
 
-func shouldEnforce(enforcePercentage float32) bool {
+func shouldEnforce(enforcePercentage float64) bool {
 	if enforcePercentage == 0 {
 		return false
 	}
@@ -181,7 +194,7 @@ func shouldEnforce(enforcePercentage float32) bool {
 	}
 
 	// this is seeded at package initialization.
-	return rand.Float32() <= enforcePercentage
+	return rand.Float64() <= enforcePercentage
 }
 
 // ctxClaimKeyType is used to retrieve a claim from a context.Context.

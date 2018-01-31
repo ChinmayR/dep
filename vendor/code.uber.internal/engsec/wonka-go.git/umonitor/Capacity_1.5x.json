@@ -1,0 +1,67 @@
+{
+  "alarmName": "Capacity 1.5x",
+  "alarmUUID": "89605d5a-eed2-46dc-bd9f-5f097af09f8e",
+  "groupName": "wonkamaster",
+  "groupUUID": "561e1311-7d1a-493c-b620-4f0a91fdef20",
+  "versionUUID": "283993c8-ae07-11e7-b34d-2c600cbb0914",
+  "warn": 140,
+  "critical": 150,
+  "checkInterval": 0,
+  "intervalSeconds": 0,
+  "softToHard": 0,
+  "graphiteConf": "fetch service:wonkamaster name:status_code type:counts status_code:{2XX,3XX,4XX,5XX} | sum | asPercent (fetch service:wonkamaster name:status_code type:counts status_code:{2XX,3XX,4XX,5XX} | timeshift -1d | sum)",
+  "graphs": [],
+  "actions": [
+    {
+      "_data": [],
+      "action": "pagerduty",
+      "data": {},
+      "enabled": true,
+      "requireManualResolution": false,
+      "serviceKey": "c2b03dd151b84fc79c3837849e682686",
+      "uuid": "f94bcf72-d4ad-4d15-92b6-41725f35c102",
+      "when": "critical"
+    },
+    {
+      "action": "hipchat",
+      "authToken": "",
+      "enabled": true,
+      "mentions": "@jesses @pmoody @jkline",
+      "targetRoom": "wonka dev lounge (private)",
+      "uuid": "b519606d-539b-4f46-913c-c01d70a4b551",
+      "when": "both"
+    },
+    {
+      "action": "email",
+      "description": "",
+      "enabled": true,
+      "subject": "",
+      "to": "wonka-team@uber.com",
+      "uuid": "613ab463-cd44-4144-ae89-a8d2bc86fc75",
+      "when": "both"
+    }
+  ],
+  "dashboardsOrLinks": [
+    {
+      "name": "RFC [GENERATED]",
+      "url": "https://docs.google.com/document/d/1QxE8XdVSZ8x48WXosF89N84ZJIATsG-ZdZXJKovbku0",
+      "isGenerated": true
+    }
+  ],
+  "isM3": true,
+  "isSLA": true,
+  "description": "Alerts if there is a very large spike in requests (150%) over the previous day's request level.",
+  "createdAt": "2017-10-10T21:51:54.729Z",
+  "lastUpdated": "2017-10-10T22:05:42.095Z",
+  "author": "jesses@uber.com",
+  "schedule": "",
+  "homeDC": "*",
+  "isAnomaly": false,
+  "sustainPeriod": 120,
+  "ublameService": "wonkamaster",
+  "dependentAlarmUUIDs": [],
+  "type": "",
+  "zoneThresholds": {},
+  "slaType": 0,
+  "access": 0
+}

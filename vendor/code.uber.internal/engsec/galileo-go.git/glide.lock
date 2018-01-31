@@ -1,16 +1,23 @@
-hash: 58d5ba004f956b2acd3ae690eecebacd8b970cbc79712be6480cf265355a08e7
-updated: 2017-09-27T10:10:09.071041805-07:00
+hash: 706c10e20945ce74c8e0a1c7ffb2baf222806b15e35ec65109b6b07915a86b9f
+updated: 2018-01-11T16:40:45.49907704-08:00
 imports:
 - name: code.uber.internal/engsec/wonka-go.git
-  version: f0f61f8b18289e8da341d6dcbe6d7043ac1adef2
+  version: 47b15cb15ef0a1ee4044d16189a2a27a99a35c5b
   subpackages:
   - .gen/go/pullo
   - internal
+  - internal/claimhelper
+  - internal/dns
+  - internal/envfx
+  - internal/keyhelper
   - internal/logging
+  - internal/testhelper
   - internal/timehelper
+  - internal/url
   - internal/xhttp
+  - redswitch
+  - testdata
   - wonkacrypter
-  - wonkamaster/claims
   - wonkamaster/common
   - wonkamaster/handlers
   - wonkamaster/keys
@@ -22,16 +29,16 @@ imports:
   version: 9549b25c77587b29be4e0b5c258221a4ed85d37a
   subpackages:
   - lib/go/thrift
+- name: github.com/codahale/hdrhistogram
+  version: 3a0bb77429bd3a61596f5e8a3172445844342120
 - name: github.com/davecgh/go-spew
-  version: 6d212800a42e8ab5c146b8ace3490ee17e5225f9
+  version: ecdeabc65495df2dec95d7c4a4c3e021903035e5
   subpackages:
   - spew
 - name: github.com/facebookgo/clock
   version: 600d898af40aa09a7a93ecb9265d87b0504b6f03
 - name: github.com/felixge/httpsnoop
   version: eadd4fad6aac69ae62379194fe0219f3dbc80fd3
-- name: github.com/go-sql-driver/mysql
-  version: a0583e0143b1624142adab07e0e97fe106d99561
 - name: github.com/gocql/gocql
   version: 31287b6955a73af4828a9bbbec98060fa3449f6d
   subpackages:
@@ -46,6 +53,10 @@ imports:
   version: 553a641470496b2327abcac10b36396bd98e45c9
 - name: github.com/hailocab/go-hostpool
   version: e80d13ce29ede4452c43dea11e79b9bc8a15b478
+- name: github.com/hashicorp/golang-lru
+  version: 0a025b7e63adc15a622f29b0b2c4c3848243bbf6
+  subpackages:
+  - simplelru
 - name: github.com/opentracing/opentracing-go
   version: 1949ddbfd147afd4d964a9f00b24eb291e0e7c38
   subpackages:
@@ -53,11 +64,11 @@ imports:
   - log
   - mocktracer
 - name: github.com/pmezard/go-difflib
-  version: d8ed2627bdf02c080bf22230dbb337003b7aba2d
+  version: 792786c7400a136282c1664665ae0a8db921c6c2
   subpackages:
   - difflib
 - name: github.com/stretchr/testify
-  version: 69483b4bd14f5845b5a1e55bca19e954e827f1d0
+  version: b91bfb9ebec76498946beb6af7c0230c7cc7ba6c
   subpackages:
   - assert
   - mock
@@ -65,9 +76,25 @@ imports:
 - name: github.com/uber-go/atomic
   version: e682c1008ac17bf26d2e4b5ad6cdd08520ed0b22
 - name: github.com/uber-go/tally
-  version: be9e53c77349ae2dd4b8c03a6dc20ed9a88b9927
+  version: 6c4631652c6aab57c64f65c2e0aaec2e9aae3a64
+- name: github.com/uber/jaeger-client-go
+  version: f54d8ece0a66e3db6a9247e946eb1e2bd79029ea
+  subpackages:
+  - internal/baggage
+  - internal/spanlog
+  - log
+  - log/zap
+  - thrift-gen/agent
+  - thrift-gen/jaeger
+  - thrift-gen/sampling
+  - thrift-gen/zipkincore
+  - utils
+- name: github.com/uber/jaeger-lib
+  version: 5519f3beabf28707fca8d3f47f9cff87dad48d96
+  subpackages:
+  - metrics
 - name: github.com/uber/tchannel-go
-  version: a7ad9ecb640b5f10a0395b38d6319175172b3ab2
+  version: 7bcb33f4bb908c21374f8bfdc9d4b1ebcbb8dab0
   subpackages:
   - internal/argreader
   - relay
@@ -77,8 +104,13 @@ imports:
   - tos
   - trand
   - typed
+- name: github.com/yarpc/yab
+  version: 3b274b3beb511d4877cd6660785338367bef262c
+  subpackages:
+  - plugin
+  - transport
 - name: go.uber.org/atomic
-  version: 54f72d32435d760d5604f17a82e2435b28dc4ba5
+  version: 8474b86a5a6f79c443ce4b2992817ff32cf208b8
 - name: go.uber.org/multierr
   version: 3c4937480c32f4c13a875a1829af76c98ca3d40a
 - name: go.uber.org/zap
@@ -89,8 +121,9 @@ imports:
   - internal/color
   - internal/exit
   - zapcore
+  - zaptest/observer
 - name: golang.org/x/crypto
-  version: 847319b7fc94cab682988f93da778204da164588
+  version: 5f55bce93ad2c89f411e009659bb1fd83da36e7b
   subpackages:
   - curve25519
   - ed25519
@@ -99,7 +132,7 @@ imports:
   - ssh/agent
   - ssh/knownhosts
 - name: golang.org/x/net
-  version: 0a9397675ba34b2845f758fe3cd68828369c6517
+  version: ab555f366c4508dbe0802550b1b20c46c5c18aa0
   subpackages:
   - bpf
   - context
@@ -107,8 +140,12 @@ imports:
   - internal/socket
   - ipv4
   - ipv6
+- name: golang.org/x/sys
+  version: 810d7000345868fc619eb81f46307107118f4ae1
+  subpackages:
+  - unix
 - name: gopkg.in/inf.v0
   version: 3887ee99ecf07df5b447e9b00d9c0b2adaa9f3e4
 - name: gopkg.in/yaml.v2
-  version: eb3733d160e74a9c7e442f435eb3bea458e1d19f
+  version: d670f9405373e636a5a2765eea47fac0c9bc91a4
 testImports: []

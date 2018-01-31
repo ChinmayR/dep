@@ -1,9 +1,11 @@
+# Must include rules.mk before bottles.mk
+
 HOMEBREW_TARGETS ?= $(PROGS)
 PROJECT_DIR = $(CURDIR)
 BOTTLE_NAME ?= $(shell basename $(PROJECT_ROOT))
 BOTTLE_TEMPLATE_FILE ?= $(PROJECT_DIR)/bottle.tmpl
-MACOS_VERSIONS = yosemite el_capitan sierra
-BOTTLE_VERSION := $(shell git --git-dir=$(PROJECT_DIR)/.git describe --dirty --always --tags)
+MACOS_VERSIONS ?= high_sierra sierra el_capitan
+BOTTLE_VERSION := $(shell git --git-dir=$(PROJECT_DIR)/.git describe $(GIT_DESCRIBE_FLAGS))
 BOTTLE_ROOT := .tmp/bottle/
 BOTTLE_PATH := $(BOTTLE_ROOT)/$(BOTTLE_NAME)/$(BOTTLE_VERSION)
 BOTTLE_JSON := $(BOTTLE_PATH)/INSTALL_RECEIPT.json

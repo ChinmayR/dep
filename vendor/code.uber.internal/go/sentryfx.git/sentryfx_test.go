@@ -6,6 +6,7 @@ import (
 	"time"
 
 	envfx "code.uber.internal/go/envfx.git"
+	"code.uber.internal/go/sentryfx.git/packetmodifier"
 	servicefx "code.uber.internal/go/servicefx.git"
 	versionfx "code.uber.internal/go/versionfx.git"
 
@@ -144,6 +145,7 @@ func TestConfigWrite(t *testing.T) {
 	assert.Equal(t, "oh no", p.Message, "Unexpected message in captured packet.")
 	assert.Equal(t, raven.FATAL, p.Level, "Unexpected severity in captured packet.")
 	require.Equal(t, 1, len(p.Interfaces), "Expected a stacktrace in packet interfaces.")
+	assert.Equal(t, 2, len(p.Extra), "Extra has 3 fields in the map")
 	trace, ok := p.Interfaces[0].(*raven.Stacktrace)
 	require.True(t, ok, "Expected only interface in packet to be a stacktrace.")
 	// Trace should contain this test and testing harness main.
@@ -151,6 +153,59 @@ func TestConfigWrite(t *testing.T) {
 
 	frame := trace.Frames[len(trace.Frames)-1]
 	assert.Equal(t, "TestConfigWrite", frame.Function, "Expected frame to point to this test function.")
+}
+
+func TestFingerprint(t *testing.T) {
+	tests := []struct {
+		zapField       zapcore.Field
+		fingerprintLen int
+		extraLen       int
+		msg            string
+	}{
+		{
+			zap.Strings("fingerprint", []string{"{{ default }}", "other"}),
+			2,
+			0,
+			"String slice accepted",
+		},
+		{
+			zap.String("fingerprint", "foo"),
+			1,
+			0,
+			"String accepted",
+		},
+		{
+			zap.Int("fingerprint", 1),
+			0,
+			1,
+			"Invalid type ignored",
+		},
+		{
+			zap.Ints("fingerprint", []int{1, 2}),
+			0,
+			1,
+			"Invalid slice type ignored",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.msg, func(t *testing.T) {
+			sentry := &spy{}
+			core := &core{
+				LevelEnabler: zap.ErrorLevel,
+				client:       &modifierClient{client: sentry, packetModifier: packetmodifier.Fingerprint()},
+			}
+
+			ent := zapcore.Entry{Message: "oh no", Level: zapcore.PanicLevel, Time: time.Now()}
+			ce := core.Check(ent, nil)
+
+			ce.Write(tt.zapField)
+			require.Equal(t, 1, len(sentry.packets), "Expected to write one Sentry packet.")
+			p := sentry.packets[0]
+			assert.Equal(t, tt.fingerprintLen, len(p.Fingerprint))
+			assert.Equal(t, tt.extraLen, len(p.Extra))
+		})
+	}
 }
 
 func TestModuleSuccess(t *testing.T) {
@@ -185,11 +240,12 @@ func TestModuleSuccess(t *testing.T) {
 		}})
 		require.NoError(t, err, "could not initialize new static provider")
 		result, err := New(Params{
-			Service:     sfx,
-			Environment: env,
-			Config:      cfg,
-			Lifecycle:   lc,
-			Reporter:    ver,
+			Service:        sfx,
+			Environment:    env,
+			Config:         cfg,
+			Lifecycle:      lc,
+			Reporter:       ver,
+			PacketModifier: func(*raven.Packet) {},
 		})
 		require.NoError(t, err, "Unexpected error with Sentry disabled.")
 		require.NotEqual(t, zapcore.NewNopCore(), result.Core, "Got no-op core with Sentry enabled.")

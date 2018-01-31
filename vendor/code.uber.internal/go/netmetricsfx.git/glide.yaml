@@ -1,0 +1,17 @@
+package: code.uber.internal/go/netmetricsfx.git
+import:
+- package: code.uber.internal/go/versionfx.git
+  version: ^1.3
+- package: github.com/uber-go/tally
+  version: ^3.1
+- package: go.uber.org/fx
+  version: ^1
+- package: go.uber.org/multierr
+  version: ^1
+- package: go.uber.org/net/metrics
+  version: ^1.0.1
+testImport:
+- package: github.com/stretchr/testify
+  subpackages:
+  - assert
+  - require

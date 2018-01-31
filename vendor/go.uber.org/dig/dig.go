@@ -21,29 +21,41 @@
 package dig
 
 import (
-	"bytes"
 	"errors"
 	"fmt"
+	"math/rand"
 	"reflect"
 	"strconv"
+	"strings"
+	"time"
+
+	"go.uber.org/dig/internal/digreflect"
 )
 
 const (
 	_optionalTag = "optional"
 	_nameTag     = "name"
+	_groupTag    = "group"
 )
 
 // Unique identification of an object in the graph.
 type key struct {
-	t    reflect.Type
-	name string
+	t reflect.Type
+
+	// Only one of name or group will be set.
+	name  string
+	group string
 }
 
 // Option configures a Container. It's included for future functionality;
 // currently, there are no concrete implementations.
 type Option interface {
-	unimplemented()
+	applyOption(*Container)
 }
+
+type optionFunc func(*Container)
+
+func (f optionFunc) applyOption(c *Container) { f(c) }
 
 // A ProvideOption modifies the default behavior of Provide. It's included for
 // future functionality; currently, there are no concrete implementations.
@@ -59,25 +71,42 @@ type InvokeOption interface {
 
 // Container is a directed acyclic graph of types and their dependencies.
 type Container struct {
-	nodes map[key]*node
-	cache map[key]reflect.Value
+	// Mapping from key to all the nodes that can provide a value for that
+	// key.
+	providers map[key][]*node
 
-	// TODO: for advanced use-case, add an index
-	// This will allow retrieval of a single type, without specifying the exact
-	// tag, provided there is only one object of that given type
-	//
-	// It will also allow library owners to create a "default" tag for their
-	// object, in case users want to provide another type with a different name
-	//
-	// index map[reflect.Type]key
+	// Values that have already been generated in the container.
+	values map[key]reflect.Value
+
+	// Values groups that have already been generated in the container.
+	groups map[key][]reflect.Value
+
+	// Source of randomness.
+	rand *rand.Rand
 }
 
 // New constructs a Container.
 func New(opts ...Option) *Container {
-	return &Container{
-		nodes: make(map[key]*node),
-		cache: make(map[key]reflect.Value),
+	c := &Container{
+		providers: make(map[key][]*node),
+		values:    make(map[key]reflect.Value),
+		groups:    make(map[key][]reflect.Value),
+		rand:      rand.New(rand.NewSource(time.Now().UnixNano())),
 	}
+
+	for _, opt := range opts {
+		opt.applyOption(c)
+	}
+	return c
+}
+
+// Changes the source of randomness for the container.
+//
+// This will help provide determinism during tests.
+func setRand(r *rand.Rand) Option {
+	return optionFunc(func(c *Container) {
+		c.rand = r
+	})
 }
 
 // Provide teaches the container how to build values of one or more types and
@@ -104,8 +133,11 @@ func (c *Container) Provide(constructor interface{}, opts ...ProvideOption) erro
 	if ctype.Kind() != reflect.Func {
 		return fmt.Errorf("must provide constructor function, got %v (type %v)", constructor, ctype)
 	}
-	if err := c.provide(constructor, ctype); err != nil {
-		return errWrapf(err, "can't provide %v", ctype)
+	if err := c.provide(constructor); err != nil {
+		return errProvide{
+			Func:   digreflect.InspectFunc(constructor),
+			Reason: err,
+		}
 	}
 	return nil
 }
@@ -126,10 +158,24 @@ func (c *Container) Invoke(function interface{}, opts ...InvokeOption) error {
 	if ftype.Kind() != reflect.Func {
 		return fmt.Errorf("can't invoke non-function %v (type %v)", function, ftype)
 	}
-	args, err := c.constructorArgs(ftype)
+
+	pl, err := newParamList(ftype)
 	if err != nil {
-		return errWrapf(err, "failed to get arguments for %v (type %v)", function, ftype)
+		return err
 	}
+
+	if err := shallowCheckDependencies(c, pl); err != nil {
+		return errMissingDependencies{Func: digreflect.InspectFunc(function), Reason: err}
+	}
+
+	args, err := pl.BuildList(c)
+	if err != nil {
+		return errArgumentsFailed{
+			Func:   digreflect.InspectFunc(function),
+			Reason: err,
+		}
+	}
+
 	returned := reflect.ValueOf(function).Call(args)
 	if len(returned) == 0 {
 		return nil
@@ -142,417 +188,217 @@ func (c *Container) Invoke(function interface{}, opts ...InvokeOption) error {
 	return nil
 }
 
-func (c *Container) provide(ctor interface{}, ctype reflect.Type) error {
-	keys, err := c.getReturnKeys(ctor, ctype)
+func (c *Container) provide(ctor interface{}) error {
+	n, err := newNode(ctor)
 	if err != nil {
-		return errWrapf(err, "unable to collect return types of a constructor")
+		return err
 	}
 
-	nodes := make([]*node, 0, len(keys))
+	keys, err := c.findAndValidateResults(n)
+	if err != nil {
+		return err
+	}
+
+	ctype := reflect.TypeOf(ctor)
+	if len(keys) == 0 {
+		return fmt.Errorf("%v must provide at least one non-error type", ctype)
+	}
+
 	for k := range keys {
-		n, err := newNode(k, ctor, ctype)
-		if err != nil {
+		oldProducers := c.providers[k]
+		c.providers[k] = append(oldProducers, n)
+		if err := verifyAcyclic(c, n, k); err != nil {
+			c.providers[k] = oldProducers
 			return err
-		}
-		nodes = append(nodes, n)
-		c.nodes[k] = n
-	}
-
-	for _, n := range nodes {
-		if err := c.isAcyclic(n); err != nil {
-			c.remove(nodes)
-			return errWrapf(err, "introduces a cycle")
 		}
 	}
 
 	return nil
 }
 
-// Get the return types of a constructor with all the dig.Out returns get expanded.
-func (c *Container) getReturnKeys(
-	ctor interface{},
-	ctype reflect.Type,
-) (map[key]struct{}, error) {
-	// Could pre-compute the size but it's tricky as counter is different
-	// when dig.Out objects are mixed in
-	returnTypes := make(map[key]struct{})
+// Builds a collection of all result types produced by this node.
+func (c *Container) findAndValidateResults(n *node) (map[key]struct{}, error) {
+	var err error
+	keyPaths := make(map[key]string)
+	walkResult(n.Results, connectionVisitor{
+		c:        c,
+		n:        n,
+		err:      &err,
+		keyPaths: keyPaths,
+	})
 
-	// Check each return object
-	for i := 0; i < ctype.NumOut(); i++ {
-		outt := ctype.Out(i)
-
-		err := traverseOutTypes(key{t: outt}, func(k key) error {
-			if isError(k.t) {
-				// Don't register errors into the container.
-				return nil
-			}
-
-			// Tons of error checking
-			if IsIn(k.t) {
-				return errors.New("can't provide parameter objects")
-			}
-			if embedsType(k.t, _outPtrType) {
-				return errors.New("can't embed *dig.Out pointers")
-			}
-			if k.t.Kind() == reflect.Ptr {
-				if IsIn(k.t.Elem()) {
-					return errors.New("can't provide pointers to parameter objects")
-				}
-			}
-			if _, ok := returnTypes[k]; ok {
-				return fmt.Errorf("returns multiple %v", k)
-			}
-			if _, ok := c.nodes[k]; ok {
-				return fmt.Errorf("provides %v, which is already in the container", k)
-			}
-
-			returnTypes[k] = struct{}{}
-			return nil
-		})
-		if err != nil {
-			return returnTypes, err
-		}
-	}
-	if len(returnTypes) == 0 {
-		return nil, errors.New("must provide at least one non-error type")
+	if err != nil {
+		return nil, err
 	}
 
-	return returnTypes, nil
+	keys := make(map[key]struct{}, len(keyPaths))
+	for k := range keyPaths {
+		keys[k] = struct{}{}
+	}
+	return keys, nil
 }
 
-// DFS traverse over all the types and execute the provided function.
-// Types that embed dig.Out get recursed on. Returns the first error encountered.
-func traverseOutTypes(k key, f func(key) error) error {
-	if !IsOut(k.t) {
-		if k.t.Kind() == reflect.Ptr {
-			if IsOut(k.t.Elem()) {
-				return fmt.Errorf("%v is a pointer to dig.Out, use value type instead", k.t)
-			}
-		}
+// Visits the results of a node and compiles a collection of all the keys
+// produced by that node.
+type connectionVisitor struct {
+	c *Container
+	n *node
 
-		// call the provided function on non-Out type
-		if err := f(k); err != nil {
-			return err
-		}
+	// If this points to a non-nil value, we've already encountered an error
+	// and should stop traversing.
+	err *error
+
+	// Map of keys provided to path that provided this. The path is a string
+	// documenting which positional return value or dig.Out attribute is
+	// providing this particular key.
+	//
+	// For example, "[0].Foo" indicates that the value was provided by the Foo
+	// attribute of the dig.Out returned as the first result of the
+	// constructor.
+	keyPaths map[key]string
+
+	// We track the path to the current result here. For example, this will
+	// be, ["[1]", "Foo", "Bar"] when we're visiting Bar in,
+	//
+	//   func() (io.Writer, struct {
+	//     dig.Out
+	//
+	//     Foo struct {
+	//       dig.Out
+	//
+	//       Bar io.Reader
+	//     }
+	//   })
+	currentResultPath []string
+}
+
+func (cv connectionVisitor) AnnotateWithField(f resultObjectField) resultVisitor {
+	cv.currentResultPath = append(cv.currentResultPath, f.FieldName)
+	return cv
+}
+
+func (cv connectionVisitor) AnnotateWithPosition(i int) resultVisitor {
+	cv.currentResultPath = append(cv.currentResultPath, fmt.Sprintf("[%d]", i))
+	return cv
+}
+
+func (cv connectionVisitor) Visit(res result) resultVisitor {
+	// Already failed. Stop looking.
+	if *cv.err != nil {
 		return nil
 	}
 
-	for i := 0; i < k.t.NumField(); i++ {
-		field := k.t.Field(i)
-		ft := field.Type
+	path := strings.Join(cv.currentResultPath, ".")
 
-		if field.Type == _outType {
-			// do not recurse into dig.Out itself, it will contain digSentinel only
-			continue
+	switch r := res.(type) {
+	case resultSingle:
+		k := key{name: r.Name, t: r.Type}
+
+		if conflict, ok := cv.keyPaths[k]; ok {
+			*cv.err = fmt.Errorf(
+				"cannot provide %v from %v: already provided by %v",
+				k, path, conflict)
+			return nil
 		}
 
-		if field.PkgPath != "" {
-			return fmt.Errorf(
-				"private fields not allowed in dig.Out, did you mean to export %q (%v) from %v",
-				field.Name, field.Type, k.t)
+		if ps := cv.c.providers[k]; len(ps) > 0 {
+			cons := make([]string, len(ps))
+			for i, p := range ps {
+				cons[i] = fmt.Sprint(p.Func)
+			}
+
+			*cv.err = fmt.Errorf(
+				"cannot provide %v from %v: already provided by %v",
+				k, path, strings.Join(cons, "; "))
+			return nil
 		}
 
-		// keep recursing to traverse all the embedded objects
-		if err := traverseOutTypes(key{t: ft, name: field.Tag.Get(_nameTag)}, f); err != nil {
-			return err
-		}
+		cv.keyPaths[k] = path
+
+	case resultGrouped:
+		// we don't really care about the path for this since conflicts are
+		// okay for group results. We'll track it for the sake of having a
+		// value there.
+		k := key{group: r.Group, t: r.Type}
+		cv.keyPaths[k] = path
 	}
-	return nil
+
+	return cv
 }
 
-func (c *Container) isAcyclic(n *node) error {
-	return detectCycles(n, c.nodes, nil)
-}
-
-// Retrieve a type from the container
-func (c *Container) get(e edge) (reflect.Value, error) {
-	if v, ok := c.cache[e.key]; ok {
-		return v, nil
-	}
-
-	if IsIn(e.t) {
-		// We do not want parameter objects to be cached.
-		return c.createInObject(e.t)
-	}
-	if embedsType(e.t, _inPtrType) {
-		return _noValue, fmt.Errorf(
-			"%v embeds *dig.In which is not supported, embed dig.In value instead", e.t,
-		)
-	}
-
-	if e.t.Kind() == reflect.Ptr {
-		if IsIn(e.t.Elem()) {
-			return _noValue, fmt.Errorf(
-				"dependency %v is a pointer to dig.In, use value type instead", e.t,
-			)
-		}
-	}
-
-	n, ok := c.nodes[e.key]
-	if !ok {
-		// Unlike in the fallback case below, if a user makes an error requesting
-		// a mixed type for an optional parameter, a good error message "did you mean X?"
-		// will not be used and dig will return zero value.
-		if e.optional {
-			return reflect.Zero(e.t), nil
-		}
-
-		// If the type being asked for is the pointer that is not found,
-		// check if the graph contains the value type element - perhaps the user
-		// accidentally included a splat and vice versa.
-		var typo reflect.Type
-		if e.t.Kind() == reflect.Ptr {
-			typo = e.t.Elem()
-		} else {
-			typo = reflect.PtrTo(e.t)
-		}
-
-		tk := key{t: typo, name: e.name}
-		if _, ok := c.nodes[tk]; ok {
-			return _noValue, fmt.Errorf(
-				"type %v is not in the container, did you mean to use %v?", e.key, tk)
-		}
-
-		return _noValue, fmt.Errorf("type %v isn't in the container", e.key)
-	}
-
-	if err := c.contains(n.deps); err != nil {
-		if e.optional {
-			return reflect.Zero(e.t), nil
-		}
-		return _noValue, errWrapf(err, "missing dependencies for %v", e.key)
-	}
-
-	args, err := c.constructorArgs(n.ctype)
-	if err != nil {
-		return _noValue, errWrapf(err, "couldn't get arguments for constructor %v", n.ctype)
-	}
-	constructed := reflect.ValueOf(n.ctor).Call(args)
-
-	// Provide-time validation ensures that all constructors return at least
-	// one value.
-	if errV := constructed[len(constructed)-1]; isError(errV.Type()) {
-		if err, _ := errV.Interface().(error); err != nil {
-			return _noValue, errWrapf(err, "constructor %v for type %v failed", n.ctype, e.t)
-		}
-	}
-
-	for _, con := range constructed {
-		// Set the resolved object into the cache.
-		// This might look confusing at first like we're ignoring named types,
-		// but `con` in this case will be the dig.Out object, which will
-		// cause a recursion into the .set for each of it's memebers.
-		c.set(key{t: con.Type()}, con)
-	}
-	return c.cache[e.key], nil
-}
-
-// Returns a new In parent object with all the dependency fields
-// populated from the dig container.
-func (c *Container) createInObject(t reflect.Type) (reflect.Value, error) {
-	dest := reflect.New(t).Elem()
-
-	for i := 0; i < t.NumField(); i++ {
-		f := t.Field(i)
-
-		if f.Type == _inType {
-			// skip over the dig.In embed itself
-			continue
-		}
-
-		if f.PkgPath != "" {
-			return dest, fmt.Errorf(
-				"private fields not allowed in dig.In, did you mean to export %q (%v) from %v?",
-				f.Name, f.Type, t)
-		}
-
-		isOptional, err := isFieldOptional(t, f)
-		if err != nil {
-			return dest, err
-		}
-
-		e := edge{key: key{t: f.Type, name: f.Tag.Get(_nameTag)}, optional: isOptional}
-		v, err := c.get(e)
-		if err != nil {
-			return dest, errWrapf(err, "could not get field %v (edge %v) of %v", f.Name, e, t)
-		}
-		dest.Field(i).Set(v)
-	}
-	return dest, nil
-}
-
-// Set the value in the cache after a node resolution
-func (c *Container) set(k key, v reflect.Value) {
-	if !IsOut(k.t) {
-		// do not cache error types
-		if k.t != _errType {
-			c.cache[k] = v
-		}
-		return
-	}
-
-	// dig.Out objects are not acted upon directly, but rather their members are considered
-	for i := 0; i < k.t.NumField(); i++ {
-		f := k.t.Field(i)
-
-		// recurse into all fields, which may or may not be more dig.Out objects
-		fk := key{t: f.Type, name: f.Tag.Get(_nameTag)}
-		c.set(fk, v.Field(i))
-	}
-}
-
-func (c *Container) contains(deps []edge) error {
-	var missing []key
-	for _, d := range deps {
-		if _, ok := c.nodes[d.key]; !ok && !d.optional {
-			missing = append(missing, d.key)
-		}
-	}
-	if len(missing) > 0 {
-		return fmt.Errorf("container is missing: %v", missing)
-	}
-	return nil
-}
-
-func (c *Container) remove(nodes []*node) {
-	for _, n := range nodes {
-		delete(c.nodes, n.key)
-	}
-}
-
-func (c *Container) constructorArgs(ctype reflect.Type) ([]reflect.Value, error) {
-	argTypes := getConstructorArgTypes(ctype)
-	args := make([]reflect.Value, 0, len(argTypes))
-	for _, t := range argTypes {
-		arg, err := c.get(edge{key: key{t: t}})
-		if err != nil {
-			return nil, errWrapf(err, "couldn't get arguments for constructor %v", ctype)
-		}
-		args = append(args, arg)
-	}
-	return args, nil
-}
-
+// node is a node in the dependency graph. Each node maps to a single
+// constructor provided by the user.
+//
+// Nodes can produce zero or more values that they store into the container.
+// For the Provide path, we verify that nodes produce at least one value,
+// otherwise the function will never be called.
 type node struct {
-	key
-
 	ctor  interface{}
 	ctype reflect.Type
-	deps  []edge
+	Func  *digreflect.Func
+
+	// Whether the constructor owned by this node was already called.
+	called bool
+
+	// Type information about constructor parameters.
+	Params paramList
+
+	// Type information about constructor results.
+	Results resultList
 }
 
-type edge struct {
-	key
+func newNode(ctor interface{}) (*node, error) {
+	ctype := reflect.TypeOf(ctor)
 
-	optional bool
-}
+	params, err := newParamList(ctype)
+	if err != nil {
+		return nil, err
+	}
 
-func newNode(k key, ctor interface{}, ctype reflect.Type) (*node, error) {
-	deps, err := getConstructorDependencies(ctype)
+	results, err := newResultList(ctype)
+	if err != nil {
+		return nil, err
+	}
+
 	return &node{
-		key:   k,
-		ctor:  ctor,
-		ctype: ctype,
-		deps:  deps,
+		ctor:    ctor,
+		ctype:   ctype,
+		Func:    digreflect.InspectFunc(ctor),
+		Params:  params,
+		Results: results,
 	}, err
 }
 
-// Retrieves the dependencies for a constructor
-func getConstructorDependencies(ctype reflect.Type) ([]edge, error) {
-	var deps []edge
-	for _, t := range getConstructorArgTypes(ctype) {
-		err := traverseInTypes(t, func(e edge) {
-			deps = append(deps, e)
-		})
-		if err != nil {
-			return nil, err
-		}
-	}
-	return deps, nil
-}
-
-// Retrieves the types of the arguments of a constructor in-order.
-//
-// If the constructor is a variadic function, the returned list does NOT
-// include the implicit slice argument because dig does not support passing
-// those values in yet.
-func getConstructorArgTypes(ctype reflect.Type) []reflect.Type {
-	numArgs := ctype.NumIn()
-	if ctype.IsVariadic() {
-		// NOTE: If the function is variadic, we skip the last argument
-		// because we're not filling variadic arguments yet. See #120.
-		numArgs--
-	}
-
-	args := make([]reflect.Type, numArgs)
-	for i := 0; i < numArgs; i++ {
-		args[i] = ctype.In(i)
-	}
-	return args
-}
-
-func cycleError(cycle []key, last key) error {
-	b := &bytes.Buffer{}
-	for _, k := range cycle {
-		fmt.Fprintf(b, "%v ->", k.t)
-	}
-	fmt.Fprintf(b, "%v", last.t)
-	return errors.New(b.String())
-}
-
-func detectCycles(n *node, graph map[key]*node, path []key) error {
-	for _, p := range path {
-		if p == n.key {
-			return cycleError(path, n.key)
-		}
-	}
-	path = append(path, n.key)
-	for _, dep := range n.deps {
-		depNode, ok := graph[dep.key]
-		if !ok {
-			continue
-		}
-		if err := detectCycles(depNode, graph, path); err != nil {
-			return err
-		}
-	}
-	return nil
-}
-
-// Traverse all fields starting with the given type.
-// Types that dig.In get recursed on. Returns the first error encountered.
-func traverseInTypes(t reflect.Type, fn func(edge)) error {
-	if !IsIn(t) {
-		fn(edge{key: key{t: t}})
+// Call calls this node's constructor if it hasn't already been called and
+// injects any values produced by it into the provided container.
+func (n *node) Call(c *Container) error {
+	if n.called {
 		return nil
 	}
 
-	for i := 0; i < t.NumField(); i++ {
-		f := t.Field(i)
-		if f.PkgPath != "" {
-			continue // skip private fields
-		}
-
-		if IsIn(f.Type) {
-			if err := traverseInTypes(f.Type, fn); err != nil {
-				return err
-			}
-			continue
-		}
-
-		optional, err := isFieldOptional(t, f)
-		if err != nil {
-			return err
-		}
-
-		fn(edge{key: key{t: f.Type, name: f.Tag.Get(_nameTag)}, optional: optional})
+	if err := shallowCheckDependencies(c, n.Params); err != nil {
+		return errMissingDependencies{Func: n.Func, Reason: err}
 	}
 
+	args, err := n.Params.BuildList(c)
+	if err != nil {
+		return errArgumentsFailed{Func: n.Func, Reason: err}
+	}
+
+	receiver := newStagingReceiver()
+	results := reflect.ValueOf(n.ctor).Call(args)
+	n.Results.ExtractList(receiver, results)
+
+	if err := receiver.Commit(c); err != nil {
+		return errConstructorFailed{Func: n.Func, Reason: err}
+	}
+
+	n.called = true
 	return nil
 }
 
 // Checks if a field of an In struct is optional.
-func isFieldOptional(parent reflect.Type, f reflect.StructField) (bool, error) {
+func isFieldOptional(f reflect.StructField) (bool, error) {
 	tag := f.Tag.Get(_optionalTag)
 	if tag == "" {
 		return false, nil
@@ -561,9 +407,81 @@ func isFieldOptional(parent reflect.Type, f reflect.StructField) (bool, error) {
 	optional, err := strconv.ParseBool(tag)
 	if err != nil {
 		err = errWrapf(err,
-			"invalid value %q for %q tag on field %v of %v",
-			tag, _optionalTag, f.Name, parent)
+			"invalid value %q for %q tag on field %v",
+			tag, _optionalTag, f.Name)
 	}
 
 	return optional, err
+}
+
+// Checks that all direct dependencies of the provided param are present in
+// the container. Returns an error if not.
+func shallowCheckDependencies(c *Container, p param) error {
+	var missing errMissingManyTypes
+	walkParam(p, paramVisitorFunc(func(p param) bool {
+		ps, ok := p.(paramSingle)
+		if !ok {
+			return true
+		}
+
+		k := key{name: ps.Name, t: ps.Type}
+		if ns := c.providers[k]; len(ns) == 0 && !ps.Optional {
+			missing = append(missing, newErrMissingType(c, k))
+		}
+
+		return true
+	}))
+
+	if len(missing) > 0 {
+		return missing
+	}
+	return nil
+}
+
+type stagingReceiver struct {
+	err    error
+	values map[key]reflect.Value
+	groups map[key][]reflect.Value
+}
+
+func newStagingReceiver() *stagingReceiver {
+	return &stagingReceiver{
+		values: make(map[key]reflect.Value),
+		groups: make(map[key][]reflect.Value),
+	}
+}
+
+func (sr *stagingReceiver) SubmitError(err error) {
+	// record failure only if we haven't already failed
+	if sr.err == nil {
+		sr.err = err
+	}
+}
+
+func (sr *stagingReceiver) SubmitValue(name string, t reflect.Type, v reflect.Value) {
+	sr.values[key{t: t, name: name}] = v
+}
+
+func (sr *stagingReceiver) SubmitGroupValue(group string, t reflect.Type, v reflect.Value) {
+	k := key{t: t, group: group}
+	sr.groups[k] = append(sr.groups[k], v)
+}
+
+// Commit commits the received results to the provided container.
+//
+// If the resultReceiver failed, no changes are committed to the container.
+func (sr *stagingReceiver) Commit(c *Container) error {
+	if sr.err != nil {
+		return sr.err
+	}
+
+	for k, v := range sr.values {
+		c.values[k] = v
+	}
+
+	for k, vs := range sr.groups {
+		c.groups[k] = append(c.groups[k], vs...)
+	}
+
+	return nil
 }

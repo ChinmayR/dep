@@ -1,6 +1,6 @@
 // Package uberfx bundles all the dependencies required to build an Uber
 // service except an RPC server (which is provided by yarpcfx).
-package uberfx
+package uberfx // import "code.uber.internal/go/uberfx.git"
 
 import (
 	configfx "code.uber.internal/go/configfx.git"
@@ -10,6 +10,7 @@ import (
 	healthfx "code.uber.internal/go/healthfx.git"
 	jaegerfx "code.uber.internal/go/jaegerfx.git"
 	maxprocsfx "code.uber.internal/go/maxprocsfx.git"
+	netmetricsfx "code.uber.internal/go/netmetricsfx.git"
 	runtimefx "code.uber.internal/go/runtimefx.git"
 	sentryfx "code.uber.internal/go/sentryfx.git"
 	servicefx "code.uber.internal/go/servicefx.git"
@@ -21,7 +22,7 @@ import (
 )
 
 // Version is the current package version.
-const Version = "1.1.0"
+const Version = "1.2.0"
 
 // Module is a single fx.Option that provides all the common objects required
 // to bootstrap an Uber service, including configuration, logging, metrics,
@@ -43,6 +44,7 @@ var Module = fx.Options(
 	envfx.Module,
 	galileofx.Module,
 	healthfx.Module,
+	netmetricsfx.Module,
 	maxprocsfx.Module,
 	jaegerfx.Module,
 	runtimefx.Module,

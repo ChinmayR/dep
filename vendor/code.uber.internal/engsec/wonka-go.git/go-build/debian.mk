@@ -3,14 +3,16 @@
 # and set "make debian-pre" as the PRE_BUILD_COMMAND.
 # User-overridable variables:
 #   VERSION_FILE: Defaults to version.git, rule that includes the version information.
+#   GIT_DESCRIBE_FLAGS: Defaults to use annotated tags, hashes, and dirty. (--always --dirty)
 
 VERSION_FILE ?= version.git
+GIT_DESCRIBE_FLAGS ?= --always --dirty
 
 .PHONY: $(VERSION_FILE)
 $(VERSION_FILE):
 	rm -f $@
 	[ -z "$(BUILD_NUMBER)" ] || echo -n "$(BUILD_NUMBER)." > $@
-	git describe --always --tags --dirty 2>/dev/null >> $@
+	git describe $(GIT_DESCRIBE_FLAGS) 2>/dev/null >> $@
 
 # Set the BUILD_HASH if it's unset and we find a VERSION_FILE
 ifneq ("$(wildcard $(VERSION_FILE))","")

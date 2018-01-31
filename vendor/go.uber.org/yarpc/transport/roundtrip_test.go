@@ -1,4 +1,4 @@
-// Copyright (c) 2017 Uber Technologies, Inc.
+// Copyright (c) 2018 Uber Technologies, Inc.
 //
 // Permission is hereby granted, free of charge, to any person obtaining a copy
 // of this software and associated documentation files (the "Software"), to deal
@@ -37,9 +37,9 @@ import (
 	"go.uber.org/yarpc/api/transport/transporttest"
 	"go.uber.org/yarpc/encoding/raw"
 	"go.uber.org/yarpc/internal/testtime"
+	"go.uber.org/yarpc/transport/grpc"
 	"go.uber.org/yarpc/transport/http"
 	tch "go.uber.org/yarpc/transport/tchannel"
-	"go.uber.org/yarpc/transport/x/grpc"
 	"go.uber.org/yarpc/yarpcerrors"
 )
 
@@ -359,7 +359,9 @@ func TestSimpleRoundTripOneway(t *testing.T) {
 			router := staticRouter{OnewayHandler: onewayHandler}
 
 			trans.WithRouterOneway(router, func(o transport.OnewayOutbound) {
-				ack, err := o.CallOneway(rootCtx, &transport.Request{
+				ctx, cancel := context.WithTimeout(rootCtx, time.Second)
+				defer cancel()
+				ack, err := o.CallOneway(ctx, &transport.Request{
 					Caller:    testCaller,
 					Service:   testService,
 					Procedure: testProcedureOneway,

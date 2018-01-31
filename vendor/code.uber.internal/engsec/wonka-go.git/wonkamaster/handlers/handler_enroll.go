@@ -11,9 +11,9 @@ import (
 	"time"
 
 	"code.uber.internal/engsec/wonka-go.git"
+	"code.uber.internal/engsec/wonka-go.git/internal/rpc"
 	"code.uber.internal/engsec/wonka-go.git/wonkamaster/common"
 	"code.uber.internal/engsec/wonka-go.git/wonkamaster/keys"
-	"code.uber.internal/engsec/wonka-go.git/wonkamaster/rpc"
 	"code.uber.internal/engsec/wonka-go.git/wonkamaster/wonkadb"
 
 	"code.uber.internal/engsec/wonka-go.git/internal/timehelper"
@@ -61,7 +61,11 @@ func newEnrollHandler(cfg common.HandlerConfig) xhttp.Handler {
 // Request can be authorized by sending a valid claim in one of
 // 1. request body
 // 2. X-Wonka-Auth header
-func (h enrollHandler) isAuthorized(ctx context.Context, req *http.Request, e *wonka.Entity, c *wonka.Claim) (bool, string) {
+// Returns a 3-tuple of:
+// 	bool: representing whether or not the request is authorized
+//	string: representing the name of the entity who has authorized the request
+//	error: reason indicating why the authorization check couldn't be completed
+func (h enrollHandler) isAuthorized(ctx context.Context, req *http.Request, e *wonka.Entity, c *wonka.Claim) (bool, string, error) {
 	authorized := false
 	authorizedBy := ""
 
@@ -69,7 +73,11 @@ func (h enrollHandler) isAuthorized(ctx context.Context, req *http.Request, e *w
 
 	if c != nil {
 		// if the user is *in* engineering, we add identity claims to the list of allowed claims.
-		if h.pulloClient.IsMemberOf(c.EntityName, "engineering") {
+		ok, err := h.pulloClient.IsMemberOf(ctx, c.EntityName, "engineering")
+		if err != nil {
+			return false, "", fmt.Errorf("failed to get ldap groups for %v: %v", c.EntityName, err)
+		}
+		if ok {
 			h.log.Debug("user is in engineering!")
 			allowedGroups = append(allowedGroups, []string{c.EntityName, wonka.EveryEntity, wonka.EnrollerGroup}...)
 		}
@@ -92,7 +100,7 @@ func (h enrollHandler) isAuthorized(ctx context.Context, req *http.Request, e *w
 		if wonkaHdr, ok := req.Header["X-Wonka-Auth"]; ok {
 			claim, err := wonka.UnmarshalClaim(wonkaHdr[0])
 			if err != nil {
-				return false, ""
+				return false, "", nil
 			}
 			// if the request contains an X-Wonka-Auth header and the claim is valid, this
 			// is an authorized request.
@@ -102,8 +110,8 @@ func (h enrollHandler) isAuthorized(ctx context.Context, req *http.Request, e *w
 				authorized = false
 				h.log.Info("claim check failed",
 					zap.Error(err),
-					zap.String("destination", c.Destination),
-					zap.String("entity", c.EntityName),
+					zap.String("destination", claim.Destination),
+					zap.String("entity", claim.EntityName),
 					zap.Bool("authorized", authorized),
 				)
 			}
@@ -114,7 +122,7 @@ func (h enrollHandler) isAuthorized(ctx context.Context, req *http.Request, e *w
 		)
 	}
 
-	return authorized, authorizedBy
+	return authorized, authorizedBy, nil
 }
 
 // EnrollHandler enrolls/updates an entity
@@ -134,7 +142,7 @@ func (h enrollHandler) ServeHTTP(ctx context.Context, w http.ResponseWriter, req
 	}
 
 	if e.Entity == nil {
-		writeResponse(w, h, errors.New("nill entity"), wonka.ResultRejected, http.StatusBadRequest)
+		writeResponse(w, h, errors.New("nil entity"), wonka.ResultRejected, http.StatusBadRequest)
 		return
 	}
 
@@ -159,7 +167,11 @@ func (h enrollHandler) ServeHTTP(ctx context.Context, w http.ResponseWriter, req
 	// authorized == true. In practice this means that an engineer will be able to enroll
 	// a new service. If authorized is false, then sample entities can still be
 	// enrolled and entities can update themselves.
-	authorized, enrolledBy := h.isAuthorized(ctx, req, e.Entity, e.Claim)
+	authorized, enrolledBy, err := h.isAuthorized(ctx, req, e.Entity, e.Claim)
+	if err != nil {
+		writeResponse(w, h, fmt.Errorf("failed to get ldap groups for %v: %v", e.Entity.EntityName, err), wonka.GatewayError, http.StatusBadGateway)
+		return
+	}
 	h.log = h.log.With(
 		zap.Bool("authorized", authorized),
 		zap.String("entity", enrolledBy),
@@ -285,20 +297,4 @@ func (h enrollHandler) createOrUpdate(ctx context.Context, e wonka.Entity, autho
 		return "error looking up entity", http.StatusInternalServerError, err
 	}
 	return h.tryUpdate(ctx, e, *dbe)
-}
-
-func (h enrollHandler) createEntityShadow(ctx context.Context, e wonka.Entity) (string, int, error) {
-	if err := h.db.Create(ctx, &e); err != nil {
-		h.log.Error("failed to shadow write create", zap.Error(err))
-		return wonka.ResultRejected, http.StatusInternalServerError, errors.New("error creating entity")
-	}
-	return "", 0, nil
-}
-
-func (h enrollHandler) updateEntityShadow(ctx context.Context, e wonka.Entity) (string, int, error) {
-	if err := h.db.Update(ctx, &e); err != nil {
-		h.log.Error("failed to shadow write update", zap.Error(err))
-		return wonka.ResultRejected, http.StatusInternalServerError, errors.New("error update entity")
-	}
-	return "", 0, nil
 }

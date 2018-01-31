@@ -1,10 +1,62 @@
 // Package galileofx provides Galileo integration for Fx applications.
-package galileofx
-
-// TODO(abg): Explain that this integrates with yarpcfx automagically.
+//
+// YARPC Support
+//
+// galileofx automatically integrates with YARPC servers and clients produced
+// by yarpcfx.
+//
+// If you're using YARPC without yarpcfx, you will not get automatic Galileo
+// integration. In this case, use
+// https://go.uberinternal.com/pkg/code.uber.internal/go/galileofx.git/authmiddleware
+// to instrument your YARPC application with Galileo support manually.
+//
+// HTTP Client Support
+//
+// galileofx automatically integrates with HTTP clients produced by httpfx.
+//
+// HTTP Server Support
+//
+// See https://go.uberinternal.com/pkg/code.uber.internal/go/httpfx.git/ for
+// information on how to add Galileo and Jaeger support to your HTTP servers.
+//
+// Break glass
+//
+// If you're building your own HTTP clients instead of using the one provided
+// by httpfx, you can instrument them by declaring a dependency on the
+// InstrumentClient function defined by httpfx and calling it on them.
+//
+//   type clientParams struct {
+//     fx.In
+//
+//     // This function is provided to your appliccation by httpfx. It can be
+//     // used to instrument any HTTP client.
+//     InstrumentClient func(*http.Client, ...func(http.RoundTripper) http.RoundTripper)
+//     ...
+//   }
+//
+//   func newClient(p clientParams) *http.Client {
+//     client := &http.Client{}
+//     ...
+//
+//     // This adds Jaeger and Galileo support to the HTTP client.
+//     client.Transport = p.InstrumentClient(client.Transport)
+//   }
+//
+// See https://go.uberinternal.com/pkg/code.uber.internal/go/httpfx.git/ for
+// more information.
+//
+// See Also
+//
+// https://go.uberinternal.com/pkg/code.uber.internal/go/httpfx.git/
+// https://go.uberinternal.com/pkg/code.uber.internal/go/galileofx.git/galileohttp
+// https://go.uberinternal.com/pkg/code.uber.internal/go/galileofx.git/authmiddleware
+package galileofx // import "code.uber.internal/go/galileofx.git"
 
 import (
+	"net/http"
+
 	"code.uber.internal/go/galileofx.git/authmiddleware"
+	"code.uber.internal/go/galileofx.git/galileohttp"
 
 	galileo "code.uber.internal/engsec/galileo-go.git"
 	envfx "code.uber.internal/go/envfx.git"
@@ -21,7 +73,7 @@ import (
 
 const (
 	// Version is the current package version.
-	Version = "1.1.0"
+	Version = "1.3.0"
 
 	// ConfigurationKey is the key under which the Galileo configuration must
 	// be present in the YAML.
@@ -31,9 +83,7 @@ const (
 )
 
 // Module provides a Galileo object and integrates it with YARPC.
-var Module = fx.Provide(New, newYARPCMiddleware)
-
-// TODO(abg): httpfx integration?
+var Module = fx.Provide(New, newYARPCMiddleware, newHTTPMiddleware)
 
 // Configuration configures the Galileo Fx module.
 //
@@ -107,18 +157,29 @@ type YARPCMiddleware struct {
 	OnewayOutbound middleware.OnewayOutbound `name:"auth"`
 }
 
+// HTTPMiddleware provides authentication middleware for HTTP.
+type HTTPMiddleware struct {
+	fx.Out
+
+	WrapClient  func(http.RoundTripper) http.RoundTripper `name:"auth"`
+	WrapHandler func(http.Handler) http.Handler           `name:"auth"`
+}
+
 // New exports the functionality of Module as a callable function.
 func New(p Params) (Result, error) {
-	var cfg Configuration
-	if err := p.Config.Get(ConfigurationKey).Populate(&cfg); err != nil {
-		return Result{}, err
-	}
-
-	enabled := cfg.Enabled
+	var enabled bool
 	switch p.Environment.Environment {
 	case envfx.EnvProduction, envfx.EnvStaging:
 		enabled = true
 	}
+
+	// Need to populate with default value. It will be overriden only if the
+	// user explicitly added an `enabled: whatever` to their yaml.
+	cfg := Configuration{Enabled: enabled}
+	if err := p.Config.Get(ConfigurationKey).Populate(&cfg); err != nil {
+		return Result{}, err
+	}
+	enabled = cfg.Enabled
 
 	if err := multierr.Append(
 		p.Reporter.Report("galileo", galileo.Version),
@@ -165,5 +226,15 @@ func newYARPCMiddleware(g galileo.Galileo) YARPCMiddleware {
 		UnaryOutbound:  mw,
 		OnewayInbound:  mw,
 		OnewayOutbound: mw,
+	}
+}
+
+func newHTTPMiddleware(g galileo.Galileo, log *zap.Logger) HTTPMiddleware {
+	return HTTPMiddleware{
+		WrapClient: galileohttp.AuthenticateOutMiddleware(g),
+		WrapHandler: galileohttp.AuthenticateInMiddleware(g,
+			galileohttp.AuthenticateInLogger(log),
+			galileohttp.AuthenticateInIgnorePaths("/health", "/debug/pprof"),
+		),
 	}
 }

@@ -6,7 +6,10 @@ ifdef DOCKER_HOST
 DOCKER_BUILD_FLAGS ?= --compress
 endif
 
-DOCKER_RUN_FLAGS ?= $(DOCKER_COMPOSE_RUN_FLAGS)
+DOCKER_RUN_FLAGS ?= -e V -e RUN -e EXAMPLES_JOBS -e PACKAGES -e WITHIN_DOCKER=1 -e TRAVIS_JOB_ID -e TRAVIS_PULL_REQUEST
+ifneq ($(TEST_TIME_SCALE),)
+DOCKER_RUN_FLAGS += -e TEST_TIME_SCALE
+endif
 ifneq ($(DOCKER_CPUS),)
 DOCKER_RUN_FLAGS += --cpus=$(DOCKER_CPUS)
 endif
@@ -45,6 +48,10 @@ govet: deps ## check go vet
 golint: deps ## check golint
 	PATH=$$PATH:$(BIN) docker run $(DOCKER_RUN_FLAGS) $(DOCKER_IMAGE) make golint
 
+.PHONY: staticcheck
+staticcheck: deps ## check staticchck
+	PATH=$$PATH:$(BIN) docker run $(DOCKER_RUN_FLAGS) $(DOCKER_IMAGE) make staticcheck
+
 .PHONY: errcheck
 errcheck: deps ## check errcheck
 	PATH=$$PATH:$(BIN) docker run $(DOCKER_RUN_FLAGS) $(DOCKER_IMAGE) make errcheck
@@ -58,7 +65,7 @@ verifyversion: deps ## verify the version in the changelog is the same as in ver
 	PATH=$$PATH:$(BIN) docker run $(DOCKER_RUN_FLAGS) $(DOCKER_IMAGE) make verifyversion
 
 .PHONY: basiclint
-basiclint: deps ## run gofmt govet golint errcheck
+basiclint: deps ## run gofmt govet golint staticcheck errcheck
 	PATH=$$PATH:$(BIN) docker run $(DOCKER_RUN_FLAGS) $(DOCKER_IMAGE) make basiclint
 
 .PHONY: lint

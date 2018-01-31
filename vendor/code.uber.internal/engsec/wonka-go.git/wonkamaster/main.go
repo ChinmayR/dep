@@ -13,10 +13,11 @@ import (
 
 	"code.uber.internal/engsec/wonka-go.git"
 	"code.uber.internal/engsec/wonka-go.git/internal/keyhelper"
+	"code.uber.internal/engsec/wonka-go.git/internal/rpc"
 	"code.uber.internal/engsec/wonka-go.git/internal/xhttp"
 	"code.uber.internal/engsec/wonka-go.git/wonkamaster/common"
 	"code.uber.internal/engsec/wonka-go.git/wonkamaster/handlers"
-	"code.uber.internal/engsec/wonka-go.git/wonkamaster/rpc"
+	"code.uber.internal/engsec/wonka-go.git/wonkamaster/middleware"
 	"code.uber.internal/engsec/wonka-go.git/wonkamaster/wonkadb"
 
 	configfx "code.uber.internal/go/configfx.git"
@@ -75,7 +76,7 @@ func loadConfig(c config.Provider) (appConfig, error) {
 func newPulloClient(cfg appConfig, log *zap.Logger, level zap.AtomicLevel) (rpc.PulloClient, error) {
 	if len(cfg.PulloConfig) > 0 {
 		log.Debug("debug Pullo config found", zap.Any("config", cfg.PulloConfig))
-		return rpc.NewMockPulloClient(cfg.PulloConfig), nil
+		return rpc.NewMockPulloClient(cfg.PulloConfig, rpc.Logger(log, level)), nil
 	}
 
 	return rpc.NewPulloClient(rpc.Logger(log, level))
@@ -90,11 +91,12 @@ func newCassandraDB(cfg appConfig, log *zap.Logger, metrics tally.Scope) (wonkad
 type runParams struct {
 	fx.In
 
-	Lifecycle fx.Lifecycle
-	Logger    *zap.Logger
-	Metrics   tally.Scope
-	Pullo     rpc.PulloClient
-	EntityDB  wonkadb.EntityDB
+	Lifecycle   fx.Lifecycle
+	Logger      *zap.Logger
+	Metrics     tally.Scope
+	Pullo       rpc.PulloClient
+	EntityDB    wonkadb.EntityDB
+	Environment envfx.Context
 }
 
 func run(p runParams, cfg appConfig) error {
@@ -114,11 +116,17 @@ func run(p runParams, cfg appConfig) error {
 	}
 
 	// Fetch private key out of langley
-	rsaKey, eccKey, err := loadPrivateKey(cfg.WonkaMasterKey)
+	var masterKeyPath masterKey
+	if p.Environment.RuntimeEnvironment == envfx.EnvStaging {
+		masterKeyPath = cfg.WonkaMasterKeyStaging
+	} else {
+		masterKeyPath = cfg.WonkaMasterKey
+	}
+	rsaKey, eccKey, err := loadPrivateKey(masterKeyPath)
 	if err != nil {
 		log.Error("error loading wonkamaster private key",
 			zap.Error(err),
-			zap.Any("expected", cfg.WonkaMasterKey),
+			zap.Any("expected", masterKeyPath),
 		)
 		return err
 	}
@@ -128,7 +136,10 @@ func run(p runParams, cfg appConfig) error {
 	os.Setenv("WONKA_MASTER_ECC_PUB", compressedKey)
 	wonka.InitWonkaMasterECC()
 
-	log.Info("server ecc public key", zap.Any("compressed", compressedKey))
+	log.Info("server ecc public key",
+		zap.Any("compressed", compressedKey),
+		zap.Any("path", masterKeyPath),
+	)
 
 	//TODO(jesses) replace this with the canonical hostname tagging method in `tally`.
 	ms := p.Metrics.Tagged(map[string]string{"hostname": hostname})
@@ -144,22 +155,27 @@ func run(p runParams, cfg appConfig) error {
 		return err
 	}
 
-	r := xhttp.NewRouter()
+	filter := xhttp.NewFilterChainBuilder().
+		AddFilter(xhttp.DefaultFilter).
+		AddFilter(middleware.NewRateLimiter(cfg.Rates)).
+		Build()
+	r := xhttp.NewRouterWithFilter(filter)
 
 	handlerCfg := common.HandlerConfig{
-		Metrics:           ms.Tagged(map[string]string{"source": "handlers"}),
-		ECPrivKey:         eccKey,
-		RSAPrivKey:        rsaKey,
-		Ussh:              userSigners,
-		UsshHostSigner:    usshHostCB,
-		DB:                p.EntityDB,
-		Pullo:             p.Pullo,
-		Imp:               cfg.Impersonators,
-		Logger:            log,
-		Host:              hostname,
-		Derelicts:         cfg.Derelicts,
-		Launchers:         cfg.Launchers,
-		HoseCheckInterval: cfg.HoseCheckInterval,
+		Metrics:                    ms.Tagged(map[string]string{"source": "handlers"}),
+		ECPrivKey:                  eccKey,
+		RSAPrivKey:                 rsaKey,
+		Ussh:                       userSigners,
+		UsshHostSigner:             usshHostCB,
+		DB:                         p.EntityDB,
+		Pullo:                      p.Pullo,
+		Imp:                        cfg.Impersonators,
+		Logger:                     log,
+		Host:                       hostname,
+		Derelicts:                  cfg.Derelicts,
+		Launchers:                  cfg.Launchers,
+		HoseCheckInterval:          cfg.HoseCheckInterval,
+		CertAuthenticationOverride: cfg.CertAuthentiationOverride,
 	}
 	handlers.SetupHandlers(r, handlerCfg)
 

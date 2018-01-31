@@ -1,22 +1,23 @@
 package handlers
 
 import (
+	"bytes"
 	"context"
-	"crypto"
-	"crypto/elliptic"
-	"crypto/x509"
+	"encoding/json"
+	"io/ioutil"
 	"net"
-	"os"
-	"path"
+	"net/http"
+	"net/http/httptest"
 	"testing"
-	"time"
 
-	wonka "code.uber.internal/engsec/wonka-go.git"
+	"code.uber.internal/engsec/wonka-go.git"
+	"code.uber.internal/engsec/wonka-go.git/internal/rpc"
+	"code.uber.internal/engsec/wonka-go.git/internal/testhelper"
+	"code.uber.internal/engsec/wonka-go.git/testdata"
 	"code.uber.internal/engsec/wonka-go.git/wonkamaster/common"
-	"code.uber.internal/engsec/wonka-go.git/wonkamaster/keys"
-	"code.uber.internal/engsec/wonka-go.git/wonkamaster/rpc"
-	"code.uber.internal/engsec/wonka-go.git/wonkamaster/wonkadb"
 	"code.uber.internal/engsec/wonka-go.git/wonkamaster/wonkatestdata"
+
+	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 	"go.uber.org/zap"
 	"golang.org/x/crypto/ssh"
@@ -41,7 +42,7 @@ func TestAdminHandler(t *testing.T) {
 	for idx, m := range adminHandlerVars {
 		wonkatestdata.WithUSSHAgent(m.entity, func(agentPath string, caKey ssh.PublicKey) {
 			wonkatestdata.WithWonkaMaster(m.entity, func(r common.Router, handlerCfg common.HandlerConfig) {
-				os.Setenv("SSH_AUTH_SOCK", agentPath)
+				defer testhelper.SetEnvVar("SSH_AUTH_SOCK", agentPath)()
 				aSock, err := net.Dial("unix", agentPath)
 				if err != nil {
 					panic(err)
@@ -58,17 +59,17 @@ func TestAdminHandler(t *testing.T) {
 
 				mem := make(map[string][]string, 0)
 				mem[m.entity] = []string{m.mem}
-				handlerCfg.Pullo = rpc.NewMockPulloClient(mem)
+				handlerCfg.Pullo = rpc.NewMockPulloClient(mem,
+					rpc.Logger(handlerCfg.Logger, zap.NewAtomicLevel()))
 				handlerCfg.Ussh = []ssh.PublicKey{caKey}
 
 				// put it in the ether
-				oldCA := os.Getenv("WONKA_USSH_CA")
-				os.Setenv("WONKA_USSH_CA", string(ssh.MarshalAuthorizedKey(caKey)))
-				defer os.Setenv("WONKA_USSH_CA", oldCA)
+				defer testhelper.SetEnvVar("WONKA_USSH_CA", string(ssh.MarshalAuthorizedKey(caKey)))()
+
+				ctx := context.Background()
 
 				// here we should be able to request wonka-admin personnel claims
-				_, ok := addEntityToDB(m.entity, handlerCfg.DB)
-				require.True(t, ok, "test %d create should succeed", idx)
+				testdata.EnrollEntity(ctx, t, handlerCfg.DB, m.entity, wonkatestdata.PrivateKey())
 				wonkaCfg := wonka.Config{
 					EntityName: m.entity,
 				}
@@ -78,8 +79,7 @@ func TestAdminHandler(t *testing.T) {
 				w, err := wonka.Init(wonkaCfg)
 				require.NoError(t, err, "test %d, wonka init error: %v", idx, err)
 
-				_, ok = addEntityToDB(m.toDel, handlerCfg.DB)
-				require.True(t, ok, "test %d create should succeed", idx)
+				testdata.EnrollEntity(ctx, t, handlerCfg.DB, m.toDel, wonkatestdata.PrivateKey())
 
 				req := wonka.AdminRequest{
 					Action:     wonka.DeleteEntity,
@@ -87,7 +87,7 @@ func TestAdminHandler(t *testing.T) {
 					ActionOn:   m.toDel,
 				}
 
-				err = w.Admin(context.Background(), req)
+				err = w.Admin(ctx, req)
 				if m.errMsg == "" {
 					require.NoError(t, err, "test %d, Admin error: %v", idx, err)
 				} else {
@@ -99,35 +99,84 @@ func TestAdminHandler(t *testing.T) {
 	}
 }
 
-func addEntityToDB(entity string, db wonkadb.EntityDB) (string, bool) {
-	log := zap.L()
+func TestAdminHandlerUnits(t *testing.T) {
+	validHandler := newAdminHandler(getTestConfig(t))
 
-	ok := false
-	privPath := ""
-	wonkatestdata.WithTempDir(func(dir string) {
-		privKey := wonkatestdata.PrivateKey()
-		privPath = path.Join(dir, "private.pem")
-		pubPath := path.Join(dir, "public.pem")
-		if err := wonkatestdata.WritePrivateKey(privKey, pubPath); err != nil {
-			log.Fatal("writing privkey", zap.Error(err))
-		}
-		if err := wonkatestdata.WritePublicKey(&privKey.PublicKey, pubPath); err != nil {
-			log.Fatal("writing pubkey", zap.Error(err))
-		}
+	var testCases = []struct {
+		name       string
+		statusCode int
+		Message    string
+		makeCall   func(*testing.T, *httptest.ResponseRecorder)
+	}{
+		{
+			name:       "returns error when method is not post",
+			statusCode: http.StatusMethodNotAllowed,
+			Message:    wonka.AdminInvalidCmd,
+			makeCall: func(t *testing.T, w *httptest.ResponseRecorder) {
+				r := &http.Request{
+					Method: "GOLDEN TICKET",
+					Body: ioutil.NopCloser(
+						bytes.NewReader([]byte("I'm extraordinary busy sir.")))}
+				validHandler.ServeHTTP(context.Background(), w, r)
+			},
+		},
+		{
+			name:       "returns error when req fails to deserialize",
+			statusCode: http.StatusBadRequest,
+			Message:    wonka.DecodeError,
+			makeCall: func(t *testing.T, w *httptest.ResponseRecorder) {
+				r := &http.Request{
+					Method: "POST",
+					Body: ioutil.NopCloser(
+						bytes.NewReader([]byte("I SAID GOOD DAY!")))}
+				validHandler.ServeHTTP(context.Background(), w, r)
+			},
+		},
+		{
+			name:       "returns error when ussh verify fails to verify",
+			statusCode: http.StatusForbidden,
+			Message:    wonka.SignatureVerifyError,
+			makeCall: func(t *testing.T, w *httptest.ResponseRecorder) {
+				req := wonka.AdminRequest{}
+				data, err := json.Marshal(req)
+				require.NoError(t, err, "failed to marshal resolve request: %v", err)
+				r := &http.Request{
+					Method: "POST",
+					Body:   ioutil.NopCloser(bytes.NewReader(data))}
+				validHandler.ServeHTTP(context.Background(), w, r)
+			},
+		},
+		{
+			name:       "returns error when ussh verify fails because the key is not an ssh cert",
+			statusCode: http.StatusForbidden,
+			Message:    wonka.SignatureVerifyError,
+			makeCall: func(t *testing.T, w *httptest.ResponseRecorder) {
+				wonkatestdata.WithUSSHAgent("testEntity@uber.com", func(agentPath string, caKey ssh.PublicKey) {
+					req := wonka.AdminRequest{
+						Ussh: string(ssh.MarshalAuthorizedKey(caKey)),
+					}
+					data, err := json.Marshal(req)
+					require.NoError(t, err, "failed to marshal resolve request: %v", err)
+					r := &http.Request{
+						Method: "POST",
+						Body:   ioutil.NopCloser(bytes.NewReader(data))}
+					validHandler.ServeHTTP(context.Background(), w, r)
+				})
+			},
+		},
+	}
 
-		ecc := crypto.SHA256.New()
-		ecc.Write([]byte(x509.MarshalPKCS1PrivateKey(privKey)))
-
-		e := wonka.Entity{
-			EntityName:   entity,
-			PublicKey:    keys.RSAPemBytes(&privKey.PublicKey),
-			ECCPublicKey: wonka.KeyToCompressed(elliptic.P256().ScalarBaseMult(ecc.Sum(nil))),
-			Ctime:        int(time.Now().Unix()),
-			Etime:        int(time.Now().Add(time.Minute).Unix()),
-		}
-
-		err := db.Create(context.TODO(), &e)
-		ok = err == nil
-	})
-	return privPath, ok
+	for _, tc := range testCases {
+		t.Run(tc.name, func(t *testing.T) {
+			w := httptest.NewRecorder()
+			tc.makeCall(t, w)
+			resp := w.Result()
+			decoder := json.NewDecoder(resp.Body)
+			var m wonka.GenericResponse
+			err := decoder.Decode(&m)
+			assert.Nil(t, err, "err was not nil")
+			assert.Equal(t, tc.statusCode, resp.StatusCode, "status code did not match expected")
+			assert.Equal(t, tc.Message, m.Result, "message did not match expected")
+		})
+	}
 }

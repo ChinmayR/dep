@@ -1,4 +1,4 @@
-// Copyright (c) 2017 Uber Technologies, Inc.
+// Copyright (c) 2018 Uber Technologies, Inc.
 //
 // Permission is hereby granted, free of charge, to any person obtaining a copy
 // of this software and associated documentation files (the "Software"), to deal
@@ -26,6 +26,7 @@ import (
 
 	"github.com/opentracing/opentracing-go"
 	"github.com/opentracing/opentracing-go/ext"
+	opentracinglog "github.com/opentracing/opentracing-go/log"
 )
 
 // CreateOpenTracingSpan creates a new context with a started span
@@ -33,6 +34,7 @@ type CreateOpenTracingSpan struct {
 	Tracer        opentracing.Tracer
 	TransportName string
 	StartTime     time.Time
+	ExtraTags     opentracing.Tags
 }
 
 // Do creates a new context that has a reference to the started span.
@@ -46,16 +48,20 @@ func (c *CreateOpenTracingSpan) Do(
 		parent = parentSpan.Context()
 	}
 
+	tags := opentracing.Tags{
+		"rpc.caller":    req.Caller,
+		"rpc.service":   req.Service,
+		"rpc.encoding":  req.Encoding,
+		"rpc.transport": c.TransportName,
+	}
+	for k, v := range c.ExtraTags {
+		tags[k] = v
+	}
 	span := c.Tracer.StartSpan(
 		req.Procedure,
 		opentracing.StartTime(c.StartTime),
 		opentracing.ChildOf(parent),
-		opentracing.Tags{
-			"rpc.caller":    req.Caller,
-			"rpc.service":   req.Service,
-			"rpc.encoding":  req.Encoding,
-			"rpc.transport": c.TransportName,
-		},
+		tags,
 	)
 	ext.PeerService.Set(span, req.Service)
 	ext.SpanKindRPCClient.Set(span)
@@ -70,6 +76,7 @@ type ExtractOpenTracingSpan struct {
 	Tracer            opentracing.Tracer
 	TransportName     string
 	StartTime         time.Time
+	ExtraTags         opentracing.Tags
 }
 
 // Do derives a new context from SpanContext. The created context has a
@@ -79,15 +86,19 @@ func (e *ExtractOpenTracingSpan) Do(
 	ctx context.Context,
 	req *Request,
 ) (context.Context, opentracing.Span) {
+	tags := opentracing.Tags{
+		"rpc.caller":    req.Caller,
+		"rpc.service":   req.Service,
+		"rpc.encoding":  req.Encoding,
+		"rpc.transport": e.TransportName,
+	}
+	for k, v := range e.ExtraTags {
+		tags[k] = v
+	}
 	span := e.Tracer.StartSpan(
 		req.Procedure,
 		opentracing.StartTime(e.StartTime),
-		opentracing.Tags{
-			"rpc.caller":    req.Caller,
-			"rpc.service":   req.Service,
-			"rpc.encoding":  req.Encoding,
-			"rpc.transport": e.TransportName,
-		},
+		tags,
 		// parentSpanCtx may be nil
 		// this implies ChildOf
 		ext.RPCServerOption(e.ParentSpanContext),
@@ -104,7 +115,7 @@ func (e *ExtractOpenTracingSpan) Do(
 func UpdateSpanWithErr(span opentracing.Span, err error) error {
 	if err != nil {
 		span.SetTag("error", true)
-		span.LogEvent(err.Error())
+		span.LogFields(opentracinglog.String("event", err.Error()))
 	}
 	return err
 }

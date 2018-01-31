@@ -1,5 +1,16 @@
 # Changelog
 
+## v1.4.0 (2017-12-07)
+
+- Add `fx.Populate` to populate variables with values from the dependency
+  injection container without requiring intermediate structs.
+
+## v1.3.0 (2017-11-28)
+
+- Improve readability of hook logging in addition to provide and invoke.
+- Fix bug which caused the OnStop for a lifecycle hook to be called even if it
+  failed to start.
+
 ## v1.2.0 (2017-09-06)
 
 - Add `fx.NopLogger` which disables the Fx application's log output.

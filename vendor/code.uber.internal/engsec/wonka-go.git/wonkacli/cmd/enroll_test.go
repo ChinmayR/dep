@@ -42,7 +42,7 @@ func TestEnrollWhenNoAllowedGroupsShouldSetDefault(t *testing.T) {
 	require.Nil(t, err)
 
 	keyHelper := new(mocks.KeyHelper)
-	keyHelper.On("RSAAndECC", "fake-rsa-priv.pem").Return(k, "fake-rsa-pub", "fake-ecc-pub", nil)
+	keyHelper.On("RSAAndECCFromFile", "fake-rsa-priv.pem").Return(k, "fake-rsa-pub", "fake-ecc-pub", nil)
 
 	wonkaClient := new(MockWonka)
 	cliContext := new(MockCLIContext)
@@ -80,17 +80,6 @@ func TestEnrollWhenNoAllowedGroupsShouldSetDefault(t *testing.T) {
 	require.Nil(t, err)
 }
 
-func TestEnrollWhenCannotCreateWonkaEnrollmentClientShouldError(t *testing.T) {
-	cliContext := new(MockCLIContext)
-	cliContext.On("StringOrFirstArg", "entity").Return("foo")
-	cliContext.On("StringSlice", "allowed-groups").Return([]string{})
-	cliContext.On("Bool", "generate-keys").Return(false)
-	cliContext.On("NewWonkaClient", DefaultClient).Return(nil, errors.New("fail"))
-	err := performEnroll(cliContext)
-	cliContext.AssertExpectations(t)
-	require.NotNil(t, err)
-}
-
 func TestEnrollWorksCorrectly(t *testing.T) {
 	ctx := context.Background()
 	expectedEntity := wonka.Entity{
@@ -102,7 +91,7 @@ func TestEnrollWorksCorrectly(t *testing.T) {
 	keyHelper := new(mocks.KeyHelper)
 	k, err := rsa.GenerateKey(rand.Reader, 1024)
 	require.Nil(t, err)
-	keyHelper.On("RSAAndECC", "fake-rsa-priv.pem").Return(k, "fake-rsa-pub", "fake-ecc-pub", nil)
+	keyHelper.On("RSAAndECCFromFile", "fake-rsa-priv.pem").Return(k, "fake-rsa-pub", "fake-ecc-pub", nil)
 
 	cliContext := new(MockCLIContext)
 	cliContext.On("StringOrFirstArg", "entity").Return("foo")
@@ -125,7 +114,7 @@ func TestEnrollWhenEnrollmentFailsShouldError(t *testing.T) {
 	keyHelper := new(mocks.KeyHelper)
 	k, err := rsa.GenerateKey(rand.Reader, 1024)
 	require.Nil(t, err)
-	keyHelper.On("RSAAndECC", "fake-rsa-priv.pem").Return(k, "fake-rsa-pub", "fake-ecc-pub", nil)
+	keyHelper.On("RSAAndECCFromFile", "fake-rsa-priv.pem").Return(k, "fake-rsa-pub", "fake-ecc-pub", nil)
 
 	cliContext := new(MockCLIContext)
 	cliContext.On("GlobalString", "self").Return("bar")

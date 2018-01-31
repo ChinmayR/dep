@@ -1,14 +1,15 @@
 require 'formula'
 
-class WonkaGo < Formula
-  homepage 'https://engdocs.uberinternal.com/wonka-go'
+class Wonkacli < Formula
+  desc "wonkacli is a command-line interface to Wonka, Uber's service-to-service authentication system."
+  homepage 'https://code.uberinternal.com/w/security/wonka'
   url 'gitolite@code.uber.internal:engsec/wonka-go.git', :using => :git
   head 'gitolite@code.uber.internal:engsec/wonka-go.git', :using => :git
 
   version "{{ .Version }}"
 
   bottle do
-    root_url "https://s3.amazonaws.com/uber-devtools/wonka-go"
+    root_url "https://s3.amazonaws.com/uber-devtools/wonkacli"
     cellar :any_skip_relocation
     {{ range .Bottles }}
     sha256 "{{ .SHASum }}" => :{{ .OSRelease }}{{ end }}

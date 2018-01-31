@@ -9,7 +9,7 @@ import:
 - package: github.com/crossdock/crossdock-go
   version: master
 - package: github.com/gogo/protobuf
-  version: ~0.4
+  version: ~0.5
 - package: github.com/mattn/go-shellwords
   version: ^1
 - package: github.com/uber-go/mapdecode
@@ -34,8 +34,10 @@ import:
   version: ^3
 - package: go.uber.org/atomic
   version: ^1
-- package: go.uber.org/thriftrw
+- package: go.uber.org/net/metrics
   version: ^1
+- package: go.uber.org/thriftrw
+  version: ^1.10
 - package: golang.org/x/net
   version: master
   # explicitly specifying this because glide is having issues with golang.org repos
@@ -73,5 +75,7 @@ testImport:
   subpackages:
   - parallel-exec
   - update-license
+- package: honnef.co/go/tools
+  subpackages:
+  - cmd/staticcheck
 - package: github.com/stretchr/testify
-  version: master

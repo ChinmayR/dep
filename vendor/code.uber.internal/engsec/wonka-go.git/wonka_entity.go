@@ -11,3 +11,17 @@ func (e *Entity) Name() string {
 func CanonicalEntityName(name string) string {
 	return strings.ToLower(name)
 }
+
+func (e EntityType) String() string {
+	switch e {
+	case EntityTypeInvalid:
+		return "Invalid"
+	case EntityTypeService:
+		return "Service"
+	case EntityTypeUser:
+		return "User"
+	case EntityTypeHost:
+		return "Host"
+	}
+	return "Undefined"
+}

@@ -1,4 +1,4 @@
-// Copyright (c) 2017 Uber Technologies, Inc.
+// Copyright (c) 2018 Uber Technologies, Inc.
 //
 // Permission is hereby granted, free of charge, to any person obtaining a copy
 // of this software and associated documentation files (the "Software"), to deal
@@ -26,13 +26,16 @@ import (
 	"io/ioutil"
 	"testing"
 
-	"github.com/golang/mock/gomock"
-	"github.com/stretchr/testify/assert"
 	"go.uber.org/yarpc/api/middleware"
+	"go.uber.org/yarpc/api/middleware/middlewaretest"
 	"go.uber.org/yarpc/api/transport"
 	"go.uber.org/yarpc/api/transport/transporttest"
 	"go.uber.org/yarpc/encoding/raw"
 	"go.uber.org/yarpc/internal/testtime"
+
+	"github.com/golang/mock/gomock"
+	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/require"
 )
 
 func TestUnaryNopOutboundMiddleware(t *testing.T) {
@@ -84,4 +87,126 @@ func TestOnewayNopOutboundMiddleware(t *testing.T) {
 	if assert.NoError(t, err) {
 		assert.Equal(t, nil, got)
 	}
+}
+
+func TestNilOutboundMiddleware(t *testing.T) {
+	ctrl := gomock.NewController(t)
+	defer ctrl.Finish()
+
+	t.Run("unary", func(t *testing.T) {
+		out := transporttest.NewMockUnaryOutbound(ctrl)
+		out.EXPECT().Start()
+
+		mw := middleware.ApplyUnaryOutbound(out, nil)
+		require.NoError(t, mw.Start())
+	})
+
+	t.Run("oneway", func(t *testing.T) {
+		out := transporttest.NewMockOnewayOutbound(ctrl)
+		out.EXPECT().Start()
+
+		mw := middleware.ApplyOnewayOutbound(out, nil)
+		require.NoError(t, mw.Start())
+	})
+}
+
+func TestOutboundMiddleware(t *testing.T) {
+	ctrl := gomock.NewController(t)
+	defer ctrl.Finish()
+
+	t.Run("unary", func(t *testing.T) {
+		out := transporttest.NewMockUnaryOutbound(ctrl)
+		mw := middlewaretest.NewMockUnaryOutbound(ctrl)
+		outWithMW := middleware.ApplyUnaryOutbound(out, mw)
+
+		// start
+		out.EXPECT().Start().Return(nil)
+		assert.NoError(t, outWithMW.Start(), "could not start outbound")
+
+		// transports
+		out.EXPECT().Transports()
+		outWithMW.Transports()
+
+		// is running
+		out.EXPECT().IsRunning().Return(true)
+		assert.True(t, outWithMW.IsRunning(), "expected outbound to be running")
+
+		// stop
+		out.EXPECT().Stop().Return(nil)
+		assert.NoError(t, outWithMW.Stop(), "unexpected error stopping outbound")
+	})
+
+	t.Run("oneway", func(t *testing.T) {
+		out := transporttest.NewMockOnewayOutbound(ctrl)
+		mw := middlewaretest.NewMockOnewayOutbound(ctrl)
+		outWithMW := middleware.ApplyOnewayOutbound(out, mw)
+
+		// start
+		out.EXPECT().Start().Return(nil)
+		assert.NoError(t, outWithMW.Start(), "could not start outbound")
+
+		// transports
+		out.EXPECT().Transports()
+		outWithMW.Transports()
+
+		// is running
+		out.EXPECT().IsRunning().Return(true)
+		assert.True(t, outWithMW.IsRunning(), "expected outbound to be running")
+
+		// stop
+		out.EXPECT().Stop().Return(nil)
+		assert.NoError(t, outWithMW.Stop(), "unexpected error stopping outbound")
+	})
+}
+
+func TestStreamNopOutboundMiddleware(t *testing.T) {
+	mockCtrl := gomock.NewController(t)
+	defer mockCtrl.Finish()
+
+	o := transporttest.NewMockStreamOutbound(mockCtrl)
+	wrappedO := middleware.ApplyStreamOutbound(o, middleware.NopStreamOutbound)
+
+	ctx, cancel := context.WithTimeout(context.Background(), testtime.Second)
+	defer cancel()
+	req := &transport.StreamRequest{
+		&transport.RequestMeta{
+			Caller:    "somecaller",
+			Service:   "someservice",
+			Encoding:  raw.Encoding,
+			Procedure: "hello",
+		},
+	}
+
+	o.EXPECT().CallStream(ctx, req).Return(nil, nil)
+
+	got, err := wrappedO.CallStream(ctx, req)
+	if assert.NoError(t, err) {
+		assert.Nil(t, got)
+	}
+}
+
+func TestStreamDefaultsToOutboundWhenNil(t *testing.T) {
+	mockCtrl := gomock.NewController(t)
+	defer mockCtrl.Finish()
+
+	o := transporttest.NewMockStreamOutbound(mockCtrl)
+	wrappedO := middleware.ApplyStreamOutbound(o, nil)
+	assert.Equal(t, wrappedO, o)
+}
+
+func TestStreamMiddlewareCallsUnderlyingFunctions(t *testing.T) {
+	mockCtrl := gomock.NewController(t)
+	defer mockCtrl.Finish()
+
+	o := transporttest.NewMockStreamOutbound(mockCtrl)
+	o.EXPECT().Start().Times(1)
+	o.EXPECT().Stop().Times(1)
+	o.EXPECT().Transports().Times(1)
+	o.EXPECT().IsRunning().Times(1)
+	wrappedO := middleware.ApplyStreamOutbound(o, middleware.NopStreamOutbound)
+
+	wrappedO.IsRunning()
+	wrappedO.Transports()
+	wrappedO.Start()
+	wrappedO.Stop()
 }

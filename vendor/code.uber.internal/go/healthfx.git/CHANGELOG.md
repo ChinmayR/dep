@@ -1,5 +1,10 @@
 # Changelog
 
+## v1.2.0 (2017-11-06)
+
+- Add canonical import path directive. This will provide better error messages
+  if incorrect import paths are used to import the package.
+
 ## v1.1.0 (2017-08-25)
 
 - Report health by default.

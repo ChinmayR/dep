@@ -1,4 +1,4 @@
-// Copyright (c) 2017 Uber Technologies, Inc.
+// Copyright (c) 2018 Uber Technologies, Inc.
 //
 // Permission is hereby granted, free of charge, to any person obtaining a copy
 // of this software and associated documentation files (the "Software"), to deal
@@ -54,16 +54,18 @@ func (r rawUnaryHandler) Handle(ctx context.Context, treq *transport.Request, rw
 	if err := call.WriteToResponse(rw); err != nil {
 		return err
 	}
+
+	// we want to return the appErr if it exists as this is what
+	// the previous behavior was so we deprioritize this error
+	var writeErr error
+	if len(resBody) > 0 {
+		_, writeErr = rw.Write(resBody)
+	}
 	if appErr != nil {
 		rw.SetApplicationError()
 		return appErr
 	}
-
-	if _, err := rw.Write(resBody); err != nil {
-		return err
-	}
-
-	return nil
+	return writeErr
 }
 
 func (r rawOnewayHandler) HandleOneway(ctx context.Context, treq *transport.Request) error {

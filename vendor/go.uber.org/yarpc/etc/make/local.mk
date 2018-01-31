@@ -10,6 +10,9 @@ ERRCHECK_FLAGS := -ignoretests
 ERRCHECK_EXCLUDES := \.Close\(\) \.Stop\(\)
 FILTER_ERRCHECK := grep -v $(patsubst %,-e %, $(ERRCHECK_EXCLUDES))
 
+STATICCHECK_FLAGS := \
+	-ignore go.uber.org/yarpc/internal/yarpcerrors/yarpcerrors.go:SA1019
+
 # The number of jobs allocated to run examples tests in parallel
 # The goal is to have all examples tests run in parallel, and
 # this is currently greater than the number of examples tests
@@ -78,6 +81,12 @@ golint: $(GOLINT) __eval_packages __eval_go_files ## check golint
 	done
 	@[ ! -s "$(LINT_LOG)" ] || (echo "golint failed:" | cat - $(LINT_LOG) && false)
 
+.PHONY: staticcheck
+staticcheck: $(STATICCHECK) __eval_packages __eval_go_files ## check staticcheck
+	$(eval STATICCHECK_LOG := $(shell mktemp -t staticcheck.XXXXX))
+	@PATH=$(BIN):$$PATH staticcheck $(STATICCHECK_FLAGS) $(PACKAGES) 2>&1 | $(FILTER_LINT) > $(STATICCHECK_LOG) || true
+	@[ ! -s "$(STATICCHECK_LOG)" ] || (echo "staticcheck failed:" | cat - $(STATICCHECK_LOG) && false)
+
 .PHONY: errcheck
 errcheck: $(ERRCHECK) __eval_packages __eval_go_files ## check errcheck
 	$(eval ERRCHECK_LOG := $(shell mktemp -t errcheck.XXXXX))
@@ -86,11 +95,11 @@ errcheck: $(ERRCHECK) __eval_packages __eval_go_files ## check errcheck
 
 .PHONY: verifyversion
 verifyversion: ## verify the version in the changelog is the same as in version.go
-	$(eval CHANGELOG_VERSION := $(shell grep '^v[0-9]' CHANGELOG.md | head -n1 | cut -d' ' -f1))
+	$(eval CHANGELOG_VERSION := $(shell perl -ne '/^## \[(\S+?)\]/ && print "v$$1\n"' CHANGELOG.md | head -n1))
 	$(eval INTHECODE_VERSION := $(shell perl -ne '/^const Version.*"([^"]+)".*$$/ && print "v$$1\n"' version.go))
 	@if [ "$(INTHECODE_VERSION)" = "$(CHANGELOG_VERSION)" ]; then \
 		echo "yarpc-go: $(CHANGELOG_VERSION)"; \
-	elif [ "$(INTHECODE_VERSION)" = "$(CHANGELOG_VERSION)-dev" ]; then \
+	elif [ "$(CHANGELOG_VERSION)" = "vUnreleased" ]; then \
 		echo "yarpc-go (development): $(INTHECODE_VERSION)"; \
 	else \
 		echo "Version number in version.go does not match CHANGELOG.md"; \
@@ -111,7 +120,7 @@ verifycodecovignores: ## verify that .codecov.yml contains all .nocover packages
 		done
 
 .PHONY: basiclint
-basiclint: gofmt govet golint errcheck # run gofmt govet golint errcheck
+basiclint: gofmt govet golint staticcheck errcheck # run gofmt govet golint staticcheck errcheck
 
 .PHONY: lint
 lint: basiclint generatenodiff nogogenerate verifyversion verifycodecovignores ## run all linters

@@ -17,7 +17,7 @@
 #
 # # add any extra binaries that will be `make`-able but not built by default
 # EXTRA_PROGS = example/client
-# 
+#
 # Other bins targets that are NOT go build targets
 # EXTRA_BINS = other-bins-deps
 #
@@ -44,6 +44,12 @@
 #
 # for more functions
 #
+
+space :=
+space +=
+ifneq (,$(findstring $(space),$(CURDIR)))
+$(error Golang project directory $(CURDIR) contains space it is unsupported by go-build, please rename)
+endif
 
 SHELL = /bin/bash -o pipefail
 
@@ -111,7 +117,7 @@ FAUX_PROTOC := $(BUILD_DIR)/.faux.protoc
 ifeq ($(shell ( [ -d $(VENDOR_DIR) ] || [ -f $(GLIDE_YAML) ] ) && echo y),)
 GOPATH := $(shell pwd)/Godeps/_workspace:$(_GOPATH)
 
-vendor: $(GODEP) thriftc protoc ## Revendors the dependencies for all subpackages using godep
+vendor: $(GODEP) thriftc protoc ## Revendors the dependencies for all subpackages using godep.
 	rm -rf Godeps
 	GOPATH=$(OLDGOPATH) $(GODEP) save ./...
 
@@ -126,10 +132,12 @@ GOPATH := $(_GOPATH)
 # so people in their makefiles can depend on vendor
 $(VENDOR_DIR): $(FAUX_VENDOR)
 
+$(GLIDE_LOCK):
+	@[ ! -f $(GLIDE_YAML) ] || (echo "$(GLIDE_YAML) present, but missing $(GLIDE_LOCK) file. Make sure it's checked in." && exit 1)
+
 # allows to override the verb from `install` to `upgrade`, if building from live if preferable
 GLIDE_VERB ?= install
-$(FAUX_VENDOR):: $(FAUXFILE) $(GLIDE)
-	@[ ! -f $(GLIDE_YAML) ] || [ -f $(GLIDE_LOCK) ] || (echo "$(GLIDE_YAML) present, but missing $(GLIDE_LOCK) file. Make sure it's checked in." && exit 1)
+$(FAUX_VENDOR):: $(FAUXFILE) $(GLIDE) $(GLIDE_LOCK)
 	@# Retry the glide install a few times to avoid flaky Jenkins failures
 	@[ ! -f $(GLIDE_YAML) ] || (cd $(FAUXROOT) && \
 	    for i in 1 2 3; do \
@@ -192,11 +200,10 @@ BUILD_VERSION_FLAGS := -ldflags "\
 
 TEST_ENV ?= UBER_ENVIRONMENT=test UBER_CONFIG_DIR=$(abspath $(FAUXROOT))/config
 
-# We need to prefix variables with space, and this is apparently
-# the easiest way according to http://blog.jgc.org/2007/06/escaping-comma-and-space-in-gnu-make.html
-space :=
-space +=
-$(subst $(space),;,$(string))
+
+# TEST_PKG_TIMEOUT is the -timeout flag passed to go test. This timeout applies
+# to a single package, after which go will kill the test and dump stacktraces.
+TEST_PKG_TIMEOUT ?= 1m
 
 # Prefix with a space so that our duplicate detection below doesn't
 # miss flags specified at the beginning.
@@ -209,9 +216,19 @@ endif
 ifeq (,$(findstring $(space)$(TEST_VERBOSITY_FLAG), $(TEST_FLAGS)))
 	TEST_FLAGS += $(TEST_VERBOSITY_FLAG)
 endif
+ifeq (,$(findstring $(space)-timeout, $(TEST_FLAGS)))
+	TEST_FLAGS += $(space)-timeout $(TEST_PKG_TIMEOUT)
+endif
+
+# BENCH_FLAGS are the flags to the benchmark tests. Note that -benchmem
+# is already set.
+BENCH_FLAGS ?=
 
 # Any other test dependencies necessary to build the binaries.
 TEST_DEPS ?=
+
+# Any other benchmark dependencies necessary to build the binaries.
+BENCH_DEPS ?=
 
 # Any other dependencies necessary to build the binaries.
 BIN_DEPS ?=
@@ -260,12 +277,13 @@ ALL_SRC := $(shell find . -name "*.go" -path "*$(PKG)*" | grep -v -e Godeps -e v
 	-e ".*/\..*" \
 	-e ".*/_.*" \
 	-e ".*/testdata/.*" \
+	-e ".*/node_modules/.*" \
 	-e ".*/mocks.*")
 
 # !!!IMPORTANT!!!  This must be = and not := as this rule must be delayed until
 # after FAUXFILE has been executed.  Only use this in rules that depend on
 # FAUXFILE!
-ALL_PKGS = $(filter-out %/testdata %/_% %/.%, $(shell (cd $(FAUXROOT); \
+ALL_PKGS = $(filter-out %/testdata _/% %/_% %/.%, $(shell (cd $(FAUXROOT); \
 	   GOPATH=$(GOPATH) $(GO) list $(sort $(dir $(ALL_SRC))))))
 
 # all directories with *_test.go files in them
@@ -280,6 +298,10 @@ endif
 TEST_PROFILE_TGTS := $(addprefix $(BUILD_DIR)/, $(addsuffix profile.cov, $(TEST_DIRS)))
 TEST_PROFILE_TMP_TGTS := $(addsuffix .tmp,$(TEST_PROFILE_TGTS))
 TEST_TMP_LOGS := $(addprefix $(BUILD_DIR)/, $(addsuffix test.log.tmp, $(TEST_DIRS)))
+
+# Generates a make target for every directory in the project where there could be
+# benchmark tests in.
+BENCHMARK_PACKAGE_TGTS := $(addprefix BENCHMARK/, $(TEST_DIRS))
 
 # default make objective
 all: bins test
@@ -338,7 +360,7 @@ $(FAUX_THRIFT):: $(FAUXFILE) $(FAUX_THRIFTRW) $(FAUX_THRIFTGEN)
 #                        Example: EXCLUDE_PROTOC_SRCS = idl/code.uber.internal/foo/bar/bar.proto
 #
 #   PROTOC_PLUGINS:      GOPATH for extra protoc plugins to use other than protoc-gen-gogoslick.
-#                        Example: PROTOC_PLUGINS = go.uber.org/yarpc/encoding/x/protobuf/protoc-gen-yarpc-go
+#                        Example: PROTOC_PLUGINS = go.uber.org/yarpc/encoding/protobuf/protoc-gen-yarpc-go
 #
 #   PROTOC_INCLUDES:     Extra directories to include relative to PROJECT_ROOT.
 #                        This is an advanced feature and is not recommended.
@@ -370,6 +392,7 @@ else
 			"--input-dir=idl/code.uber.internal" \
 			"--output-dir=$(PROTOC_GENDIR)" \
 			"--extra-include=vendor" \
+			$(foreach include, $(PROTOC_INCLUDES), "--extra-include=$(include)") \
 			$(foreach exclude, $(EXCLUDE_PROTOC_SRCS), "--exclude=$(exclude)") --verbose
 endif
 endif
@@ -380,7 +403,7 @@ $(FAUX_PROTOC):: $(FAUXFILE) $(ALL_PROTOC_SRCS)
 
 $(PROGS) $(EXTRA_PROGS): $(FAUXFILE) $(FAUX_VENDOR) $(FAUX_GENCODE) $(BIN_DEPS)
 	@echo $(GOBUILD_LABEL) $@
-	$(ECHO_V)$(BUILD_VARS); $(BUILD_ENV) $(GO) build -i -o $@ $(BUILD_FLAGS) $(BUILD_GC_FLAGS) $(BUILD_VERSION_FLAGS) $(PROJECT_ROOT)/$(dir $@)
+	$(ECHO_V)$(BUILD_VARS); $(BUILD_ENV) $(GO) build -o $@ $(BUILD_FLAGS) $(BUILD_GC_FLAGS) $(BUILD_VERSION_FLAGS) $(PROJECT_ROOT)/$(dir $@)
 
 $(TEST_LOG): $(FAUXFILE) $(TEST_PROFILE_TMP_TGTS)
 	@cat /dev/null $(TEST_TMP_LOGS) > $(TEST_LOG)
@@ -424,6 +447,15 @@ $(JUNIT_XML):
 
 endif
 
+# This target is for running the benchmark tests inside a single go packagee.
+# The target does not produce a file, so the developer can run it again an again.
+# The target follows the naming scheme given by BENCHMARK_PACKAGE_TGTS
+# (prefixed by BENCHMARK to namespace it slightly).
+.PHONY: BENCHMARK/%
+BENCHMARK/%: $(ALL_SRC) $(TEST_DEPS) $(FAUX_GENCODE) $(FAUXTEST) $(BENCH_DEPS)
+	$(ECHO_V)cd $(FAUXROOT); $(TEST_ENV) \
+	  $(GO) test  $(TEST_FLAGS) -bench=. -run=^$$ -benchmem $(BENCH_FLAGS) $*
+
 .PHONY: $(COVERAGE_XML)
 $(COVERAGE_XML): $(GOCOV) $(GOCOV_XML) $(COVERFILE)
 	$(GOCOV) convert $(COVERFILE) | $(GOCOV_XML) | sed 's|filename=".*$(PROJECT_ROOT)/|filename="|' > $@
@@ -454,7 +486,7 @@ test-html: $(HTML_REPORT)
 coverage-browse: $(COVERFILE)
 	$(GO) tool cover -html=$(COVERFILE)
 
-jenkins:: ## Helper rule for jenkins, which calls clean, glide deps, installs subpackages, lint, build bins and runs tests
+jenkins:: ## Helper rule for jenkins, which calls clean, glide deps, installs subpackages, lint, build bins and runs tests.
 	-git clean -fd -f -x vendor
 	$(MAKE) clean
 	@# run this first because it can't be parallelized
@@ -486,14 +518,18 @@ testhtml: test-html
 
 testxml: test-xml
 
-service-names:
+# bench is a convenience target for running all benchmark tests given in
+# BENCHMARK_PACKAGE_TGTS
+bench: $(BENCHMARK_PACKAGE_TGTS) ## Run benchmark tests for all subpackages.
+
+service-names: ## Displays service names configured for this repository.
 	@echo $(SERVICES)
 
-thriftc: $(FAUX_THRIFT) ## Builds all generated code for Thrift
+thriftc: $(FAUX_THRIFT) ## Builds all generated code for Thrift.
 
-protoc: $(FAUX_PROTOC) ## Builds all generated code for Protobuf
+protoc: $(FAUX_PROTOC) ## Builds all generated code for Protobuf.
 
-clean:: ## Removes all build objects, including binaries, generated code, and test output files
+clean:: ## Removes all build objects, including binaries, generated code, and test output files.
 	@rm -rf $(PROGS) $(BUILD_DIR) *.html *.xml .phabricator-comment Godeps/_workspace/pkg Godeps/_workspace/bin
 	@git clean -fdx $(THRIFT_GENDIR) 2>/dev/null || rm -rf $(THRIFT_GENDIR)
 	@git clean -fdx $(PROTOC_GENDIR) 2>/dev/null || rm -rf $(PROTOC_GENDIR)
@@ -509,37 +545,36 @@ LINT_SKIP_ERROR=grep -v -e "possible formatting directive in Error call"
 # converted to a grep -v pipeline. If there are no filters, cat is used.
 FILTER_LINT := $(if $(LINT_EXCLUDES), grep -v $(foreach file, $(LINT_EXCLUDES),-e $(file)),cat) | $(LINT_SKIP_ERROR)
 
-vet: $(FAUXFILE) ## runs all go code through "go vet"
+vet: $(FAUXFILE) ## Runs all go code through "go vet".
 	@# Skip the last line of the vet output if it contains "exit status"
 	$(ECHO_V)cd $(FAUXROOT); $(GO) vet $(ALL_PKGS) 2>&1 | sed '/exit status 1/d' | $(FILTER_LINT) > $(VET_LOG) || true
 	@[ ! -s "$(VET_LOG)" ] || (echo "Go Vet Failures" | cat - $(VET_LOG) | tee -a $(PHAB_COMMENT) && false)
 
-golint: $(GOLINT) $(FAUXFILE) ## runs all go code through "golint"
+golint: $(GOLINT) $(FAUXFILE) ## Runs all go code through "golint".
 	@rm -f $(LINT_LOG)
 	$(ECHO_V)cd $(FAUXROOT); echo $(ALL_PKGS) | xargs -x -L 1 -n 1 $(GOLINT) | $(FILTER_LINT) >> $(LINT_LOG) || true
 	@[ ! -s "$(LINT_LOG)" ] || (echo "Lint Failures" | cat - $(LINT_LOG) | tee -a $(PHAB_COMMENT) && false)
 
-gofmt: $(FAUXFILE) ## ensures files are formatted using "gofmt"
+gofmt: $(FAUXFILE) ## Ensures files are formatted using "gofmt".
 	$(ECHO_V)$(GOFMT) -e -s -l $(ALL_SRC) | $(FILTER_LINT) > $(FMT_LOG) || true
 	@[ ! -s "$(FMT_LOG)" ] || (echo "Go Fmt Failures, run 'make fmt'" | cat - $(FMT_LOG) | tee -a $(PHAB_COMMENT) && false)
 
 ERRCHECK_IGNOREFILE = $(GOBUILD_DIR)/config/errcheck
 ERRCHECK_FLAGS ?= -exclude $(ERRCHECK_IGNOREFILE) -ignoretests -blank
 
-errcheck: $(ERRCHECK) $(FAUXFILE) ## runs all go code through "errcheck"
+errcheck: $(ERRCHECK) $(FAUXFILE) ## Runs all go code through "errcheck".
 	@rm -f $(ERRCHECK_LOG)
 	$(ECHO_V)cd $(FAUXROOT); $(ERRCHECK) $(ERRCHECK_FLAGS) $(ALL_PKGS) | $(FILTER_LINT) >> $(ERRCHECK_LOG) || true;
 	@[ ! -s "$(ERRCHECK_LOG)" ] || (echo "Errcheck Failures" | cat - $(ERRCHECK_LOG) | tee -a $(PHAB_COMMENT) && false)
 
-unused: $(UNUSED) $(FAUXFILE) ## runs all go code through "unused"
+unused: $(UNUSED) $(FAUXFILE) ## Runs all go code through "unused".
 	@rm -f $(UNUSED_LOG)
-	$(ECHO_V)cd $(FAUXROOT); $(foreach pkg, $(ALL_PKGS), \
-		$(UNUSED) $(UNUSED_FLAGS) $(pkg) | $(FILTER_LINT) >> $(UNUSED_LOG) || true;)
+	$(ECHO_V)cd $(FAUXROOT); $(UNUSED) $(UNUSED_FLAGS) $(ALL_PKGS) | $(FILTER_LINT) >> $(UNUSED_LOG) || true;
 	@[ ! -s "$(UNUSED_LOG)" ] || (echo "Unused Failures" | cat - $(UNUSED_LOG) | tee -a $(PHAB_COMMENT) && false)
 
 STATICCHECK_FLAGS ?=
 
-staticcheck: $(STATICCHECK) $(FAUXFILE) ## runs all go code through "staticcheck"
+staticcheck: $(STATICCHECK) $(FAUXFILE) ## Runs all go code through "staticcheck".
 	@rm -f $(STATICCHECK_LOG)
 	$(ECHO_V)cd $(FAUXROOT);$(STATICCHECK) $(STATICCHECK_FLAGS) $(ALL_PKGS) | $(FILTER_LINT) >> $(STATICCHECK_LOG) || true;
 	@[ ! -s "$(STATICCHECK_LOG)" ] || (echo "Staticcheck Failures" | cat - $(STATICCHECK_LOG) | tee -a $(PHAB_COMMENT) && false)
@@ -547,16 +582,16 @@ staticcheck: $(STATICCHECK) $(FAUXFILE) ## runs all go code through "staticcheck
 # errcheck, staticcheck and unused are not here as they was added later into go-build
 # and we didn't want to break existing projects, to add in your own project, do:
 # 	lint:: errcheck staticcheck unused
-lint:: vet golint gofmt
+lint:: vet golint gofmt ## Executes an assortment of linters.
 
-check-coverage: $(COVERAGE_XML) ## Checks that all packages have tests, and meet a coverage bar
+check-coverage: $(COVERAGE_XML) ## Checks that all packages have tests, and meet a coverage bar.
 	@rm -f $(CHECK_COVERAGE_LOG)
 	$(ECHO_V)python $(GOBUILD_DIR)/check_coverage.py --cover_ignore_srcs="$(COVER_IGNORE_SRCS)" 2>> $(CHECK_COVERAGE_LOG) || true;
 	@[ ! -s "$(CHECK_COVERAGE_LOG)" ] || (echo "Coverage Failures" | cat - $(CHECK_COVERAGE_LOG) | tee -a $(PHAB_COMMENT) && false)
 
 # We only want to format the files that are not ignored by FILTER_LINT.
 FMT_SRC:=$(shell echo "$(ALL_SRC)" | tr ' ' '\n' | $(FILTER_LINT))
-fmt: ## Runs "gofmt $(FMT_FLAGS) -w" to reformat all Go files
+fmt: ## Runs "gofmt $(FMT_FLAGS) -w" to reformat all Go files.
 	gofmt $(FMT_FLAGS) -w $(FMT_SRC)
 
 help: ## Prints a help message that shows rules and any comments for rules.
@@ -572,11 +607,12 @@ help: ## Prints a help message that shows rules and any comments for rules.
 .DEFAULT_GOAL = all
 .PHONY: \
 	all \
+	bench \
 	bins \
 	buns \
+	coverage-browse \
 	clean \
 	errcheck \
-	unused \
 	fmt \
 	gofmt \
 	golint \
@@ -584,15 +620,15 @@ help: ## Prints a help message that shows rules and any comments for rules.
 	install-all \
 	jenkins \
 	lint \
+	protoc \
 	service-names \
 	staticcheck \
 	test \
-	coverage-browse \
 	test-html \
 	testhtml \
 	test-xml \
 	testxml \
 	thriftc \
-	protoc \
+	unused \
 	vendor \
 	vet

@@ -38,9 +38,9 @@ type Hook struct {
 
 // Lifecycle coordinates application lifecycle hooks.
 type Lifecycle struct {
-	logger   *fxlog.Logger
-	hooks    []Hook
-	position int
+	logger     *fxlog.Logger
+	hooks      []Hook
+	numStarted int
 }
 
 // New constructs a new Lifecycle.
@@ -60,15 +60,14 @@ func (l *Lifecycle) Append(hook Hook) {
 // Start runs all OnStart hooks, returning immediately if it encounters an
 // error.
 func (l *Lifecycle) Start(ctx context.Context) error {
-	for i, hook := range l.hooks {
+	for _, hook := range l.hooks {
 		if hook.OnStart != nil {
 			l.logger.Printf("START\t\t%s()", hook.caller)
 			if err := hook.OnStart(ctx); err != nil {
 				return err
 			}
 		}
-		// Mark last successful OnStart.
-		l.position = i
+		l.numStarted++
 	}
 	return nil
 }
@@ -76,17 +75,15 @@ func (l *Lifecycle) Start(ctx context.Context) error {
 // Stop runs any OnStop hooks whose OnStart counterpart succeeded. OnStop
 // hooks run in reverse order.
 func (l *Lifecycle) Stop(ctx context.Context) error {
-	if len(l.hooks) == 0 {
-		return nil
-	}
 	var errs []error
 	// Run backward from last successful OnStart.
-	for i := l.position; i >= 0; i-- {
-		if l.hooks[i].OnStop == nil {
+	for ; l.numStarted > 0; l.numStarted-- {
+		hook := l.hooks[l.numStarted-1]
+		if hook.OnStop == nil {
 			continue
 		}
-		l.logger.Printf("STOP\t\t%s()", l.hooks[i].caller)
-		if err := l.hooks[i].OnStop(ctx); err != nil {
+		l.logger.Printf("STOP\t\t%s()", hook.caller)
+		if err := hook.OnStop(ctx); err != nil {
 			// For best-effort cleanup, keep going after errors.
 			errs = append(errs, err)
 		}

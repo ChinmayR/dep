@@ -1,27 +1,37 @@
 package handlers
 
 import (
+	"bytes"
 	"context"
 	"crypto"
+	"crypto/ecdsa"
 	"crypto/elliptic"
+	"crypto/rand"
 	"crypto/rsa"
 	"crypto/x509"
+	"encoding/base64"
+	"encoding/json"
 	"encoding/pem"
+	"fmt"
 	"io/ioutil"
+	"net/http"
+	"net/http/httptest"
 	"path"
 	"testing"
 	"time"
 
-	wonka "code.uber.internal/engsec/wonka-go.git"
+	"code.uber.internal/engsec/wonka-go.git"
+	"code.uber.internal/engsec/wonka-go.git/internal/xhttp"
+	"code.uber.internal/engsec/wonka-go.git/wonkacrypter"
 	"code.uber.internal/engsec/wonka-go.git/wonkamaster/common"
 	"code.uber.internal/engsec/wonka-go.git/wonkamaster/keys"
-	. "code.uber.internal/engsec/wonka-go.git/wonkamaster/wonkatestdata"
+	"code.uber.internal/engsec/wonka-go.git/wonkamaster/wonkatestdata"
+
+	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 	"go.uber.org/zap"
-)
-
-var (
-	keySize = 4096
+	"golang.org/x/crypto/ssh"
+	"golang.org/x/crypto/ssh/agent"
 )
 
 var lookupVars = []struct {
@@ -39,9 +49,9 @@ func TestLookupEntity(t *testing.T) {
 	log := zap.S()
 
 	for idx, m := range lookupVars {
-		WithWonkaMaster(m.e1, func(r common.Router, handlerCfg common.HandlerConfig) {
+		wonkatestdata.WithWonkaMaster(m.e1, func(r common.Router, handlerCfg common.HandlerConfig) {
 			SetupHandlers(r, handlerCfg)
-			WithTempDir(func(dir string) {
+			wonkatestdata.WithTempDir(func(dir string) {
 				pubPath := path.Join(dir, "public.pem")
 				privPath := path.Join(dir, "private.pem")
 				ctx := context.TODO()
@@ -117,10 +127,192 @@ func TestValidTime(t *testing.T) {
 	}
 }
 
+func TestVerifyLookupSignature(t *testing.T) {
+	var testVars = []struct {
+		name           string
+		version        string
+		emptySignature bool
+		badSignature   bool
+
+		errMsg string
+	}{
+		{name: "good_sig_everything", version: wonka.SignEverythingVersion},
+		{name: "bad_sig_everything", version: wonka.SignEverythingVersion, badSignature: true,
+			errMsg: "ec signature check failed"},
+		{name: "bad_empty_sig_everything", version: wonka.SignEverythingVersion, emptySignature: true,
+			errMsg: "empty signature"},
+		{name: "good_old"},
+		{name: "bad_old_empty_sig", emptySignature: true, errMsg: "empty signature"},
+		{name: "bad_old_bad_signature", badSignature: true, errMsg: "claim signature check failed"},
+	}
+
+	for idx, m := range testVars {
+		t.Run(fmt.Sprintf("%d_%s", idx, m.name), func(t *testing.T) {
+			req := wonka.LookupRequest{
+				Version:         m.version,
+				Ctime:           int(time.Now().Unix()),
+				EntityName:      "foober",
+				RequestedEntity: "doober",
+				SigType:         wonka.SHA256,
+			}
+
+			var pubKey crypto.PublicKey
+			var err error
+			var sig []byte
+			if req.Version == wonka.SignEverythingVersion {
+				privKey, err := ecdsa.GenerateKey(elliptic.P256(), rand.Reader)
+				require.NoError(t, err)
+				pubKey = &privKey.PublicKey
+
+				toSign, err := json.Marshal(req)
+				require.NoError(t, err)
+				sig, err = wonkacrypter.New().Sign(toSign, privKey)
+				require.NoError(t, err)
+
+			} else {
+				privKey, err := rsa.GenerateKey(rand.Reader, 1024)
+				require.NoError(t, err)
+				pubKey = &privKey.PublicKey
+
+				toSign := []byte(fmt.Sprintf("%s<%d>%s", req.EntityName, req.Ctime, req.RequestedEntity))
+				h := crypto.SHA256.New()
+				h.Write(toSign)
+				sig, err = privKey.Sign(rand.Reader, h.Sum(nil), crypto.SHA256)
+				require.NoError(t, err)
+			}
+
+			if m.badSignature {
+				sig = []byte("foober")
+			}
+
+			if !m.emptySignature {
+				req.Signature = base64.StdEncoding.EncodeToString(sig)
+			}
+
+			h := lookupHandler{log: zap.L()}
+			err = h.verifyLookupSignature(pubKey, req)
+			if m.errMsg != "" {
+				require.Error(t, err)
+				require.Contains(t, err.Error(), m.errMsg)
+			} else {
+				require.NoError(t, err)
+			}
+		})
+	}
+}
+
+func TestVerifyUSSHLookupSignature(t *testing.T) {
+	var testVars = []struct {
+		name         string
+		version      string
+		badSignature bool
+
+		errMsg string
+	}{
+		{name: "good_sign_everything", version: wonka.SignEverythingVersion},
+		{name: "good_old"},
+		{name: "bad_sign_everything", version: wonka.SignEverythingVersion, badSignature: true,
+			errMsg: wonka.LookupInvalidUSSHSignature},
+		{name: "bad_old", badSignature: true, errMsg: wonka.LookupInvalidUSSHSignature},
+	}
+
+	for idx, m := range testVars {
+		t.Run(fmt.Sprintf("%d_%s", idx, m.name), func(t *testing.T) {
+			cert, publicKey, a := newUSSHCert("foober")
+
+			req := wonka.LookupRequest{
+				Version:         m.version,
+				Ctime:           int(time.Now().Unix()),
+				EntityName:      "foober",
+				RequestedEntity: "doober",
+				USSHCertificate: string(ssh.MarshalAuthorizedKey(cert)),
+			}
+
+			var toSign []byte
+			var err error
+			if req.Version == wonka.SignEverythingVersion {
+				toSign, err = json.Marshal(req)
+				require.NoError(t, err)
+			} else {
+				toSign = []byte(fmt.Sprintf("%s<%d>%s|%s", req.EntityName, req.Ctime, req.RequestedEntity,
+					req.USSHCertificate))
+			}
+
+			if m.badSignature {
+				toSign = []byte("foober")
+			}
+
+			sig, err := a.Sign(cert, toSign)
+			require.NoError(t, err)
+
+			req.USSHSignature = base64.StdEncoding.EncodeToString(sig.Blob)
+			req.USSHSignatureType = sig.Format
+
+			h := lookupHandler{log: zap.L(), usshCAKeys: []ssh.PublicKey{publicKey}}
+			err = h.verifyUsshSignature(req)
+			if m.errMsg != "" {
+				require.Error(t, err)
+				require.Contains(t, err.Error(), m.errMsg)
+			} else {
+				require.NoError(t, err)
+			}
+		})
+	}
+}
+
+func newUSSHCert(name string) (*ssh.Certificate, ssh.PublicKey, agent.Agent) {
+	signerKey, err := ecdsa.GenerateKey(elliptic.P256(), rand.Reader)
+	if err != nil {
+		panic(err)
+	}
+
+	signer, err := ssh.NewSignerFromKey(signerKey)
+	if err != nil {
+		panic(err)
+	}
+
+	signerPublicKey, err := ssh.NewPublicKey(&signerKey.PublicKey)
+	if err != nil {
+		panic(err)
+	}
+
+	privKey, err := ecdsa.GenerateKey(elliptic.P256(), rand.Reader)
+	if err != nil {
+		panic(err)
+	}
+
+	pubKey, err := ssh.NewPublicKey(&privKey.PublicKey)
+	if err != nil {
+		panic(err)
+	}
+
+	cert := &ssh.Certificate{
+		Serial:          1,
+		Key:             pubKey,
+		ValidPrincipals: []string{name},
+		ValidBefore:     uint64(time.Now().Add(time.Minute).Unix()),
+		ValidAfter:      uint64(time.Now().Add(-time.Minute).Unix()),
+		CertType:        ssh.UserCert,
+	}
+
+	err = cert.SignCert(rand.Reader, signer)
+	if err != nil {
+		panic(err)
+	}
+
+	a := agent.NewKeyring()
+	err = a.Add(agent.AddedKey{PrivateKey: privKey, Certificate: cert})
+	if err != nil {
+		panic(err)
+	}
+
+	return cert, signerPublicKey, a
+}
+
 func generateKey(pubPath, privPath string) error {
 	log := zap.S()
 
-	k := PrivateKey()
+	k := wonkatestdata.PrivateKey()
 	log.Infof("generate key %s, %s", keys.KeyHash(k), keys.KeyHash(&k.PublicKey))
 
 	b := pem.Block{
@@ -161,4 +353,93 @@ func hashes(priv string) *rsa.PrivateKey {
 	}
 
 	return k
+}
+
+func serializeLookupRequestAndMakeCall(t *testing.T,
+	w *httptest.ResponseRecorder,
+	h xhttp.Handler,
+	req wonka.LookupRequest) {
+	data, err := json.Marshal(req)
+	require.NoError(t, err, "failed to marshal resolve request: %v", err)
+	r := &http.Request{Body: ioutil.NopCloser(bytes.NewReader(data))}
+	h.ServeHTTP(context.Background(), w, r)
+}
+
+func TestLookupHandlerUnits(t *testing.T) {
+	validHandler := newLookupHandler(getTestConfig(t))
+
+	var testCases = []struct {
+		name       string
+		statusCode int
+		Message    string
+		makeCall   func(*testing.T, *httptest.ResponseRecorder)
+	}{
+		{
+			name:       "errors when request is invalid json",
+			statusCode: http.StatusBadRequest,
+			Message:    wonka.DecodeError,
+			makeCall: func(t *testing.T, w *httptest.ResponseRecorder) {
+				r := &http.Request{Body: ioutil.NopCloser(
+					bytes.NewReader([]byte("Snozzberries? Who ever heard of a snozzberry?")))}
+				validHandler.ServeHTTP(context.Background(), w, r)
+			},
+		},
+		{
+			name:       "errors when certificate is present but can't be deserialized",
+			statusCode: http.StatusBadRequest,
+			Message:    wonka.LookupInvalidSignature,
+			makeCall: func(t *testing.T, w *httptest.ResponseRecorder) {
+				req := wonka.LookupRequest{
+					Certificate: []byte("Snozzberries? Who ever heard of a snozzberry?"),
+				}
+				serializeLookupRequestAndMakeCall(t, w, validHandler, req)
+			},
+		},
+		{
+			name:       "errors when certificate is present but the signature can't be deserialized",
+			statusCode: http.StatusBadRequest,
+			Message:    wonka.LookupInvalidSignature,
+			makeCall: func(t *testing.T, w *httptest.ResponseRecorder) {
+				req := wonka.LookupRequest{
+					Certificate: []byte("Snozzberries? Who ever heard of a snozzberry?"),
+					Signature:   "John Hanncock",
+				}
+				serializeLookupRequestAndMakeCall(t, w, validHandler, req)
+			},
+		},
+		{
+			name:       "errors when ussh certificate is present but can't be deserialized",
+			statusCode: http.StatusBadRequest,
+			Message:    wonka.ResultRejected,
+			makeCall: func(t *testing.T, w *httptest.ResponseRecorder) {
+				req := wonka.LookupRequest{
+					USSHSignature:   "Snozzberries? Who ever heard of a snozzberry?",
+					USSHCertificate: "Snozzberries? Who ever heard of a snozzberry?",
+				}
+				serializeLookupRequestAndMakeCall(t, w, validHandler, req)
+			},
+		},
+		{
+			name:       "errors when entitity is not enrolled",
+			statusCode: http.StatusBadRequest,
+			Message:    wonka.ResultRejected,
+			makeCall: func(t *testing.T, w *httptest.ResponseRecorder) {
+				req := wonka.LookupRequest{}
+				serializeLookupRequestAndMakeCall(t, w, validHandler, req)
+			},
+		},
+	}
+	for _, tc := range testCases {
+		t.Run(tc.name, func(t *testing.T) {
+			w := httptest.NewRecorder()
+			tc.makeCall(t, w)
+			resp := w.Result()
+			decoder := json.NewDecoder(resp.Body)
+			var m wonka.GenericResponse
+			err := decoder.Decode(&m)
+			assert.NoError(t, err, "err was not nil")
+			assert.Equal(t, tc.statusCode, resp.StatusCode, "status code did not match expected")
+			assert.Equal(t, tc.Message, m.Result, "error message did not match expected")
+		})
+	}
 }

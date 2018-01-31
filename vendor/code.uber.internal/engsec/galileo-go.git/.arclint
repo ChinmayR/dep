@@ -1,0 +1,66 @@
+{
+  "linters": {
+    "chmod": {
+      "type": "chmod",
+      "include" : "(.*)"
+    },
+    "filename": {
+      "type": "filename",
+      "include" : "(.*)"
+    },
+    "golint": {
+      "type": "script-and-regex",
+      "script-and-regex.script": "golint",
+      "script-and-regex.regex": "/^(?P<file>[^:]+):(?P<line>[0-9]+):(?P<char>[0-9]+): ((?P<disabled>func IsDerelictHttp should be IsDerelictHTTP)|(?P<message>.*))$/m",
+      "include": "(\\.go$)",
+      "exclude": [
+         "(^vendor/)",
+         "(/mock_)",
+         "(\\_mock.go$)",
+         "(\\_mock_test.go$)",
+         "(\\_string.go$)"
+      ]
+    },
+    "gofmt": {
+      "type": "gofmt",
+      "include": "(\\.go$)",
+      "exclude": [
+         "(^vendor/)",
+         "(\\_mock.go$)",
+         "(\\_mock_test.go$)",
+         "(\\_string.go$)"
+       ]
+    },
+    "govet": {
+      "type": "govet",
+      "include": "(\\.go$)",
+      "exclude": [
+         "(^vendor/)",
+         "(\\_mock.go$)",
+         "(\\_mock_test.go$)",
+         "(\\_string.go$)"
+      ]
+    },
+    "json": {
+      "type": "json",
+      "include": "(\\.json$)",
+      "exclude": [
+         "(^vendor/)"
+       ]
+    },
+    "yaml": {
+      "type": "script-and-regex",
+      "include": "(\\.yaml$)",
+      "script-and-regex.script": "ruby -e \"require 'yaml'; begin YAML.load_file(ARGV[0]); rescue Exception => ex; puts ex.message end\"",
+      "script-and-regex.regex": "/^(?P<message>.*)$/m",
+      "exclude": [
+        "(^vendor/)"
+      ]
+    },
+    "merge-conflict": {
+      "type": "merge-conflict",
+      "exclude": "(^vendor/)",
+      "include" : "(.*)"
+    }
+  }
+}

@@ -2,28 +2,22 @@ package galileo
 
 import (
 	"context"
-	"crypto"
-	"crypto/ecdsa"
-	"crypto/x509"
-	"encoding/base64"
-	"encoding/json"
 	"errors"
 	"fmt"
-	"net"
-	"strconv"
 	"strings"
 	"sync"
-	"sync/atomic"
 	"time"
 
 	"code.uber.internal/engsec/galileo-go.git/internal"
+	"code.uber.internal/engsec/galileo-go.git/internal/atomic"
+	"code.uber.internal/engsec/galileo-go.git/internal/claimtools"
+	"code.uber.internal/engsec/galileo-go.git/internal/contexthelper"
+	"code.uber.internal/engsec/galileo-go.git/internal/telemetry"
 
 	"code.uber.internal/engsec/wonka-go.git"
-	"code.uber.internal/engsec/wonka-go.git/wonkacrypter"
-	opentracing "github.com/opentracing/opentracing-go"
-	opentracinglog "github.com/opentracing/opentracing-go/log"
-
+	"github.com/opentracing/opentracing-go"
 	"github.com/uber-go/tally"
+	jaegerzap "github.com/uber/jaeger-client-go/log/zap"
 	"go.uber.org/zap"
 )
 
@@ -37,6 +31,12 @@ const (
 	claimExpiryBuffer = 3 * clockSkew
 )
 
+// Variables to allow injecting mocks for testability.
+var (
+	_newInboundTelemetryReporter  = telemetry.NewInboundReporter
+	_newOutboundTelemetryReporter = telemetry.NewOutboundReporter
+)
+
 type skippedEntity struct {
 	start time.Time
 	until time.Duration
@@ -48,8 +48,9 @@ type uberGalileo struct {
 	metrics tally.Scope
 	tracer  opentracing.Tracer
 
-	serviceName string
-	w           wonka.Wonka
+	serviceName    string
+	serviceAliases []string
+	w              wonka.Wonka
 
 	allowedEntities []string
 	endpointCfg     map[string]EndpointCfg
@@ -63,132 +64,33 @@ type uberGalileo struct {
 	// enforcePercentage is the percentage of traffic for which we
 	// require auth baggege. set this to 0.0 to require no auth baggage
 	// and 1 to require auth baggage for all traffic.
-	enforcePercentage float32
+	enforcePercentage *atomic.Float64
 
-	// disabled set to 1 if for some reason we should not
-	// attempt to do any wonka operations. This is true for both
-	// outbound claim requests and inbound claim verifications.
-	// TODO(pmoody): switch to go.uber.org/atomic to use atomic.Bool
-	disabled int32
-}
+	// disabled set to true if we shouldn't make any auth requests or
+	// expect inbound requests to have auth tokens. This is set by the
+	// galileo configuration option, as opposed to the wonka panic
+	// button
+	disabled bool
 
-// doDisableLookup
-func (u *uberGalileo) doDisableLookup(record string) bool {
-	r, err := net.LookupTXT(record)
-	if err != nil {
-		// if the txt record doesn't exist, this will err
-		return false
-	}
-
-	recordValue := strings.Join(r, " ")
-	reply, err := base64.StdEncoding.DecodeString(recordValue)
-	if err != nil {
-		u.metrics.Tagged(map[string]string{
-			"record": recordValue,
-			"error":  "record_base64_decode",
-		}).Counter("disabled").Inc(1)
-
-		u.log.Error("error base64 decoding", zap.Error(err))
-		return false
-	}
-
-	var msg wonka.DisableMessage
-	if err := json.Unmarshal(reply, &msg); err != nil {
-		u.metrics.Tagged(map[string]string{
-			"record": recordValue,
-			"error":  "json_unmarshal",
-		}).Counter("disabled").Inc(1)
-		u.log.Error("error unmarshalling disable txt record", zap.Error(err))
-		return false
-	}
-
-	now := time.Now()
-	cTime := time.Unix(msg.Ctime, 0)
-	eTime := time.Unix(msg.Etime, 0)
-	// check that it was created before now
-	if cTime.After(now) {
-		u.metrics.Tagged(map[string]string{
-			"record": recordValue,
-			"error":  "not_yet_valid",
-		}).Counter("disabled").Inc(1)
-		u.log.Error("disable message not yet valid", zap.Time("ctime", cTime))
-		return false
-	}
-
-	// check that it hasn't expried
-	if eTime.Before(now) {
-		u.metrics.Tagged(map[string]string{
-			"record": recordValue,
-			"error":  "expired",
-		}).Counter("disabled").Inc(1)
-		u.log.Error("disable message expired", zap.Time("etime", eTime))
-		return false
-	}
-
-	// check that the disable message isn't good for more than 24 hours
-	if !cTime.Add(maxDisableDuration).After(eTime) {
-		u.metrics.Tagged(map[string]string{
-			"record": recordValue,
-			"error":  "disable_too_long",
-		}).Counter("disabled").Inc(1)
-		u.log.Error("disable message is good for too long", zap.Time("etime", eTime))
-		return false
-	}
-
-	verify := msg
-	verify.Signature = nil
-	toVerify, err := json.Marshal(verify)
-	if err != nil {
-		u.metrics.Tagged(map[string]string{
-			"record": recordValue,
-			"error":  "json_marshal",
-		}).Counter("disabled").Inc(1)
-		u.log.Error("unable to marshal msg to verify", zap.Error(err))
-		return false
-	}
-
-	ok := wonkacrypter.New().Verify(toVerify, msg.Signature, wonka.WonkaMasterPublicKey)
-	if !ok {
-		u.metrics.Tagged(map[string]string{
-			"record": recordValue,
-			"error":  "invalid_signature",
-		}).Counter("disabled").Inc(1)
-	}
-
-	return ok
-}
-
-func (u *uberGalileo) checkDisableStatus(k *ecdsa.PublicKey) {
-	keyBytes, err := x509.MarshalPKIXPublicKey(k)
-	if err != nil {
-		u.log.Error("error marshalling key", zap.Error(err))
-		// TODO(pmoody): should we die here?
-		return
-	}
-
-	h := crypto.SHA256.New()
-	h.Write(keyBytes)
-	record := base64.RawStdEncoding.EncodeToString(h.Sum(nil))
-
-	for {
-		ok := u.doDisableLookup(fmt.Sprintf("%s.uberinternal.com", record))
-		if ok {
-			atomic.StoreInt32(&u.disabled, 1)
-		}
-		time.Sleep(disableCheckPeriod)
-	}
+	inboundClaimCache *claimtools.InboundCache
 }
 
 func (u *uberGalileo) isDisabled() bool {
-	d := atomic.LoadInt32(&u.disabled) == 1
-
-	if d {
-		u.metrics.Tagged(map[string]string{
-			"disabled": "true",
-		}).Counter("disabled").Inc(1)
+	if u.disabled {
+		// No metric when disabled by configuration.
+		return true
 	}
 
-	return d
+	if wonka.IsGloballyDisabled(u.w) {
+		u.metrics.Tagged(map[string]string{
+			"disabled": "true",
+		}).Counter("wonka_disabled").Inc(1)
+
+		return true
+	}
+
+	// No metric when enabled.
+	return false
 }
 
 func (u *uberGalileo) Name() string {
@@ -202,97 +104,97 @@ func (u *uberGalileo) Endpoint(endpoint string) (EndpointCfg, error) {
 	if e, ok := u.endpointCfg[endpoint]; ok {
 		return e, nil
 	}
-	return EndpointCfg{}, errors.New("galileo: no configuration for endpoint")
+	return EndpointCfg{}, errors.New("no configuration for endpoint")
 }
 
-// Authenticate is called by the client to make an authenticated request to a particular destination.
+// AuthenticateOut is called by the client to make an authenticated request to a particular destination.
 // It returns an authenticated context with the proper baggage.
-func (u *uberGalileo) AuthenticateOut(ctx context.Context, destination string, explicitClaim ...interface{}) (context.Context, error) {
-	if u.isDisabled() {
-		u.log.Warn("global disable set",
-			zap.String("destination", destination),
-			zap.String("explicit_claim", fmt.Sprintf("%v", explicitClaim)),
-		)
-		return ctx, nil
-	}
-
-	if u.shouldSkipDest(destination) {
-		return ctx, nil
-	}
-
-	// we would normally switch through the various authentication types
-	// based on the configured contexts.
-	claimReq, _ := ctx.Value(_ctxClaimKey).(string)
-	if len(explicitClaim) > 0 {
-		// the provided explicit claim should take precedence over the claim configured on the context.
-		if len(explicitClaim) > 1 {
-			// multiple claims should be in the form of a comma-separated string.
-			return ctx, fmt.Errorf("only one explicit claim is supported")
-		}
-
-		c, ok := explicitClaim[0].(string)
-		if !ok {
-			u.log.Error("explicit claim",
-				zap.String("destination", destination),
-				zap.String("explicit_claim", fmt.Sprintf("%v", explicitClaim)),
-			)
-			return ctx, errors.New("bad explicit claim request")
-		}
-		claimReq = c
-	}
-
+func (u *uberGalileo) AuthenticateOut(ctx context.Context, destination string, explicitClaims ...interface{}) (context.Context, error) {
 	if destination == "" {
-		u.log.Error("no destination service or destination claim specified")
-		return ctx, errors.New("no destination")
+		err := errors.New("no destination service specified")
+		u.log.Error("AuthenticateOut caller error", zap.Error(err), jaegerzap.Trace(ctx))
+		return ctx, err
 	}
 
-	// Add a span to the context that can be used to attach baggage and
+	explicitClaim, err := getExplicitClaim(ctx, explicitClaims...)
+	if err != nil {
+		u.log.Error("AuthenticateOut caller error", zap.Error(err), jaegerzap.Trace(ctx))
+		return ctx, err
+	}
+
+	ctx = u.doAuthenticateOut(ctx, destination, explicitClaim)
+	return ctx, nil // T1314721 always succeed, even without auth baggage.
+}
+
+// getExplicitClaim examines the given context and variadic explicit claims and
+// returns the claim to request.
+func getExplicitClaim(ctx context.Context, explicitClaim ...interface{}) (string, error) {
+	if len(explicitClaim) > 1 {
+		// multiple claims should be in the form of a comma-separated string.
+		return "", errors.New("only one explicit claim is supported")
+	}
+
+	if len(explicitClaim) == 1 {
+		// the provided explicit claim should take precedence over the claim configured on the context.
+		c := explicitClaim[0]
+		if explicitClaim, ok := c.(string); ok {
+			return explicitClaim, nil
+		}
+		return "", fmt.Errorf("unexpected argument of type %T passed: %v", c, c)
+	}
+
+	c := ctx.Value(_ctxClaimKey)
+	if c == nil {
+		// It is OK not to have an explicit claim.
+		return "", nil
+	}
+	if explicitClaim, ok := c.(string); ok {
+		return explicitClaim, nil
+	}
+	return "", fmt.Errorf("unexpected value of type %T passed as explicit claim in context: %v", c, c)
+}
+
+// doAuthenticateOut attempts to add wonka token to the context and reports the
+// results through logs and metrics.
+func (u *uberGalileo) doAuthenticateOut(inCtx context.Context, destination string, explicitClaim string) (ctx context.Context) {
+	var err error // T1314721 err will be reported but not returned.
+	otr := _newOutboundTelemetryReporter(u.log, u.metrics, destination, explicitClaim, u.Name())
+	// Wrapper func used because value of ctx and err change during doAuthenticateOut.
+	// otr.Report will handle if either ends up nil or if ctx still has no span.
+	defer func() { otr.Report(ctx, err) }()
+
+	if u.isDisabled() || u.shouldSkipDest(destination) {
+		return inCtx
+	}
+
+	// New child context with a span that can be used to attach baggage and
 	// decorated with logs. This span will cover the claim resolve to
 	// wonkamaster, as well as the authenticated request to the destination
 	// service.
-	ctx, finishSpan := internal.AddSpan(ctx, u.tracer)
+	ctx, finishSpan := contexthelper.AddSpan(inCtx, u.tracer)
 	defer finishSpan()
 
-	u.claimLock.Lock()
-	defer u.claimLock.Unlock()
-
-	if claim, ok := u.cachedClaims[destination]; ok {
-		if err := claimUsable(claim, claimReq); err == nil {
-			claimBytes, err := wonka.MarshalClaim(claim)
-			if err != nil {
-				return ctx, fmt.Errorf("marshalling claim: %v", err)
-			}
-
-			u.log.Debug("cached claim still valid")
-
-			err = internal.SetBaggage(ctx, u.Name(), destination, string(claimBytes))
-			return ctx, err
-		} else {
-			u.log.Info("deleting invalid claim", zap.String("destination", destination))
-			delete(u.cachedClaims, destination)
-		}
-	}
-
-	claim, err := u.resolveClaim(ctx, destination, claimReq)
+	claimToken, err := u.doGetCredential(ctx, destination, explicitClaim)
 	if err != nil {
-		return ctx, fmt.Errorf("error requesting claim: %v", err)
-	}
-	u.cachedClaims[destination] = claim
-
-	// Stamp this resolved authentication claim data into the context/ctx flow
-	claimBytes, err := json.Marshal(claim)
-	if err != nil {
-		return ctx, fmt.Errorf("error marshalling claim: %v", err)
+		return ctx
 	}
 
-	err = internal.SetBaggage(ctx, u.Name(), destination, base64.StdEncoding.EncodeToString(claimBytes))
-	return ctx, err
+	contexthelper.SetBaggage(opentracing.SpanFromContext(ctx), claimToken)
+	otr.SetHasBaggage(true)
+	return ctx
 }
 
+// AuthenticateIn is called by the client to check if the given context contains
+// proper authentication baggage. Auth baggage will be removed from the context.
+//
+// See Galileo interface docs for information about the optional parameters.
 func (u *uberGalileo) AuthenticateIn(ctx context.Context, allowed ...interface{}) error {
 	if u.isDisabled() {
-		u.log.Warn("global disable set")
 		return nil
+	}
+
+	cfg := validationConfiguration{
+		AllowedDestinations: u.serviceAliases,
 	}
 
 	var allowedEntities []string
@@ -302,20 +204,22 @@ func (u *uberGalileo) AuthenticateIn(ctx context.Context, allowed ...interface{}
 		}
 		switch v := e.(type) {
 		case string:
-			allowedEntities = append(allowedEntities, v)
+			cfg.AllowedEntities = append(cfg.AllowedEntities, v)
 		case []string:
 			// Backwards compatibility with old calling convention
-			allowedEntities = append(allowedEntities, v...)
+			cfg.AllowedEntities = append(cfg.AllowedEntities, v...)
+		case CredentialValidationOption:
+			v.applyCredentialValidationOption(&cfg)
 		default:
 			return fmt.Errorf("unexpected argument of type %T passed to AuthenticateIn: %v", e, e)
 		}
 	}
 
-	if len(allowedEntities) == 0 {
-		allowedEntities = u.allowedEntities
+	if len(cfg.AllowedEntities) == 0 {
+		cfg.AllowedEntities = u.allowedEntities
 	}
 
-	if err := u.doAuthenticateIn(ctx, allowedEntities); err != nil {
+	if err := u.doAuthenticateIn(ctx, cfg); err != nil {
 		return &authError{
 			Reason:          err,
 			AllowedEntities: allowedEntities,
@@ -325,105 +229,91 @@ func (u *uberGalileo) AuthenticateIn(ctx context.Context, allowed ...interface{}
 	return nil
 }
 
-func (u *uberGalileo) doAuthenticateIn(ctx context.Context, allowed []string) error {
-	if u.isDisabled() {
-		u.log.Warn("global disable set")
-		return nil
-	}
+// doAuthenticateIn checks if the given context contains proper authentication
+// baggage, and reports the result.
+func (u *uberGalileo) doAuthenticateIn(ctx context.Context, cfg validationConfiguration) (err internal.InboundAuthenticationError) {
 	// Ensure the context has a span that can be examined for auth baggage and
 	// decorated with logs.
-	ctx, finishSpan := internal.EnsureSpan(ctx, u.tracer)
+	ctx, finishSpan := contexthelper.EnsureSpan(ctx, u.tracer)
 	defer finishSpan()
-	span := opentracing.SpanFromContext(ctx)
 
-	span.LogFields(
-		opentracinglog.Float32(internal.TagInEnforcePercent, u.enforcePercentage),
-	)
-
-	// Value of allowedTag at the time this function ends will dictate what we
-	// log for TagInAllowed. We'll assume the request was denied by default.
-	allowedTag := internal.Denied
+	// State of itr at the time this function ends will dicate what telemetry we
+	// send.
+	itr := _newInboundTelemetryReporter(u.log, u.metrics, u.enforcePercentage.Load())
 	defer func() {
-		span.LogFields(opentracinglog.Int(internal.TagInAllowed, allowedTag))
+		enforced := shouldEnforce(u.enforcePercentage.Load())
+		derelict := u.IsDerelict(cfg.CallerName)
+		itr.Report(ctx, err, enforced, derelict)
+		if !enforced || derelict {
+			err = nil // Not enforced. doAuthenticateIn should succeed.
+		}
 	}()
 
-	m := u.metrics.Tagged(map[string]string{
-		"enforce_percentage": fmt.Sprintf("%f", u.enforcePercentage),
-	})
-
-	// we would normally switch through the various authorize types based on
-	// the configured contexts.
-	claim, err := GetClaim(ctx)
+	cacheableClaim, err := u.inboundClaimCache.GetOrCreateFromContext(ctx)
 	if err != nil {
-		if !shouldEnforce(u.enforcePercentage) {
-			u.log.Debug("missing or invalid auth information and enforcePercentage < 1",
-				zap.Error(err),
-				zap.Float32("enforce_percentag", u.enforcePercentage),
-			)
-			allowedTag = internal.NotEnforced
-			go m.Tagged(map[string]string{"allowed": strconv.Itoa(internal.NotEnforced)}).Counter("authorize").Inc(1)
-			return nil
-		}
+		return err
+	}
+	itr.SetClaim(cacheableClaim.Claim)
 
-		return errors.New("no auth baggage found")
+	if err := validateClaim(cacheableClaim, cfg); err != nil {
+		return err
 	}
 
-	// if there are no allowed groups, everything's an allowed group.
-	if len(allowed) == 0 {
-		allowed = claim.Claims
-	} else {
-		// If we accept wonka.EveryEntity, add the entity name on the remote claim.
-		// This is just in case the remote side got an identity claim for their
-		// entity name rather than one for wonka.EveryEntity.
-		for _, c := range allowed {
-			if strings.EqualFold(c, wonka.EveryEntity) {
-				allowed = append(allowed, claim.EntityName)
-				break
-			}
-		}
-	}
-
-	u.log.Debug("checking claim validity")
-
-	span.LogFields(
-		opentracinglog.String(internal.TagInEntityName, claim.EntityName),
-		opentracinglog.String(internal.TagInDestination, claim.Destination),
-	)
-
-	if err := claim.Check(u.serviceName, allowed); err == nil {
-		go m.Tagged(map[string]string{
-			"allowed":       strconv.Itoa(internal.AllowedAllOK),
-			"remote_entity": claim.EntityName,
-		}).Counter("authorize").Inc(1)
-		allowedTag = internal.AllowedAllOK
-	} else {
-		if shouldEnforce(u.enforcePercentage) {
-			go m.Tagged(map[string]string{
-				"allowed":            strconv.Itoa(internal.Denied),
-				"enforce_percentage": fmt.Sprintf("%f", u.enforcePercentage),
-				"remote_entity":      claim.EntityName,
-			}).Counter("authorize").Inc(1)
-			return fmt.Errorf("not permitted by configuration: %v", err)
-		}
-
-		allowedTag = internal.NotEnforced
-		go m.Tagged(map[string]string{
-			"allowed":            strconv.Itoa(internal.NotEnforced),
-			"enforce_percentage": fmt.Sprintf("%f", u.enforcePercentage),
-			"remote_entity":      claim.EntityName,
-		}).Counter("authorize").Inc(1)
-		u.log.Debug("not an allowed service but passed enforce_percentage",
-			zap.String("remote_entity", claim.EntityName),
+	if cfg.CallerName != "" && !strings.EqualFold(cfg.CallerName, cacheableClaim.EntityName) {
+		// Unauthenticated caller name is different from authenticated Wonka
+		// identity.
+		u.log.Info("remote entity name mismatch",
+			zap.String("remote_entity", cacheableClaim.EntityName),
+			zap.String("caller_name", cfg.CallerName),
 		)
 	}
 
-	u.log.Debug("successfully allowed")
 	return nil
 }
 
-func (u *uberGalileo) resolveClaim(ctx context.Context, destination, claimReq string) (*wonka.Claim, error) {
-	if claimReq != "" {
-		return u.w.ClaimRequest(ctx, claimReq, destination)
+// resolveClaimWithCache uses a claim from cache when it is still valid, and
+// otherwise fetches a new claim from wonkamaster.
+func (u *uberGalileo) resolveClaimWithCache(ctx context.Context, destination, explicitClaim string) (*wonka.Claim, error) {
+	u.claimLock.Lock()
+	defer u.claimLock.Unlock()
+
+	if claim, ok := u.cachedClaims[destination]; ok {
+		err := claimUsable(claim, explicitClaim)
+		if err == nil {
+			u.metrics.Tagged(map[string]string{"cache": "hit"}).Counter("cache").Inc(1)
+			u.log.Debug("cached claim still valid",
+				zap.String("destination", destination),
+				zap.String("claim", explicitClaim),
+			)
+			return claim, nil
+		}
+		u.log.Debug("cached claim is no longer valid",
+			zap.NamedError("reason", err),
+			zap.String("destination", destination),
+			zap.String("claim", explicitClaim),
+		)
+	}
+
+	u.metrics.Tagged(map[string]string{"cache": "miss"}).Counter("cache").Inc(1)
+
+	claim, err := u.resolveClaim(ctx, destination, explicitClaim)
+	if err != nil {
+		return nil, fmt.Errorf("error requesting claim: %v", err)
+	}
+
+	u.cachedClaims[destination] = claim
+	u.log.Debug("adding claim to cache",
+		zap.String("destination", destination),
+		zap.String("claim", explicitClaim),
+	)
+
+	return claim, nil
+}
+
+// resolveClaim fetches a new claim from wonkamaster
+func (u *uberGalileo) resolveClaim(ctx context.Context, destination, explicitClaim string) (*wonka.Claim, error) {
+	if explicitClaim != "" {
+		return u.w.ClaimRequest(ctx, explicitClaim, destination)
 	}
 
 	if strings.ToLower(destination) == strings.ToLower(u.serviceName) {
@@ -439,8 +329,6 @@ func (u *uberGalileo) resolveClaim(ctx context.Context, destination, claimReq st
 
 // shouldSkipDest returns true if we should skip wonka auth for this destination
 func (u *uberGalileo) shouldSkipDest(entity string) bool {
-	u.log.Debug("checking skip", zap.String("destination", entity))
-
 	u.skipLock.RLock()
 	defer u.skipLock.RUnlock()
 
@@ -486,13 +374,10 @@ func (u *uberGalileo) addSkipDest(entity string) {
 	u.skippedEntities[entity] = newSkip
 }
 
-// claimUsable returns nil if the given claim token can still be used, i.e. is
-// valid, won't expire soon, and asserts claimReq. Returns an error otherwise.
-func claimUsable(claim *wonka.Claim, claimReq string) error {
-	if err := claim.Validate(); err != nil {
-		return err
-	}
-
+// claimUsable returns nil if the given claim token can still be used, i.e.
+// won't expire soon, and asserts explicitClaim. Returns an error otherwise.
+// We assume only valid claims are placed into the cache.
+func claimUsable(claim *wonka.Claim, explicitClaim string) error {
 	// We already know the token is not expired. Check if it will expire soon.
 	expireTime := time.Unix(claim.ValidBefore, 0)
 	now := time.Now()
@@ -500,20 +385,18 @@ func claimUsable(claim *wonka.Claim, claimReq string) error {
 		return errors.New("claim token will expire soon")
 	}
 
-	// TODO(jkline): claimUsable is very close to claim.Check, but
-	// claim.Check doesn't handle an empty slice of allowed claims.
-	// We have a claim in our cache that matches the destination but if we
-	// were given an explicit claim request, we should only reuse this claim
-	// if the explictly requested claim is present.
-	if claimReq == "" {
+	// We have a claim in our cache that matches the destination.
+	// When given an explicit claim requirement, only reuse cached claim
+	// when it affirms that explictly requested claim.
+	if explicitClaim == "" {
 		// No explicit claim request, any token will do.
 		return nil
 	}
 	for _, c := range claim.Claims {
-		if strings.EqualFold(claimReq, c) {
+		if strings.EqualFold(explicitClaim, c) {
 			return nil
 		}
 	}
 
-	return fmt.Errorf("claim token does not grant %q", claimReq)
+	return fmt.Errorf("claim token does not grant %q", explicitClaim)
 }

@@ -2,20 +2,19 @@ package testdata
 
 import (
 	"context"
-	"crypto"
-	"crypto/elliptic"
-	"crypto/rand"
 	"crypto/rsa"
 	"crypto/x509"
-	"crypto/x509/pkix"
 	"encoding/pem"
-	"fmt"
 	"io/ioutil"
-	"math/big"
 	"os"
+	"testing"
 	"time"
 
 	wonka "code.uber.internal/engsec/wonka-go.git"
+	"code.uber.internal/engsec/wonka-go.git/internal/keyhelper"
+	"code.uber.internal/engsec/wonka-go.git/wonkamaster/wonkadb"
+
+	"github.com/stretchr/testify/require"
 )
 
 var (
@@ -23,6 +22,23 @@ var (
 	signedData = make(chan []byte, 1)
 )
 
+// EnrollEntity creates a database entry for an entity with the given name and
+// private key.
+func EnrollEntity(ctx context.Context, t testing.TB, db wonkadb.EntityDB, name string, privkey *rsa.PrivateKey) {
+	privPem, err := keyhelper.PublicPemFromKey(&privkey.PublicKey)
+	require.NoError(t, err, "failed to encode private key for %q to pem", name)
+	entity := wonka.Entity{
+		EntityName:   name,
+		PublicKey:    string(privPem),
+		ECCPublicKey: ECCPublicFromPrivateKey(privkey),
+		Ctime:        int(time.Now().Unix()),
+		Etime:        int(time.Now().Add(time.Hour).Unix()),
+	}
+	err = db.Create(ctx, &entity)
+	require.NoError(t, err, "failed to enroll %q", name)
+}
+
+// PrivateKeyFromPem decodes a pem string into an rsa private key.
 func PrivateKeyFromPem(s string) *rsa.PrivateKey {
 	p, _ := pem.Decode([]byte(s))
 	if p == nil {
@@ -35,6 +51,7 @@ func PrivateKeyFromPem(s string) *rsa.PrivateKey {
 	return k
 }
 
+// WithTempDir runs function in an ephemeral directory and cleans up after itself.
 func WithTempDir(fn func(dir string)) {
 	dir, err := ioutil.TempDir("", "wonka")
 	if err != nil {
@@ -53,94 +70,33 @@ func WithTempDir(fn func(dir string)) {
 	fn(dir)
 }
 
-func signData(ctx context.Context, privKey *rsa.PrivateKey) {
-	for {
-		select {
-		case <-ctx.Done():
-			return
-		case i := <-toSign:
-			sigBytes, err := rsa.SignPKCS1v15(rand.Reader, privKey, crypto.SHA256, i)
-			if err != nil {
-				panic(err)
-			}
-			signedData <- sigBytes
-		}
-	}
-}
+// WritePublicKey writes the publickey to loc in pem format.
+// This is part of Wonka's public API so we can't remove it, and we
+// do want to have only one implementation.
+var WritePublicKey = keyhelper.WritePublicKey
 
-func writeCertificate(k *rsa.PrivateKey, loc string) error {
-	t := x509.Certificate{
-		SerialNumber: big.NewInt(1),
-		Subject: pkix.Name{
-			CommonName: "foo",
-		},
-		NotBefore: time.Now(),
-		NotAfter:  time.Now().Add(1 * time.Minute),
+// WritePrivateKey writes the given private key to the given file location in
+// pem format. This is part of Wonka's public API so we can't remove it, and we
+// do want to have only one implementation.
+var WritePrivateKey = keyhelper.WriteRsaPrivateKey
 
-		SubjectKeyId:          []byte{1, 2, 3, 4},
-		KeyUsage:              x509.KeyUsageCertSign | x509.KeyUsageKeyEncipherment | x509.KeyUsageDigitalSignature,
-		BasicConstraintsValid: true,
-	}
-	cert, e := x509.CreateCertificate(rand.Reader, &t, &t, k.Public(), k)
-	if e != nil {
-		panic(fmt.Sprintf("fak: %v", e))
-	}
-
-	certPem := &pem.Block{
-		Type:  "CERTIFICATE",
-		Bytes: cert,
-	}
-
-	return ioutil.WriteFile(loc, pem.EncodeToMemory(certPem), 0440)
-}
-
-func WritePublicKey(k crypto.PublicKey, loc string) error {
-	b, e := x509.MarshalPKIXPublicKey(k)
-	if e != nil {
-		return e
-	}
-
-	pemBlock := pem.Block{
-		Type:  "PUBLIC KEY",
-		Bytes: b,
-	}
-
-	e = ioutil.WriteFile(loc, pem.EncodeToMemory(&pemBlock), 0440)
-	if e != nil {
-		return e
-	}
-	return nil
-}
-
-func WritePrivateKey(k *rsa.PrivateKey, loc string) error {
-	pemBlock := pem.Block{
-		Type:  "RSA PRIVATE KEY",
-		Bytes: x509.MarshalPKCS1PrivateKey(k),
-	}
-	e := ioutil.WriteFile(loc, pem.EncodeToMemory(&pemBlock), 0440)
-	if e != nil {
-		return e
-	}
-	return nil
-}
-
+// PublicPemFromKey extracts the public key from an rsa private key and encodes
+// it to pem format.
+// This is part of Wonka's public API so we can't remove it, and we
+// do want to have only one implementation.
+// Deprecated: Avoid this function because it panics. Prefer wonkatestdata.PublicPemFromKey
 func PublicPemFromKey(k *rsa.PrivateKey) []byte {
-	b, err := x509.MarshalPKIXPublicKey(&k.PublicKey)
+	b, err := keyhelper.PublicPemFromKey(&k.PublicKey)
 	if err != nil {
 		panic(err)
 	}
-
-	pemBlock := &pem.Block{
-		Type:  "PUBLIC KEY",
-		Bytes: b,
-	}
-	return pem.EncodeToMemory(pemBlock)
+	return b
 }
 
+// ECCPublicFromPrivateKey turns an rsa private key into a compressed
+// ecdsa public key on the p256 curve. This is mostly used to make it easier
+// to do things like create test entities.
 func ECCPublicFromPrivateKey(k *rsa.PrivateKey) string {
-	h := crypto.SHA256.New()
-	h.Write([]byte(x509.MarshalPKCS1PrivateKey(k)))
-	pointKey := h.Sum(nil)
-
-	return wonka.KeyToCompressed(elliptic.P256().ScalarBaseMult(pointKey))
+	eccKey := wonka.ECCFromRSA(k)
+	return wonka.KeyToCompressed(eccKey.PublicKey.X, eccKey.PublicKey.Y)
 }

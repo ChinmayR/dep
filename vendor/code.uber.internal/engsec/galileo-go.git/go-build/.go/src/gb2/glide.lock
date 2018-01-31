@@ -1,11 +1,11 @@
-hash: 2a3a901ea019109ee268e18935e8f3dc2ffe4a6ce360f6751616c21377a15392
-updated: 2017-09-05T16:18:23.964423003-07:00
+hash: fc283c6bc9c9133d122c6946c5209a928bc9603a0bd3f5862f217bb14ee3d9c0
+updated: 2017-10-25T16:54:04.251449+02:00
 imports:
 - name: code.uber.internal/devexp/homebrew_bottler
-  version: eac925f698d1c542e8786c07ae9177cd392e00ce
+  version: 33738294c414f1ad8d39fb35688dcbeca485b76d
   vcs: git
 - name: code.uber.internal/infra/glide-exec
-  version: 584e2e5564abdca108f6d6eae2c3f85c6bbfe838
+  version: e5b8cf090e3f6b0286533577e9d6466d2a9f7a7a
   vcs: git
 - name: code.uber.internal/infra/prototools.git
   version: ffd56de367cf7cfc264e123857bcd0121c180fa2
@@ -25,7 +25,7 @@ imports:
 - name: github.com/codegangsta/cli
   version: cfb38830724cc34fedffe9a2a29fb54fa9169cd1
 - name: github.com/gogo/protobuf
-  version: 100ba4e885062801d56799d78530b73b178a78f3
+  version: 342cbe0a04158f6dcb03ca0079991a51a4248c02
   subpackages:
   - gogoproto
   - plugin/compare
@@ -54,7 +54,7 @@ imports:
   - vanity
   - vanity/command
 - name: github.com/golang/lint
-  version: c5fb716d6688a859aae56d26d3e6070808df29f7
+  version: e5d664eb928e9d79eea4a648ca451da7208d5789
   subpackages:
   - golint
 - name: github.com/golang/mock
@@ -72,7 +72,7 @@ imports:
   - protoc-gen-go/grpc
   - protoc-gen-go/plugin
 - name: github.com/jessevdk/go-flags
-  version: 6cf8f02b4ae8ba723ddc64dcfd403e530c06d927
+  version: f88afde2fa19a30cf50ba4b05b3d13bc6bae3079
 - name: github.com/jstemmer/go-junit-report
   version: 6aeed679b62e1c77721907cb77076f2168c7a0f6
   subpackages:
@@ -88,7 +88,7 @@ imports:
   subpackages:
   - internal/load
 - name: github.com/Masterminds/glide
-  version: 9ff4cf310f478d923ab6bd3521b5a95128020522
+  version: bd6391b107f040f9d40340a0c551111b77ae5c5b
   repo: gitolite@code.uber.internal:devexp/glide
   vcs: git
   subpackages:
@@ -109,7 +109,7 @@ imports:
   - tree
   - util
 - name: github.com/Masterminds/semver
-  version: 517734cc7d6470c0d07130e40fd40bdeb9bcd3fd
+  version: 15d8430ab86497c5c0da827b748823945e1cf1e1
 - name: github.com/Masterminds/vcs
   version: 33e3af6bb046dac9f3f33610363d0724fee1e03c
   repo: gitolite@code.uber.internal:devexp/masterminds-vcs
@@ -150,7 +150,7 @@ imports:
 - name: github.com/wadey/gocovmerge
   version: b5bfa59ec0adc420475f97f89b58045c721d761c
 - name: golang.org/x/tools
-  version: 77187f3c2d7724523287779ae0a022fa20721b04
+  version: e531a2a1c15f94033f6fa87666caeb19a688175f
   subpackages:
   - cover
   - go/ast/astutil
@@ -161,21 +161,24 @@ imports:
   - go/types/typeutil
   - imports
 - name: gopkg.in/yaml.v2
-  version: a83829b6f1293c91addabc89d0571c246397bbf4
+  version: eb3733d160e74a9c7e442f435eb3bea458e1d19f
 - name: honnef.co/go/tools
-  version: 6bc9a2adc0446cbdfb39f633068ecf88dd42a407
+  version: bf3d85daf373f9ad9fc6da6da7c010f9ee3e8e0c
   repo: https://github.com/dominikh/go-tools
   vcs: git
   subpackages:
+  - callgraph
+  - callgraph/static
   - cmd/staticcheck
   - cmd/unused
-  - gcsizes
+  - functions
+  - internal/sharedcheck
   - lint
   - lint/lintutil
   - ssa
   - ssa/ssautil
   - staticcheck
-  - staticcheck/pure
   - staticcheck/vrp
   - unused
+  - version
 testImports: []

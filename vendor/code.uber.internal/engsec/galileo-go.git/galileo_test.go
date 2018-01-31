@@ -2,37 +2,32 @@ package galileo_test
 
 import (
 	"context"
-	"crypto"
-	"crypto/elliptic"
-	"crypto/rsa"
-	"crypto/x509"
-	"encoding/base64"
-	"encoding/pem"
-	"io/ioutil"
-	"os"
-	"path"
+	"errors"
+	"strconv"
 	"testing"
+	"time"
 
 	. "code.uber.internal/engsec/galileo-go.git"
+	"code.uber.internal/engsec/galileo-go.git/galileotest"
+	"code.uber.internal/engsec/galileo-go.git/internal"
+	"code.uber.internal/engsec/galileo-go.git/internal/telemetry"
+	"code.uber.internal/engsec/galileo-go.git/internal/testhelper"
 
-	"code.uber.internal/engsec/wonka-go.git"
 	"code.uber.internal/engsec/wonka-go.git/wonkamaster/common"
 	"code.uber.internal/engsec/wonka-go.git/wonkamaster/handlers"
-	"code.uber.internal/engsec/wonka-go.git/wonkamaster/wonkadb"
 	"code.uber.internal/engsec/wonka-go.git/wonkamaster/wonkatestdata"
-	opentracing "github.com/opentracing/opentracing-go"
+	"github.com/opentracing/opentracing-go"
 	"github.com/opentracing/opentracing-go/mocktracer"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
+	"github.com/uber-go/tally"
+	jaegerzap "github.com/uber/jaeger-client-go/log/zap"
 	"go.uber.org/zap"
+	"go.uber.org/zap/zapcore"
+	"go.uber.org/zap/zaptest/observer"
 )
 
-func startSpan(ctx context.Context, tracer opentracing.Tracer) (_ context.Context, finish func()) {
-	span := tracer.StartSpan("test-span")
-	return opentracing.ContextWithSpan(ctx, span), span.Finish
-}
-
-func Test_NewGalileo_OK(t *testing.T) {
+func TestNewGalileo(t *testing.T) {
 	t.Run("without ServiceName", func(t *testing.T) {
 		var cfg Configuration
 		_, err := Create(cfg)
@@ -40,15 +35,22 @@ func Test_NewGalileo_OK(t *testing.T) {
 		require.Contains(t, err.Error(), "Configuration must have ServiceName parameter set")
 	})
 
-	t.Run("with ServiceName", func(t *testing.T) {
-		cfg := Configuration{ServiceName: "foo", Tracer: mocktracer.New()}
-		g, err := Create(cfg)
-		assert.NoError(t, err)
-		assert.NotNil(t, g)
+	t.Run("disabled without ServiceName", func(t *testing.T) {
+		cfg := Configuration{Disabled: true}
+		_, err := Create(cfg)
+		require.Error(t, err)
+		require.Contains(t, err.Error(), "Configuration must have ServiceName parameter set")
 	})
 
 	t.Run("without tracer", func(t *testing.T) {
 		cfg := Configuration{ServiceName: "foo"}
+		_, err := Create(cfg)
+		require.Error(t, err)
+		require.Contains(t, err.Error(), "jaeger must be initialized before calling galileo")
+	})
+
+	t.Run("disabled without tracer", func(t *testing.T) {
+		cfg := Configuration{ServiceName: "foo", Disabled: true}
 		_, err := Create(cfg)
 		require.Error(t, err)
 		require.Contains(t, err.Error(), "jaeger must be initialized before calling galileo")
@@ -65,227 +67,287 @@ func Test_NewGalileo_OK(t *testing.T) {
 func TestDisabled(t *testing.T) {
 	type ctxKey string
 
-	cfg := Configuration{ServiceName: "foo", Disabled: true}
+	cfg := Configuration{
+		ServiceName: "foo",
+		Disabled:    true,
+		Tracer:      mocktracer.New(),
+	}
 
 	g, err := Create(cfg)
 	assert.NoError(t, err)
 	assert.NotNil(t, g)
 
-	wonkatestdata.WithWonkaMaster("foo", func(r common.Router, handlerCfg common.HandlerConfig) {
+	wonkatestdata.WithWonkaMaster("", func(r common.Router, handlerCfg common.HandlerConfig) {
 		handlers.SetupHandlers(r, handlerCfg)
+
 		ctx := context.WithValue(context.Background(), ctxKey("key"), "value")
-		newCtx, err := g.AuthenticateOut(ctx, "foo", "EVERYONE")
-		require.NoError(t, err, "calling authenticate out when disabled shouldn't error: %v", err)
-		require.Equal(t, newCtx.Value("foo"), ctx.Value("foo"))
+		outCtx, err := g.AuthenticateOut(ctx, "foo", "EVERYONE")
+		assert.NoError(t, err, "calling authenticate out when disabled shouldn't error")
+		assert.NotNil(t, outCtx, "returned context must not be nil")
+		assert.Equal(t, ctx, outCtx, "disabled galileo should not modify context")
 	})
 }
 
-var createVars = []struct {
-	name  string
-	noKey bool
+// TestAuthenticateOut covers only well formed input parameters.
+func TestAuthenticateOut(t *testing.T) {
+	name := "wonkaSample:foober"
 
-	errMsg string
-}{
-	{name: "wonkaSample:foober"},
-	{errMsg: "Configuration must have ServiceName parameter set"},
-}
+	var galileoVars = []struct {
+		descr         string // describes the test case
+		ctxClaim      string
+		explicitClaim string
+		err           error
+	}{
+		{descr: "simple"},
+		{descr: "context claim allowed", ctxClaim: name},
+		{descr: "context claim rejected", explicitClaim: "impossible-claim",
+			// Assertions  on exact error messages are brittle, but,
+			// I currently have no other way to compare zap logs.
+			err: errors.New(`error requesting claim: error from /claim/v2: 403 error from server: {"result":"REJECTED_CLAIM_NO_ACCESS"}`),
+		},
+		{descr: "explicit claim ", explicitClaim: "EVERYONE"},
+	}
 
-func TestCreate(t *testing.T) {
-	log := zap.L()
-	for idx, m := range createVars {
-		wonkatestdata.WithWonkaMaster(m.name, func(r common.Router, handlerCfg common.HandlerConfig) {
-			handlers.SetupHandlers(r, handlerCfg)
+	for _, m := range galileoVars {
+		t.Run(m.descr, func(t *testing.T) {
+			wonkatestdata.WithWonkaMaster("", func(r common.Router, handlerCfg common.HandlerConfig) {
+				handlers.SetupHandlers(r, handlerCfg)
 
-			wonkatestdata.WithTempDir(func(dir string) {
-				oldAuthSock := os.Getenv("SSH_AUTH_SOCK")
-				os.Unsetenv("SSH_AUTH_SOCK")
+				obs, logs := observer.New(zap.DebugLevel)
+				logger := zap.New(obs)
+				metrics := tally.NewTestScope("", map[string]string{})
+				tracer, ctx, _ := testhelper.SetupContext()
 
-				log.Debug("tempdir", zap.String("path", dir))
-				privatePem := path.Join(dir, "private.pem")
 				privKey := wonkatestdata.PrivateKey()
-				err := wonkatestdata.WritePrivateKey(privKey, privatePem)
-				require.NoError(t, err, "%d writing private key: %v", idx, err)
+				testhelper.EnrollEntity(ctx, t, handlerCfg.DB, name, privKey)
 
 				cfg := Configuration{
-					ServiceName:     m.name,
-					PrivateKeyPath:  privatePem,
-					AllowedEntities: []string{m.name},
-					Tracer:          mocktracer.New(),
+					ServiceName:       name,
+					PrivateKeyPath:    testhelper.PrivatePemFromKey(privKey),
+					AllowedEntities:   []string{name},
+					EnforcePercentage: 1,
+					Logger:            logger,
+					Metrics:           metrics,
+					Tracer:            tracer,
 				}
 
-				if m.noKey {
-					cfg.PrivateKeyPath = ""
+				g, err := CreateWithContext(ctx, cfg)
+				require.NoError(t, err, "galileo creation should succeed")
+				require.NotNil(t, g, "galileo shouldn't be nil")
+
+				// Discard logs written by CreateWithContext because it is
+				// not the system under test.
+				_ = logs.TakeAll()
+
+				expectedClaim := "" // expected explicit claim
+				claimArgs := []interface{}{}
+				if m.ctxClaim != "" {
+					ctx = WithClaim(ctx, m.ctxClaim)
+					expectedClaim = m.ctxClaim
+				}
+				if m.explicitClaim != "" {
+					expectedClaim = m.explicitClaim
+					// Passing empty string to AuthenticateOut
+					// overrides the ctxClaim and spoils out test.
+					claimArgs = append(claimArgs, m.explicitClaim)
 				}
 
-				_, err = Create(cfg)
-				if m.errMsg != "" {
-					require.Error(t, err, "%d should error, name %s, msg %s", idx, cfg.ServiceName, m.errMsg)
-					require.Contains(t, err.Error(), m.errMsg, "%d", idx)
+				authedCtx, err := g.AuthenticateOut(ctx, name, claimArgs...)
+				assert.NotEqual(t, ctx, authedCtx, "context should be modified")
+				authedSpan := opentracing.SpanFromContext(authedCtx).(*mocktracer.MockSpan)
+
+				expectedZapLevel := zapcore.DebugLevel
+				expectedZapMessage := "authenticate out succeeded"
+				expectBaggage := true
+				if m.err != nil {
+					expectedZapLevel = zapcore.WarnLevel
+					expectedZapMessage = "authenticate out failed"
+					expectBaggage = false
+				}
+				testhelper.AssertZapLog(t, logs, expectedZapLevel, expectedZapMessage,
+					[]zapcore.Field{
+						zap.Namespace("galileo"),
+						zap.String("entity", name),
+						zap.String("version", internal.LibraryVersion()),
+						zap.Error(m.err), // ok when err is nil
+						zap.Bool("has_baggage", expectBaggage),
+						zap.String("destination", name),
+						zap.String("claim", expectedClaim),
+						jaegerzap.Trace(authedCtx),
+					})
+
+				testhelper.AssertSpanFieldsLogged(t, authedSpan,
+					testhelper.ExpectedOutboundSpanFields(expectBaggage, name, name),
+				)
+
+				testhelper.AssertM3Counter(t, metrics, "out", 1, map[string]string{
+					"component":      "galileo",
+					"host":           "global",
+					"metricsversion": telemetry.MetricsVersion,
+					"entity":         telemetry.SanitizeEntityName(name),
+					"destination":    name,
+					"has_baggage":    strconv.FormatBool(expectBaggage),
+				})
+
+				// T1314721 always succeed, even without auth baggage.
+				require.NoError(t, err, "AuthenticateOut should succeed")
+
+				inErr := g.AuthenticateIn(authedCtx)
+				if m.err == nil {
+					require.NoError(t, inErr, "AuthenticateIn should succeed")
 				} else {
-					require.NoError(t, err, "%d, err %v", idx, err)
+					// request with
+					require.Error(t, inErr, "Request without token should fail AuthenticateIn")
 				}
-
-				// cleanup
-				os.Setenv("SSH_AUTH_SOCK", oldAuthSock)
 			})
 		})
 	}
 }
 
-var galileoVars = []struct {
-	name          string
-	attribute     string
-	ctxClaim      string
-	explicitClaim []interface{}
-	enrolled      bool
-	noDest        bool
+// TestAuthenticateOutCallerError covers various malformed input to
+// AuthenticateOut.
+func TestAuthenticateOutCallerError(t *testing.T) {
+	name := "wonkaSample:foober"
 
-	errMsg string
-}{
-	{name: "wonkaSample:foober", attribute: "test_attribute"},
-	{name: "wonkaSample:foober", attribute: "test_attribute", enrolled: true},
-	{name: "wonkaSample:foober", attribute: "test_attribute", ctxClaim: "AD:engsec", enrolled: true},
-	{
-		name:          "wonkaSample:foober", // Verifies that the explicit claim(s) provided via `AuthenticateOut` takes precedence over the `WithClaim` result.
-		attribute:     "test_attribute",
-		ctxClaim:      "AD:engsec",
-		explicitClaim: []interface{}{"AD:engineering", "EVERYTHING"},
-		enrolled:      true,
-		errMsg:        "only one explicit claim is supported",
-	},
-	{name: "wonkaSample:foober", enrolled: true, noDest: true, errMsg: "no destination"},
-}
+	var galileoVars = []struct {
+		descr         string // describes the test case
+		disabled      bool
+		ctxClaim      string
+		explicitClaim []interface{}
+		noDest        bool
+		errMsg        string
+	}{
+		{
+			// Verifies that the explicit claim(s) provided via `AuthenticateOut` takes precedence over the `WithClaim` result.
+			descr:         "explicit claim argument preferred over context",
+			ctxClaim:      "AD:engsec",
+			explicitClaim: []interface{}{"AD:engineering", "EVERYTHING"},
+			errMsg:        "only one explicit claim is supported",
+		},
+		{descr: "no destination", noDest: true, errMsg: "no destination"},
+		{descr: "disabled no destination", disabled: true, noDest: true, errMsg: "no destination"},
+		{descr: "too many explicit claims", explicitClaim: []interface{}{"one-fish", "two-fish"}, errMsg: "only one explicit claim is supported"},
+		{descr: "disabled too many explicit claims", disabled: true, explicitClaim: []interface{}{"one-fish", "two-fish"}, errMsg: "only one explicit claim is supported"},
+	}
 
-func TestAttributes(t *testing.T) {
-	log := zap.L()
-	for idx, m := range galileoVars {
-		wonkatestdata.WithWonkaMaster(m.name, func(r common.Router, handlerCfg common.HandlerConfig) {
-			handlers.SetupHandlers(r, handlerCfg)
+	for _, m := range galileoVars {
+		t.Run(m.descr, func(t *testing.T) {
+			wonkatestdata.WithWonkaMaster("", func(r common.Router, handlerCfg common.HandlerConfig) {
+				handlers.SetupHandlers(r, handlerCfg)
 
-			wonkatestdata.WithTempDir(func(dir string) {
-				log.Debug("tempdir", zap.String("path", dir))
-				privatePem := path.Join(dir, "private.pem")
+				obs, logs := observer.New(zap.DebugLevel)
+				logger := zap.New(obs)
+				metrics := tally.NewTestScope("", map[string]string{})
+				tracer, ctx, span := testhelper.SetupContext()
+
 				privKey := wonkatestdata.PrivateKey()
-				err := wonkatestdata.WritePrivateKey(privKey, privatePem)
-				require.NoError(t, err, "%d writing private key: %v", idx, err)
-
-				tracer := mocktracer.New()
-				originalSpan := tracer.StartSpan("test-span")
-				ctx := opentracing.ContextWithSpan(context.Background(), originalSpan)
-				defer originalSpan.Finish()
+				testhelper.EnrollEntity(ctx, t, handlerCfg.DB, name, privKey)
 
 				cfg := Configuration{
-					ServiceName:     m.name,
-					PrivateKeyPath:  privatePem,
-					AllowedEntities: []string{m.name},
+					ServiceName:     name,
+					Disabled:        m.disabled,
+					PrivateKeyPath:  testhelper.PrivatePemFromKey(privKey),
+					AllowedEntities: []string{name},
+					Logger:          logger,
+					Metrics:         metrics,
 					Tracer:          tracer,
 				}
 
 				g, err := CreateWithContext(ctx, cfg)
-				require.NoError(t, err, "creating: %v", err)
-				require.False(t, g == nil, "galileo shouldn't be nil")
+				require.NoError(t, err, "galileo creation should succeed")
+				require.NotNil(t, g, "galileo shouldn't be nil")
+				// Discard logs written by CreateWithContext because it is
+				// not the system under test.
+				_ = logs.TakeAll()
 
 				if m.ctxClaim != "" {
 					ctx = WithClaim(ctx, m.ctxClaim)
 				}
 
-				if m.enrolled {
-					dest := m.name
-					if m.noDest {
-						dest = ""
-					}
-
-					ctx, err := g.AuthenticateOut(ctx, dest, m.explicitClaim...)
-					if m.errMsg != "" {
-						require.Error(t, err, "%d should error", idx)
-						require.Contains(t, err.Error(), m.errMsg, "%d", idx)
-					} else {
-						newSpan := opentracing.SpanFromContext(ctx)
-						assert.NotEqual(t, newSpan, originalSpan)
-
-						err = g.AuthenticateIn(ctx)
-						require.NoError(t, err, "%d, authorize: %v", idx, err)
-					}
+				dest := name
+				if m.noDest {
+					dest = ""
 				}
 
+				outCtx, err := g.AuthenticateOut(ctx, dest, m.explicitClaim...)
+				assert.Equal(t, ctx, outCtx, "context should not be modified")
+
+				expectedZapLevel := zapcore.ErrorLevel
+				expectedZapMessage := "AuthenticateOut caller error"
+				testhelper.AssertZapLog(t, logs, expectedZapLevel, expectedZapMessage,
+					[]zapcore.Field{
+						zap.Namespace("galileo"),
+						zap.String("entity", name),
+						zap.String("version", internal.LibraryVersion()),
+						zap.Error(err),
+						jaegerzap.Trace(ctx),
+					})
+				testhelper.AssertNoSpanFieldsLogged(t, span)
+				testhelper.AssertNoM3Counter(t, metrics, "out")
+				require.Error(t, err, "AuthenticateOut should error")
+				assert.Contains(t, err.Error(), m.errMsg)
 			})
 		})
 	}
 }
 
-// tiny helper for hiding the ugliness of setting up a wonkamaster for a test.
-func withWM(name string, fn func(wonkadb.EntityDB)) {
-	wonkatestdata.WithWonkaMaster(name, func(rtr common.Router, handlerCfg common.HandlerConfig) {
-		handlers.SetupHandlers(rtr, handlerCfg)
-		fn(handlerCfg.DB)
+func TestAuthenticateInWithDerelicts(t *testing.T) {
+	name := "server-under-test"
+	obs, logs := observer.New(zap.DebugLevel)
+	logger := zap.New(obs)
+	metrics := tally.NewTestScope("", map[string]string{})
+	tracer, ctx, span := testhelper.SetupContext()
+
+	galileotest.WithServerGalileo(t, name, func(g Galileo) {
+		time.Sleep(1 * time.Second) // Wonka client loads derelict list asynchronously
+
+		t.Run("globally derelict", func(t *testing.T) {
+			err := g.AuthenticateIn(ctx, CallerName("crufty-derelict-service"))
+			assert.NoError(t, err, "globally derelict entities should not require Wonka tokens")
+		})
+	},
+		galileotest.Logger(logger),
+		galileotest.Metrics(metrics),
+		galileotest.Tracer(tracer),
+		galileotest.GlobalDerelictEntities("crufty-derelict-service"),
+		galileotest.EnrolledEntities(name),
+	)
+
+	expectedErr := internal.ErrNoToken
+	expectedStatus := telemetry.StatusNotEnforced
+
+	testhelper.AssertZapLog(t, logs, zapcore.InfoLevel,
+		"allowing unauthenticated request",
+		[]zapcore.Field{
+			zap.Namespace("galileo"),
+			zap.String("entity", name),
+			zap.String("version", internal.LibraryVersion()),
+			zap.Error(expectedErr),
+			zap.Skip(), // destination
+			zap.Skip(), // remote_entity
+			zap.Bool("has_baggage", false),
+			zap.Bool("is_derelict", true),
+			zap.Float64("enforce_percentage", 1),
+			zap.String("allowed", expectedStatus.String()),
+			zap.String("unauthorized_reason", "no_token"),
+			jaegerzap.Trace(ctx),
+		})
+
+	testhelper.AssertSpanFieldsLogged(
+		t, span,
+		testhelper.ExpectedInboundSpanFields(
+			false, 1, expectedStatus.Int(),
+			"", "", // destination, remote_entity
+		))
+
+	testhelper.AssertM3Counter(t, metrics, "in", 1, map[string]string{
+		"metricsversion":      telemetry.MetricsVersion,
+		"component":           "galileo",
+		"host":                "global",
+		"entity":              name,
+		"has_baggage":         "false",
+		"is_derelict":         "true",
+		"allowed":             expectedStatus.String(),
+		"unauthorized_reason": "no_token",
 	})
-}
-
-func createEntity(name string, db wonkadb.WonkaDB) {
-	withTempDir(func(dir string) {
-		privPem := path.Join(dir, "wonka_private")
-		k := wonkatestdata.PrivateKey()
-		err := writePrivateKey(k, privPem)
-		if err != nil {
-			panic(err)
-		}
-
-		e := wonka.Entity{
-			EntityName:   name,
-			PublicKey:    string(publicPemFromKey(k)),
-			ECCPublicKey: eccPublicFromPrivateKey(k),
-		}
-
-		ok := db.CreateEntity(e)
-		if !ok {
-			panic("error creating entity")
-		}
-	})
-}
-
-func withTempDir(fn func(dir string)) {
-	dir, err := ioutil.TempDir("", "galileo")
-	if err != nil {
-		panic(err)
-	}
-
-	defer os.RemoveAll(dir)
-	cwd, err := os.Getwd()
-	if err != nil {
-		panic(err)
-	}
-
-	defer os.Chdir(cwd)
-	os.Chdir(dir)
-
-	fn(dir)
-}
-
-func publicPemFromKey(k *rsa.PrivateKey) string {
-	b, err := x509.MarshalPKIXPublicKey(&k.PublicKey)
-	if err != nil {
-		panic(err)
-	}
-
-	return base64.StdEncoding.EncodeToString(b)
-}
-
-func eccPublicFromPrivateKey(k *rsa.PrivateKey) string {
-	h := crypto.SHA256.New()
-	h.Write([]byte(x509.MarshalPKCS1PrivateKey(k)))
-	pointKey := h.Sum(nil)
-
-	return wonka.KeyToCompressed(elliptic.P256().ScalarBaseMult(pointKey))
-}
-
-func writePrivateKey(k *rsa.PrivateKey, loc string) error {
-	pemBlock := pem.Block{
-		Type:  "RSA PRIVATE KEY",
-		Bytes: x509.MarshalPKCS1PrivateKey(k),
-	}
-	e := ioutil.WriteFile(loc, pem.EncodeToMemory(&pemBlock), 0440)
-	if e != nil {
-		return e
-	}
-	return nil
 }

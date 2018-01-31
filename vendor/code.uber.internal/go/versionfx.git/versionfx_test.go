@@ -45,6 +45,12 @@ func TestModule(t *testing.T) {
 	lc.RequireStart().RequireStop()
 }
 
+func TestNopReporter(t *testing.T) {
+	var ver *Reporter
+	assert.NoError(t, ver.Report("foo", "1.0.0"))
+	assert.Equal(t, "", ver.Version("foo"))
+}
+
 func TestZeroValue(t *testing.T) {
 	ver := &Reporter{}
 	assert.Equal(t, "", ver.Version("foo"))

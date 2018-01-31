@@ -126,7 +126,7 @@ func doSignData(c CLIContext) error {
 
 	if err != nil {
 		zap.L().Error("error signing data", zap.Error(err))
-		return cli.NewExitError("", 1)
+		return cli.NewExitError(err.Error(), 1)
 	}
 
 	c.Writer().Write([]byte(base64.StdEncoding.EncodeToString(sig)))
@@ -195,7 +195,7 @@ func doVerifySignature(c CLIContext) error {
 	if c.Bool("cert") {
 		if err := doCertVerify(c, dataToSign, sig); err != nil {
 			zap.L().Error("error verifying certificate", zap.Error(err))
-			return cli.NewExitError("", 1)
+			return cli.NewExitError(err.Error(), 1)
 		}
 	} else {
 		if ok := w.Verify(c.Context(), dataToSign, sig, entity); !ok {

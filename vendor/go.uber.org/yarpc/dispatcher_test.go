@@ -1,4 +1,4 @@
-// Copyright (c) 2017 Uber Technologies, Inc.
+// Copyright (c) 2018 Uber Technologies, Inc.
 //
 // Permission is hereby granted, free of charge, to any person obtaining a copy
 // of this software and associated documentation files (the "Software"), to deal
@@ -60,6 +60,42 @@ func basicDispatcher(t testing.TB) *Dispatcher {
 	return NewDispatcher(basicConfig(t))
 }
 
+func TestDispatcherNamePanic(t *testing.T) {
+	tests := []struct {
+		name        string
+		serviceName string
+	}{
+		{
+			name: "no service name",
+		},
+		{
+			name:        "invalid service name",
+			serviceName: "--",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			require.Panics(t, func() {
+				NewDispatcher(Config{Name: tt.serviceName})
+			},
+				"expected to panic")
+		})
+	}
+}
+
+func TestDispatcherRegisterPanic(t *testing.T) {
+	d := basicDispatcher(t)
+
+	require.Panics(t, func() {
+		d.Register([]transport.Procedure{
+			{
+				HandlerSpec: transport.HandlerSpec{},
+			},
+		})
+	}, "expected unknown handler type to panic")
+}
+
 func TestInboundsReturnsACopy(t *testing.T) {
 	dispatcher := basicDispatcher(t)
 
@@ -109,8 +145,9 @@ func TestStartStopFailures(t *testing.T) {
 	tests := []struct {
 		desc string
 
-		inbounds  func(*gomock.Controller) Inbounds
-		outbounds func(*gomock.Controller) Outbounds
+		inbounds   func(*gomock.Controller) Inbounds
+		outbounds  func(*gomock.Controller) Outbounds
+		procedures func(*gomock.Controller) []transport.Procedure
 
 		wantStartErr string
 		wantStopErr  string
@@ -142,6 +179,42 @@ func TestStartStopFailures(t *testing.T) {
 						}
 				}
 				return outbounds
+			},
+		},
+		{
+			desc: "all success streaming",
+			inbounds: func(mockCtrl *gomock.Controller) Inbounds {
+				inbounds := make(Inbounds, 10)
+				for i := range inbounds {
+					in := transporttest.NewMockInbound(mockCtrl)
+					in.EXPECT().Transports()
+					in.EXPECT().SetRouter(gomock.Any())
+					in.EXPECT().Start().Return(nil)
+					in.EXPECT().Stop().Return(nil)
+					inbounds[i] = in
+				}
+				return inbounds
+			},
+			outbounds: func(mockCtrl *gomock.Controller) Outbounds {
+				outbounds := make(Outbounds, 10)
+				for i := 0; i < 10; i++ {
+					out := transporttest.NewMockStreamOutbound(mockCtrl)
+					out.EXPECT().Transports()
+					out.EXPECT().Start().Return(nil)
+					out.EXPECT().Stop().Return(nil)
+					outbounds[fmt.Sprintf("service-%v", i)] =
+						transport.Outbounds{
+							Stream: out,
+						}
+				}
+				return outbounds
+			},
+			procedures: func(mockCtrl *gomock.Controller) []transport.Procedure {
+				proc := transport.Procedure{
+					Name:        "test",
+					HandlerSpec: transport.NewStreamHandlerSpec(transporttest.NewMockStreamHandler(mockCtrl)),
+				}
+				return []transport.Procedure{proc}
 			},
 		},
 		{
@@ -295,6 +368,10 @@ func TestStartStopFailures(t *testing.T) {
 				Outbounds: tt.outbounds(mockCtrl),
 			})
 
+			if tt.procedures != nil {
+				dispatcher.Register(tt.procedures(mockCtrl))
+			}
+
 			err := dispatcher.Start()
 			if tt.wantStartErr != "" {
 				if assert.Error(t, err, "expected Start() to fail") {
@@ -347,6 +424,50 @@ func TestClientConfig(t *testing.T) {
 
 	assert.Equal(t, "test", cc.Caller())
 	assert.Equal(t, "my-test-service", cc.Service())
+}
+
+func TestClientConfigError(t *testing.T) {
+	dispatcher := NewDispatcher(Config{
+		Name: "test",
+		Outbounds: Outbounds{
+			"my-test-service": {
+				Unary: http.NewTransport().NewSingleOutbound("http://127.0.0.1:1234"),
+			},
+		},
+	})
+
+	assert.Panics(t, func() { dispatcher.ClientConfig("wrong test name") })
+}
+
+func TestOutboundConfig(t *testing.T) {
+	dispatcher := NewDispatcher(Config{
+		Name: "test",
+		Outbounds: Outbounds{
+			"my-test-service": {
+				Unary: http.NewTransport().NewSingleOutbound("http://127.0.0.1:1234"),
+			},
+		},
+	})
+
+	cc := dispatcher.MustOutboundConfig("my-test-service")
+	assert.Equal(t, "test", cc.CallerName)
+	assert.Equal(t, "my-test-service", cc.Outbounds.ServiceName)
+}
+
+func TestOutboundConfigError(t *testing.T) {
+	dispatcher := NewDispatcher(Config{
+		Name: "test",
+		Outbounds: Outbounds{
+			"my-test-service": {
+				Unary: http.NewTransport().NewSingleOutbound("http://127.0.0.1:1234"),
+			},
+		},
+	})
+
+	assert.Panics(t, func() { dispatcher.MustOutboundConfig("wrong test name") })
+	oc, ok := dispatcher.OutboundConfig("wrong test name")
+	assert.False(t, ok, "getting outbound config should not have succeeded")
+	assert.Nil(t, oc, "getting outbound config should not have succeeded")
 }
 
 func TestInboundMiddleware(t *testing.T) {

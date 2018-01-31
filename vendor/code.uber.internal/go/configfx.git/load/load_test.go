@@ -1,4 +1,4 @@
-package load
+package load_test
 
 import (
 	"fmt"
@@ -7,6 +7,8 @@ import (
 	"path/filepath"
 	"testing"
 
+	"code.uber.internal/go/configfx.git"
+	"code.uber.internal/go/configfx.git/load"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
@@ -29,7 +31,7 @@ func TestLoadTestProvider(t *testing.T) {
 	defer func() { assert.NoError(os.Remove(tst.Name())) }()
 	fmt.Fprint(tst, "dir: ${CONFIG_DIR:test}")
 
-	p, err := TestProvider()
+	p, err := load.TestProvider()
 	require.NoError(t, err)
 	assert.Equal("base", p.Get("source").String())
 	assert.Equal("test", p.Get("dir").String())
@@ -42,18 +44,19 @@ func TestErrorWhenNoFilesLoaded(t *testing.T) {
 	require.NoError(t, err)
 	defer func() { assert.NoError(t, os.Remove(dir)) }()
 
-	_, err = FromFiles(nil, nil, nil)
+	_, err = load.FromFiles(nil, nil, nil)
 	require.Error(t, err)
-	assert.Contains(t, err.Error(), "no providers were loaded")
+	assert.True(t, configfx.IsNoFilesFoundErr(err))
+	assert.Contains(t, err.Error(), "no configuration files found")
 }
 
 func TestLoadFromFiles(t *testing.T) {
 	t.Parallel()
 
 	withBase(t, func(dir string) {
-		_, err := FromFiles(
+		_, err := load.FromFiles(
 			[]string{dir},
-			[]FileInfo{
+			[]load.FileInfo{
 				{Name: "base.yaml", Interpolate: true},
 
 				// development.yaml doesn't exist, we should skip it
@@ -71,9 +74,9 @@ func TestLoadFromFilesWithoutInterpolation(t *testing.T) {
 	t.Parallel()
 
 	withBase(t, func(dir string) {
-		p, err := FromFiles(
+		p, err := load.FromFiles(
 			[]string{dir},
-			[]FileInfo{{Name: "base.yaml", Interpolate: false}},
+			[]load.FileInfo{{Name: "base.yaml", Interpolate: false}},
 			func(string) (string, bool) { return "", false },
 		)
 
@@ -102,9 +105,9 @@ func TestLoadOnlyFromBase(t *testing.T) {
 	t.Parallel()
 
 	withBase(t, func(dir string) {
-		p, err := FromFiles(
+		p, err := load.FromFiles(
 			[]string{dir},
-			[]FileInfo{
+			[]load.FileInfo{
 				{Name: "base.yaml", Interpolate: true},
 
 				// development.yaml doesn't exist, we should skip it

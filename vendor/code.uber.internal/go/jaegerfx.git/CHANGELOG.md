@@ -1,5 +1,14 @@
 # Changelog
 
+## v1.2.0 (2017-12-18)
+
+- Add canonical import path directive. This will provide better error messages
+  if incorrect import paths are used to import the package.
+- Add jaegerhttp package providing re-usable Jaeger tracing middleware for
+  different HTTP servers and clients.
+- jaegerfx now provides HTTP client and server tracing middleware to the
+  container.
+
 ## v1.1.0 (2017-08-22)
 
 - Always setup the global OpenTracing tracer even if nothing else consumes the

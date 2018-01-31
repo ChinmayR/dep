@@ -90,6 +90,7 @@ var enrollVars = []struct {
 	badTime     bool
 	update      bool
 	xwonkaauth  bool
+	claim       bool
 
 	result string
 }{
@@ -106,6 +107,8 @@ var enrollVars = []struct {
 	{name: "wonkaSample:test", sig: true, badTime: true, result: wonka.ErrTimeWindow},
 	{name: "wonkaSample:test", sig: true, result: wonka.ResultOK},
 	{name: "wonkaSample:test", sig: true, notYetValid: true, result: wonka.ErrTimeWindow},
+	{name: "wonkaSample:test", sig: true, claim: true, result: wonka.ResultOK},
+	{name: "wonkaSample:test", sig: true, xwonkaauth: true, result: wonka.ResultOK},
 }
 
 func TestEnrollHandler(t *testing.T) {
@@ -165,6 +168,11 @@ func TestEnrollHandler(t *testing.T) {
 				}
 
 				enrollReq := wonka.EnrollRequest{Entity: &entity}
+
+				if m.claim {
+					enrollReq.Claim = &wonka.Claim{EntityName: "test", Destination: "test"}
+				}
+
 				b, err := json.Marshal(enrollReq)
 				require.NoError(t, err, "%d json marshal error: %v", idx, err)
 
@@ -173,6 +181,20 @@ func TestEnrollHandler(t *testing.T) {
 				}
 
 				req, _ := http.NewRequest("GET", url, bytes.NewBuffer(b))
+
+				if m.xwonkaauth {
+					fakeToken, err := wonka.MarshalClaim(&wonka.Claim{
+						ClaimType:   "this",
+						ValidAfter:  0,
+						ValidBefore: 0,
+						EntityName:  "is",
+						Claims:      []string{"a", "bunch", "of"},
+						Destination: "fake",
+						Signature:   []byte("data"),
+					})
+					require.NoError(t, err, "no errors marshalling claim")
+					req.Header["X-Wonka-Auth"] = []string{fakeToken}
+				}
 				resp, e := client.Do(req)
 				require.NoError(t, e, "get")
 

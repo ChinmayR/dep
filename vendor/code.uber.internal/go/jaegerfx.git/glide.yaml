@@ -8,6 +8,8 @@ import:
   version: ^1
 - package: github.com/opentracing/opentracing-go
   version: ^1.0.2
+  subpackages:
+  - ext
 - package: github.com/uber-go/tally
   version: ^3.0.1
 - package: github.com/uber/jaeger-client-go
@@ -16,6 +18,7 @@ import:
   - config
   - log/zap
 - package: github.com/uber/jaeger-lib
+  version: ^1.1.0
   subpackages:
   - metrics/tally
 - package: go.uber.org/config

@@ -3,7 +3,7 @@ import:
 - package: go.uber.org/config
   version: ^1
 - package: code.uber.internal/go/envfx.git
-  version: ^1
+  version: ^1.2.1 # required for Context.LookupEnv
 - package: go.uber.org/fx
   version: ^1
 testImport:

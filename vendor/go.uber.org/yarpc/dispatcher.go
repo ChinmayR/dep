@@ -1,4 +1,4 @@
-// Copyright (c) 2017 Uber Technologies, Inc.
+// Copyright (c) 2018 Uber Technologies, Inc.
 //
 // Permission is hereby granted, free of charge, to any person obtaining a copy
 // of this software and associated documentation files (the "Software"), to deal
@@ -26,16 +26,16 @@ import (
 	"sync"
 
 	"go.uber.org/multierr"
+	"go.uber.org/net/metrics"
 	"go.uber.org/yarpc/api/middleware"
 	"go.uber.org/yarpc/api/transport"
 	"go.uber.org/yarpc/internal"
-	"go.uber.org/yarpc/internal/clientconfig"
 	"go.uber.org/yarpc/internal/errorsync"
 	"go.uber.org/yarpc/internal/inboundmiddleware"
 	"go.uber.org/yarpc/internal/observability"
 	"go.uber.org/yarpc/internal/outboundmiddleware"
-	"go.uber.org/yarpc/internal/pally"
 	"go.uber.org/yarpc/internal/request"
+	"go.uber.org/yarpc/pkg/lifecycle"
 	"go.uber.org/zap"
 )
 
@@ -51,12 +51,14 @@ type Outbounds map[string]transport.Outbounds
 type OutboundMiddleware struct {
 	Unary  middleware.UnaryOutbound
 	Oneway middleware.OnewayOutbound
+	Stream middleware.StreamOutbound
 }
 
 // InboundMiddleware contains the different types of inbound middlewares.
 type InboundMiddleware struct {
 	Unary  middleware.UnaryInbound
 	Oneway middleware.OnewayInbound
+	Stream middleware.StreamInbound
 }
 
 // RouterMiddleware wraps the Router middleware
@@ -78,8 +80,8 @@ func NewDispatcher(cfg Config) *Dispatcher {
 	logger := cfg.Logging.logger(cfg.Name)
 	extractor := cfg.Logging.extractor()
 
-	registry, stopPush := cfg.Metrics.registry(cfg.Name, logger)
-	cfg = addObservingMiddleware(cfg, registry, logger, extractor)
+	meter, stopMeter := cfg.Metrics.scope(cfg.Name, logger)
+	cfg = addObservingMiddleware(cfg, meter, logger, extractor)
 
 	return &Dispatcher{
 		name:              cfg.Name,
@@ -89,19 +91,22 @@ func NewDispatcher(cfg Config) *Dispatcher {
 		transports:        collectTransports(cfg.Inbounds, cfg.Outbounds),
 		inboundMiddleware: cfg.InboundMiddleware,
 		log:               logger,
-		registry:          registry,
-		stopRegistryPush:  stopPush,
+		meter:             meter,
+		stopMeter:         stopMeter,
+		once:              lifecycle.NewOnce(),
 	}
 }
 
-func addObservingMiddleware(cfg Config, registry *pally.Registry, logger *zap.Logger, extractor observability.ContextExtractor) Config {
-	observer := observability.NewMiddleware(logger, registry, extractor)
+func addObservingMiddleware(cfg Config, meter *metrics.Scope, logger *zap.Logger, extractor observability.ContextExtractor) Config {
+	observer := observability.NewMiddleware(logger, meter, extractor)
 
 	cfg.InboundMiddleware.Unary = inboundmiddleware.UnaryChain(observer, cfg.InboundMiddleware.Unary)
 	cfg.InboundMiddleware.Oneway = inboundmiddleware.OnewayChain(observer, cfg.InboundMiddleware.Oneway)
+	cfg.InboundMiddleware.Stream = inboundmiddleware.StreamChain(observer, cfg.InboundMiddleware.Stream)
 
 	cfg.OutboundMiddleware.Unary = outboundmiddleware.UnaryChain(cfg.OutboundMiddleware.Unary, observer)
 	cfg.OutboundMiddleware.Oneway = outboundmiddleware.OnewayChain(cfg.OutboundMiddleware.Oneway, observer)
+	cfg.OutboundMiddleware.Stream = outboundmiddleware.StreamChain(cfg.OutboundMiddleware.Stream, observer)
 
 	return cfg
 }
@@ -111,13 +116,14 @@ func convertOutbounds(outbounds Outbounds, mw OutboundMiddleware) Outbounds {
 	outboundSpecs := make(Outbounds, len(outbounds))
 
 	for outboundKey, outs := range outbounds {
-		if outs.Unary == nil && outs.Oneway == nil {
+		if outs.Unary == nil && outs.Oneway == nil && outs.Stream == nil {
 			panic(fmt.Sprintf("no outbound set for outbound key %q in dispatcher", outboundKey))
 		}
 
 		var (
 			unaryOutbound  transport.UnaryOutbound
 			onewayOutbound transport.OnewayOutbound
+			streamOutbound transport.StreamOutbound
 		)
 		serviceName := outboundKey
 
@@ -132,6 +138,11 @@ func convertOutbounds(outbounds Outbounds, mw OutboundMiddleware) Outbounds {
 			onewayOutbound = request.OnewayValidatorOutbound{OnewayOutbound: onewayOutbound}
 		}
 
+		if outs.Stream != nil {
+			streamOutbound = middleware.ApplyStreamOutbound(outs.Stream, mw.Stream)
+			streamOutbound = request.StreamValidatorOutbound{StreamOutbound: streamOutbound}
+		}
+
 		if outs.ServiceName != "" {
 			serviceName = outs.ServiceName
 		}
@@ -140,6 +151,7 @@ func convertOutbounds(outbounds Outbounds, mw OutboundMiddleware) Outbounds {
 			ServiceName: serviceName,
 			Unary:       unaryOutbound,
 			Oneway:      onewayOutbound,
+			Stream:      streamOutbound,
 		}
 	}
 
@@ -169,6 +181,11 @@ func collectTransports(inbounds Inbounds, outbounds Outbounds) []transport.Trans
 				transports[transport] = struct{}{}
 			}
 		}
+		if stream := outbound.Stream; stream != nil {
+			for _, transport := range stream.Transports() {
+				transports[transport] = struct{}{}
+			}
+		}
 	}
 	keys := make([]transport.Transport, 0, len(transports))
 	for key := range transports {
@@ -188,9 +205,11 @@ type Dispatcher struct {
 
 	inboundMiddleware InboundMiddleware
 
-	log              *zap.Logger
-	registry         *pally.Registry
-	stopRegistryPush context.CancelFunc
+	log       *zap.Logger
+	meter     *metrics.Scope
+	stopMeter context.CancelFunc
+
+	once *lifecycle.Once
 }
 
 // Inbounds returns a copy of the list of inbounds for this RPC object.
@@ -211,10 +230,40 @@ func (d *Dispatcher) Inbounds() Inbounds {
 //
 // This function panics if the outboundKey is not known.
 func (d *Dispatcher) ClientConfig(outboundKey string) transport.ClientConfig {
-	if rs, ok := d.outbounds[outboundKey]; ok {
-		return clientconfig.MultiOutbound(d.name, rs.ServiceName, rs)
+	return d.MustOutboundConfig(outboundKey)
+}
+
+// MustOutboundConfig provides the configuration needed to talk to the given
+// service through an outboundKey. This configuration may be directly
+// passed into encoding-specific RPC clients.
+//
+// 	keyvalueClient := json.New(dispatcher.MustOutboundConfig("keyvalue"))
+//
+// This function panics if the outboundKey is not known.
+func (d *Dispatcher) MustOutboundConfig(outboundKey string) *transport.OutboundConfig {
+	if oc, ok := d.OutboundConfig(outboundKey); ok {
+		return oc
 	}
 	panic(fmt.Sprintf("no configured outbound transport for outbound key %q", outboundKey))
+}
+
+// OutboundConfig provides the configuration needed to talk to the given
+// service through an outboundKey. This configuration may be directly
+// passed into encoding-specific RPC clients.
+//
+//  outboundConfig, ok := dispatcher.OutboundConfig("keyvalue")
+//  if !ok {
+//    // do something
+//  }
+// 	keyvalueClient := json.New(outboundConfig)
+func (d *Dispatcher) OutboundConfig(outboundKey string) (oc *transport.OutboundConfig, ok bool) {
+	if out, ok := d.outbounds[outboundKey]; ok {
+		return &transport.OutboundConfig{
+			CallerName: d.name,
+			Outbounds:  out,
+		}, true
+	}
+	return nil, false
 }
 
 // InboundMiddleware returns the middleware applied to all inbound handlers.
@@ -240,6 +289,10 @@ func (d *Dispatcher) Register(rs []transport.Procedure) {
 			h := middleware.ApplyOnewayInbound(r.HandlerSpec.Oneway(),
 				d.inboundMiddleware.Oneway)
 			r.HandlerSpec = transport.NewOnewayHandlerSpec(h)
+		case transport.Streaming:
+			h := middleware.ApplyStreamInbound(r.HandlerSpec.Stream(),
+				d.inboundMiddleware.Stream)
+			r.HandlerSpec = transport.NewStreamHandlerSpec(h)
 		default:
 			panic(fmt.Sprintf("unknown handler type %q for service %q, procedure %q",
 				r.HandlerSpec.Type(), r.Service, r.Name))
@@ -267,6 +320,10 @@ func (d *Dispatcher) Register(rs []transport.Procedure) {
 //
 // 	select {}
 func (d *Dispatcher) Start() error {
+	return d.once.Start(d.start)
+}
+
+func (d *Dispatcher) start() error {
 	// NOTE: These MUST be started in the order transports, outbounds, and
 	// then inbounds.
 	//
@@ -335,6 +392,7 @@ func (d *Dispatcher) Start() error {
 	for _, o := range d.outbounds {
 		wait.Submit(start(o.Unary))
 		wait.Submit(start(o.Oneway))
+		wait.Submit(start(o.Stream))
 	}
 	if errs := wait.Wait(); len(errs) != 0 {
 		return abort(errs)
@@ -362,6 +420,10 @@ func (d *Dispatcher) Start() error {
 //
 // This function returns after everything has been stopped.
 func (d *Dispatcher) Stop() error {
+	return d.once.Stop(d.stop)
+}
+
+func (d *Dispatcher) stop() error {
 	// NOTE: These MUST be stopped in the order inbounds, outbounds, and then
 	// transports.
 	//
@@ -396,6 +458,9 @@ func (d *Dispatcher) Stop() error {
 		if o.Oneway != nil {
 			wait.Submit(o.Oneway.Stop)
 		}
+		if o.Stream != nil {
+			wait.Submit(o.Stream.Stop)
+		}
 	}
 	if errs := wait.Wait(); len(errs) > 0 {
 		allErrs = append(allErrs, errs...)
@@ -419,7 +484,7 @@ func (d *Dispatcher) Stop() error {
 
 	// Stop pushing metrics to Tally.
 	d.log.Debug("Stopping metrics push loop, if any.")
-	d.stopRegistryPush()
+	d.stopMeter()
 	d.log.Debug("Stopped metrics push loop, if any.")
 
 	d.log.Info("Completed shutdown.")

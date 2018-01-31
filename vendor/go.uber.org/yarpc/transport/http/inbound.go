@@ -1,4 +1,4 @@
-// Copyright (c) 2017 Uber Technologies, Inc.
+// Copyright (c) 2018 Uber Technologies, Inc.
 //
 // Permission is hereby granted, free of charge, to any person obtaining a copy
 // of this software and associated documentation files (the "Software"), to deal
@@ -31,6 +31,7 @@ import (
 	intnet "go.uber.org/yarpc/internal/net"
 	"go.uber.org/yarpc/pkg/lifecycle"
 	"go.uber.org/yarpc/yarpcerrors"
+	"go.uber.org/zap"
 )
 
 // InboundOption customizes the behavior of an HTTP Inbound constructed with
@@ -48,6 +49,17 @@ func Mux(pattern string, mux *http.ServeMux) InboundOption {
 	return func(i *Inbound) {
 		i.mux = mux
 		i.muxPattern = pattern
+	}
+}
+
+// Interceptor specifies a function which can wrap the YARPC handler. If
+// provided, this function will be called with an http.Handler which will
+// route requests through YARPC. The http.Handler returned by this function
+// may delegate requests to the provided YARPC handler to route them through
+// YARPC.
+func Interceptor(interceptor func(yarpcHandler http.Handler) http.Handler) InboundOption {
+	return func(i *Inbound) {
+		i.interceptor = interceptor
 	}
 }
 
@@ -71,11 +83,13 @@ func GrabHeaders(headers ...string) InboundOption {
 // sharing this transport.
 func (t *Transport) NewInbound(addr string, opts ...InboundOption) *Inbound {
 	i := &Inbound{
-		once:        lifecycle.NewOnce(),
-		addr:        addr,
-		tracer:      t.tracer,
-		transport:   t,
-		grabHeaders: make(map[string]struct{}),
+		once:              lifecycle.NewOnce(),
+		addr:              addr,
+		tracer:            t.tracer,
+		logger:            t.logger,
+		transport:         t,
+		grabHeaders:       make(map[string]struct{}),
+		bothResponseError: true,
 	}
 	for _, opt := range opts {
 		opt(i)
@@ -92,10 +106,15 @@ type Inbound struct {
 	server      *intnet.HTTPServer
 	router      transport.Router
 	tracer      opentracing.Tracer
+	logger      *zap.Logger
 	transport   *Transport
 	grabHeaders map[string]struct{}
+	interceptor func(http.Handler) http.Handler
 
 	once *lifecycle.Once
+
+	// should only be false in testing
+	bothResponseError bool
 }
 
 // Tracer configures a tracer on this inbound.
@@ -133,9 +152,13 @@ func (i *Inbound) start() error {
 	}
 
 	var httpHandler http.Handler = handler{
-		router:      i.router,
-		tracer:      i.tracer,
-		grabHeaders: i.grabHeaders,
+		router:            i.router,
+		tracer:            i.tracer,
+		grabHeaders:       i.grabHeaders,
+		bothResponseError: i.bothResponseError,
+	}
+	if i.interceptor != nil {
+		httpHandler = i.interceptor(httpHandler)
 	}
 	if i.mux != nil {
 		i.mux.Handle(i.muxPattern, httpHandler)
@@ -151,6 +174,10 @@ func (i *Inbound) start() error {
 	}
 
 	i.addr = i.server.Listener().Addr().String() // in case it changed
+	i.logger.Info("started HTTP inbound", zap.String("address", i.addr))
+	if len(i.router.Procedures()) == 0 {
+		i.logger.Warn("no procedures specified for HTTP inbound")
+	}
 	return nil
 }
 

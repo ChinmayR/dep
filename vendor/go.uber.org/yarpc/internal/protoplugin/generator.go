@@ -1,4 +1,4 @@
-// Copyright (c) 2017 Uber Technologies, Inc.
+// Copyright (c) 2018 Uber Technologies, Inc.
 //
 // Permission is hereby granted, free of charge, to any person obtaining a copy
 // of this software and associated documentation files (the "Software"), to deal
@@ -116,7 +116,7 @@ func (g *generator) generate(file *File) (string, error) {
 	for _, svc := range file.Services {
 		for _, m := range svc.Methods {
 			for _, pkg := range []*GoPackage{m.RequestType.File.GoPackage, m.ResponseType.File.GoPackage} {
-				if pkg == file.GoPackage {
+				if pkg.Path == file.GoPackage.Path {
 					continue
 				}
 				if pkgSeen[pkg.Path] {

@@ -1,7 +1,6 @@
 package keyhelper_test
 
 import (
-	"bytes"
 	"crypto/rand"
 	"crypto/rsa"
 	"crypto/x509"
@@ -56,34 +55,47 @@ func TestRSAFromFile(t *testing.T) {
 	})
 }
 
-func TestRSAAndECC(t *testing.T) {
+func TestRSAAndECCFromEmptyFile(t *testing.T) {
 	wonkatestdata.WithTempDir(func(dir string) {
 		keyFile := path.Join(dir, "key.pem")
 
-		_, _, _, err := keyhelper.New().RSAAndECC(keyFile)
+		_, _, _, err := keyhelper.New().RSAAndECCFromFile(keyFile)
 		require.Error(t, err)
 		require.Contains(t, err.Error(), "no such file or directory")
+	})
+}
 
-		k, err := rsa.GenerateKey(rand.Reader, 2048)
+func TestRSAAndECCFromFile(t *testing.T) {
+	wonkatestdata.WithTempDir(func(dir string) {
+		keyFile := path.Join(dir, "key.pem")
+		var expectedKeyBytes []byte
+		var expectedEccPub string
+
+		func() {
+			// This function hopes to make the test less confusing by ensuring
+			// temporary variables required for set up are not in scope we
+			// make assertions.
+			originalRsaKey, err := rsa.GenerateKey(rand.Reader, 2048)
+			require.NoError(t, err, "error generating a private key")
+			expectedKeyBytes = x509.MarshalPKCS1PrivateKey(originalRsaKey)
+			eccPriv := wonka.ECCFromRSA(originalRsaKey)
+			expectedEccPub = wonka.KeyToCompressed(eccPriv.PublicKey.X, eccPriv.PublicKey.Y)
+
+			pemBlock := &pem.Block{
+				Type:  "RSA PRIVATE KEY",
+				Bytes: x509.MarshalPKCS1PrivateKey(originalRsaKey),
+			}
+
+			err = ioutil.WriteFile(keyFile, pem.EncodeToMemory(pemBlock), 0666)
+			require.NoError(t, err, "error writing pem to file")
+		}()
+
+		rsaKeyFromFile, _, eccPubFromFile, err := keyhelper.New().RSAAndECCFromFile(keyFile)
 		require.NoError(t, err)
 
-		pemBlock := &pem.Block{
-			Type:  "RSA PRIVATE KEY",
-			Bytes: x509.MarshalPKCS1PrivateKey(k),
-		}
+		rsaKeyBytesFromFile := x509.MarshalPKCS1PrivateKey(rsaKeyFromFile)
 
-		err = ioutil.WriteFile(keyFile, pem.EncodeToMemory(pemBlock), 0666)
-		require.NoError(t, err)
-
-		rsaKey, _, eccPub, err := keyhelper.New().RSAAndECC(keyFile)
-		require.NoError(t, err)
-
-		rsaKeyBytes := x509.MarshalPKCS1PrivateKey(rsaKey)
-		kBytes := x509.MarshalPKCS1PrivateKey(k)
-		require.True(t, bytes.Equal(rsaKeyBytes, kBytes))
-
-		eccPriv := wonka.ECCFromRSA(k)
-		ePub := wonka.KeyToCompressed(eccPriv.PublicKey.X, eccPriv.PublicKey.Y)
-		require.Equal(t, ePub, eccPub)
+		require.Equal(t, expectedKeyBytes, rsaKeyBytesFromFile, "rsa key different after trip through file")
+		require.Equal(t, expectedEccPub, eccPubFromFile, "ecc public key different after trip through file")
 	})
 }

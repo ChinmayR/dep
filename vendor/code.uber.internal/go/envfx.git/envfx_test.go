@@ -77,7 +77,8 @@ func TestDeployment(t *testing.T) {
 func TestContainerName(t *testing.T) {
 	for _, e := range []string{"", "foo"} {
 		unset := env(t, _containerNameKey, e)
-		assert.Equal(t, e, New().Environment.ContainerName, "Unexpected result with environment variable %q.", e)
+		assert.Equal(t, e, New().Environment.ContainerName, "Unexpected container name with %s=%q.", _containerNameKey, e)
+		assert.Equal(t, e != "", New().Environment.IsMesos(), "Unexpected IsMesos result with %s=%q.", _containerNameKey, e)
 		unset()
 	}
 }
@@ -172,5 +173,66 @@ func TestRuntimeEnvironment(t *testing.T) {
 		unset := env(t, _runtimeEnvironmentKey, renv)
 		assert.Equal(t, renv, New().Environment.RuntimeEnvironment, "Unexpected result with runtime environment variable %q.", renv)
 		unset()
+	}
+}
+
+func TestInstanceID(t *testing.T) {
+	for _, id := range []string{"", "foo", "0", "10"} {
+		unset := env(t, _instanceIDKey, id)
+		assert.Equal(t, id, New().Environment.InstanceID, "Unexpected result with environment variable %q.", id)
+		unset()
+	}
+}
+
+func TestLookupEnv(t *testing.T) {
+	c := Context{
+		Environment:        "test",
+		RuntimeEnvironment: "dev",
+		Zone:               "sjc1",
+		Hostname:           "jenkins",
+		Deployment:         "staging",
+		ContainerName:      "mycontainer",
+		SystemPort:         "1234",
+		ApplicationID:      "myapp",
+		Pipeline:           "default",
+		Cluster:            "foo",
+		Pod:                "bar",
+		InstanceID:         "foo-bar",
+	}
+	unset := env(t, "TEST_ENV_KEY", "foobar")
+	defer unset()
+
+	tests := []struct {
+		name      string
+		key       string
+		want      string
+		wantFound bool
+	}{
+		{"Environment", _environmentKey, c.Environment, true},
+		{"Zone", _zoneKey, c.Zone, true},
+		{"Pipeline", _pipelineKey, c.Pipeline, true},
+		{"OS env lookup", "TEST_ENV_KEY", "foobar", true},
+		{"Not found", "NOTFOUND", "", false},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			got, gotFound := c.LookupEnv(tt.key)
+			assert.Equal(t, tt.want, got)
+			assert.Equal(t, tt.wantFound, gotFound)
+		})
+	}
+}
+
+func TestLookupEnvMiss(t *testing.T) {
+	var c Context
+	keys := []string{
+		_environmentKey,
+		_zoneKey,
+		_pipelineKey,
+	}
+	for _, k := range keys {
+		val, found := c.LookupEnv(k)
+		assert.Empty(t, val, "Expected empty string from environment lookup miss.")
+		assert.False(t, found, "Expected LookupEnv to propagate initial environment lookup miss.")
 	}
 }

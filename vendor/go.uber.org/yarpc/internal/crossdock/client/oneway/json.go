@@ -1,4 +1,4 @@
-// Copyright (c) 2017 Uber Technologies, Inc.
+// Copyright (c) 2018 Uber Technologies, Inc.
 //
 // Permission is hereby granted, free of charge, to any person obtaining a copy
 // of this software and associated documentation files (the "Software"), to deal
@@ -22,6 +22,7 @@ package oneway
 
 import (
 	"context"
+	"time"
 
 	"github.com/crossdock/crossdock-go"
 	"go.uber.org/yarpc"
@@ -40,8 +41,10 @@ func JSON(t crossdock.T, dispatcher *yarpc.Dispatcher, serverCalledBack <-chan [
 	client := json.New(dispatcher.ClientConfig("oneway-server"))
 	token := getRandomID()
 
+	ctx, cancel := context.WithTimeout(context.Background(), time.Second)
+	defer cancel()
 	ack, err := client.CallOneway(
-		context.Background(),
+		ctx,
 		"echo/json",
 		&jsonToken{Token: token},
 		yarpc.WithHeader("callBackAddr", callBackAddr),

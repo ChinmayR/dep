@@ -3,7 +3,7 @@
 //
 // See https://engdocs.uberinternal.com/uSentry/index.html for more
 // information on Uber's Sentry setup.
-package sentryfx
+package sentryfx // import "code.uber.internal/go/sentryfx.git"
 
 import (
 	"context"
@@ -20,7 +20,7 @@ import (
 
 const (
 	// Version is the current package version.
-	Version = "1.0.0"
+	Version = "1.2.0"
 	// ConfigurationKey is the portion of the service configuration that this
 	// package reads.
 	ConfigurationKey = "sentry"
@@ -161,6 +161,17 @@ func (c *core) extra() map[string]interface{} {
 	return m
 }
 
+// modifierClient a wrapper around client that modifies the packet with packetModifier
+type modifierClient struct {
+	client
+	packetModifier func(*raven.Packet)
+}
+
+func (m *modifierClient) Capture(packet *raven.Packet, tags map[string]string) (string, chan error) {
+	m.packetModifier(packet)
+	return m.client.Capture(packet, tags)
+}
+
 // Params defines the dependencies of the sentryfx module.
 type Params struct {
 	fx.In
@@ -170,6 +181,10 @@ type Params struct {
 	Config      config.Provider
 	Lifecycle   fx.Lifecycle
 	Reporter    *versionfx.Reporter
+
+	// If specified, all Sentry packets will be transformed with this function before being posted.
+	// Existing implementations of packet modifiers are found in the packetmodifier package.
+	PacketModifier func(*raven.Packet) `optional:"true"`
 }
 
 // Result defines the objects that the sentryfx module provides.
@@ -223,7 +238,12 @@ func New(p Params) (Result, error) {
 		return nil
 	}})
 
-	return Result{
-		Core: &core{LevelEnabler: level, client: client},
-	}, nil
+	core := &core{LevelEnabler: level, client: client}
+
+	if p.PacketModifier != nil {
+		// install a wrapper client which invokes packetModifier
+		core.client = &modifierClient{client: client, packetModifier: p.PacketModifier}
+	}
+
+	return Result{Core: core}, nil
 }

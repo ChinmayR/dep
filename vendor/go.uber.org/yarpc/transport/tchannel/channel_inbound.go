@@ -1,4 +1,4 @@
-// Copyright (c) 2017 Uber Technologies, Inc.
+// Copyright (c) 2018 Uber Technologies, Inc.
 //
 // Permission is hereby granted, free of charge, to any person obtaining a copy
 // of this software and associated documentation files (the "Software"), to deal
@@ -24,6 +24,7 @@ import (
 	"go.uber.org/yarpc/api/transport"
 	"go.uber.org/yarpc/internal/introspection"
 	"go.uber.org/yarpc/pkg/lifecycle"
+	"go.uber.org/zap"
 )
 
 // ChannelInbound receives YARPC requests over TChannel.
@@ -73,7 +74,13 @@ func (i *ChannelInbound) Channel() Channel {
 // connections; that occurs when you start the underlying ChannelTransport is
 // started.
 func (i *ChannelInbound) Start() error {
-	return i.once.Start(nil)
+	return i.once.Start(func() error {
+		i.transport.logger.Info("started TChannel inbound", zap.String("address", i.transport.ListenAddr()))
+		if i.transport.router == nil || len(i.transport.router.Procedures()) == 0 {
+			i.transport.logger.Warn("no procedures specified for tchannel inbound")
+		}
+		return nil
+	})
 }
 
 // Stop stops the TChannel outbound. This currently does nothing.

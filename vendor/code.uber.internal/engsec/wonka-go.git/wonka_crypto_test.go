@@ -1,237 +1,135 @@
-package wonka_test
+package wonka
 
 import (
-	"bytes"
 	"context"
-	"crypto/rand"
-	"os"
-	"path"
+	"crypto"
+	"crypto/ecdsa"
+	"crypto/elliptic"
+	"crypto/rsa"
+	"io"
+	"math/rand"
 	"testing"
 
-	wonka "code.uber.internal/engsec/wonka-go.git"
-	. "code.uber.internal/engsec/wonka-go.git/testdata"
-	"code.uber.internal/engsec/wonka-go.git/wonkamaster/common"
-	"code.uber.internal/engsec/wonka-go.git/wonkamaster/handlers"
-	"code.uber.internal/engsec/wonka-go.git/wonkamaster/wonkatestdata"
-	"github.com/stretchr/testify/require"
 	"go.uber.org/zap"
+
+	"github.com/stretchr/testify/require"
+	"golang.org/x/crypto/ssh"
 )
 
-const (
-	Alice = "wonkaSample:alice"
-	Bob   = "wonkaSample:bob"
-)
+var mockRandSeed int64 = 0xdeadbeef
 
-var signVars = []struct {
-	from string
-
-	badSig       bool
-	badSigLength bool
-	verifies     bool
-}{
-	{verifies: true},
-	{badSig: true, verifies: false},
-	{from: Bob, verifies: false},
-	{from: Bob, badSigLength: true, verifies: false},
+func TestLoadSaveKey(t *testing.T) {
+	key := newECDSAKey(t)
+	w := newUberWonkaWithSavedKey(t, key, "foo")
+	pubkey, err := w.loadPubKeyFromCache("foo")
+	require.NoError(t, err)
+	require.Equal(t, &key.PublicKey, pubkey)
 }
 
-func TestCryptoSign(t *testing.T) {
-	for idx, m := range signVars {
-		setupWonka(t, func(alice, bob wonka.Wonka) {
-			data := make([]byte, 64)
-			_, err := rand.Read(data)
-			require.NoError(t, err, "%d rand read err: %v", idx, err)
-
-			sig, err := alice.Sign(data)
-			require.NoError(t, err, "%d sign error: %v", idx, err)
-
-			if m.badSig {
-				sig = []byte("foober")
-			}
-
-			if m.badSigLength {
-				sig = []byte("foober")
-			}
-
-			from := Alice
-			if m.from != "" {
-				from = m.from
-			}
-			ok := bob.Verify(context.Background(), data, sig, from)
-			require.Equal(t, m.verifies, ok, "test %d verify error", idx)
-		})
+func newUberWonkaWithSavedKey(t *testing.T, privkey *ecdsa.PrivateKey, entity string) *uberWonka {
+	w := &uberWonka{
+		log:        zap.L(),
+		cachedKeys: make(map[string]entityKey),
+		clientECC:  newECDSAKey(t),
 	}
-}
-func BenchmarkCryptoEncrypt(b *testing.B) {
-	defer zap.ReplaceGlobals(zap.NewNop())()
-	setupWonka(b, func(alice, bob wonka.Wonka) {
-		data := make([]byte, 1024)
-		_, err := rand.Read(data)
-		require.NoError(b, err, "reading random data: %v", err)
-
-		ctx := context.Background()
-		// prime the key loading
-		_, err = alice.Encrypt(ctx, data, bob.EntityName())
-		require.NoError(b, err, "encrypt error: %v", err)
-
-		for i := 0; i < b.N; i++ {
-			_, err = alice.Encrypt(ctx, data, bob.EntityName())
-			require.NoError(b, err, "encrypt error: %v", err)
-		}
-	})
+	w.saveKey(&privkey.PublicKey, entity)
+	return w
 }
 
-func BenchmarkCryptoDecrypt(b *testing.B) {
-	defer zap.ReplaceGlobals(zap.NewNop())()
-	setupWonka(b, func(alice, bob wonka.Wonka) {
-		ctx := context.Background()
-		data := make([]byte, 1025)
-		_, err := rand.Read(data)
-		require.NoError(b, err, "reading random data: %v", err)
-		cipherText, err := alice.Encrypt(ctx, data, bob.EntityName())
-		require.NoError(b, err, "encrypt error: %v", err)
+func TestEncryptDecrypt(t *testing.T) {
+	ctx := context.Background()
+	key := newECDSAKey(t)
+	entity := "foo"
+	plaintext := []byte("input")
+	w := newUberWonkaWithSavedKey(t, key, entity)
 
-		// prime this once
-		plainText, err := bob.Decrypt(ctx, cipherText, alice.EntityName())
-		require.NoError(b, err, "decrypt error: %v", err)
-		require.True(b, bytes.Equal(data, plainText), "text should be equal")
+	ciphertext, err := w.Encrypt(ctx, plaintext, entity)
+	require.NoError(t, err)
+	require.NotEmpty(t, ciphertext)
+	require.NotEqual(t, plaintext, ciphertext)
 
-		for i := 0; i < b.N; i++ {
-			plainText, err := bob.Decrypt(ctx, cipherText, alice.EntityName())
-			require.NoError(b, err, "decrypt error: %v", err)
-			require.True(b, bytes.Equal(data, plainText), "text should be equal")
-		}
-	})
+	output, err := w.Decrypt(ctx, ciphertext, entity)
+	require.NoError(t, err)
+	require.Equal(t, plaintext, output)
 }
 
-func BenchmarkCryptoSign(b *testing.B) {
-	defer zap.ReplaceGlobals(zap.NewNop())()
-	setupWonka(b, func(alice, _ wonka.Wonka) {
-		data := make([]byte, 1024)
-		_, err := rand.Read(data)
-		require.NoError(b, err, "reading random data: %v", err)
+func TestSignVerify(t *testing.T) {
+	key := newECDSAKey(t)
+	entity := "foo"
+	input := []byte("input")
+	w := newUberWonkaWithSavedKey(t, key, entity)
 
-		for i := 0; i < b.N; i++ {
-			_, err = alice.Sign(data)
-			require.NoError(b, err, "signing data: %v", err)
-		}
-	})
+	signature, err := w.Sign(input)
+	require.NoError(t, err)
+
+	verified := w.Verify(context.Background(), input, signature, entity)
+	require.True(t, verified)
 }
 
-func BenchmarkCryptoVerify(b *testing.B) {
-	defer zap.ReplaceGlobals(zap.NewNop())()
-	setupWonka(b, func(alice, _ wonka.Wonka) {
-		data := make([]byte, 1024)
-		_, err := rand.Read(data)
-		require.NoError(b, err, "reading random data: %v", err)
-		sig, err := alice.Sign(data)
-		require.NoError(b, err, "signing data: %v", err)
+func TestKeyHash(t *testing.T) {
+	tests := []struct {
+		description string
+		key         interface{}
+		output      string
+	}{
+		{
+			description: "rsa private key",
+			output:      "VpgpuyofH9IYSNEPxi31Yfw5QZSURrblH5pgzfgiThw=",
+			key:         newRSAKey(t),
+		},
+		{
+			description: "rsa public key",
+			output:      "g7Bfeo/n4VoAW/USfQQaLLLxwMpqlV2iWUw7osvilh8=",
+			key:         newRSAPubKey(t),
+		},
+		{
+			description: "ssh public key",
+			output:      "vRJJ3iHMzroGYrOxwwZj35XM+ybLrQU+WM5Cwr0edqo=",
+			key:         newSSHPubKey(t),
+		},
+		{
+			description: "ecdsa private key",
+			output:      "lpuDBGS98itmjmAnoRO5XCC8QfNwIGOvDWeUiSTYdCs=",
+			key:         newECDSAKey(t),
+		},
+		{
+			description: "invalid key",
+			output:      "",
+			key:         "foo",
+		},
+	}
 
-		for i := 0; i < b.N; i++ {
-			ok := alice.Verify(context.Background(), data, sig, alice.EntityName())
-			require.True(b, ok, "signature should verify")
-		}
-	})
-}
-
-var encryptVars = []struct {
-	to   string
-	from string
-
-	cipherErr  bool
-	encryptErr bool
-	decryptErr bool
-	errMsg     string
-}{
-	{to: Bob, from: Alice},
-	{to: Alice, from: Alice, decryptErr: true},
-	{to: "wonkaSample:NoSuchUser", encryptErr: true},
-}
-
-func TestCryptoEncrypt(t *testing.T) {
-	for idx, m := range encryptVars {
-		setupWonka(t, func(alice, bob wonka.Wonka) {
-			ctx := context.Background()
-			data := make([]byte, 64)
-			_, err := rand.Read(data)
-			require.NoError(t, err, "%d rand read err: %v", idx, err)
-
-			to := Bob
-			if m.to != "" {
-				to = m.to
-			}
-			cipherText, err := alice.Encrypt(ctx, data, to)
-			require.Equal(t, !m.encryptErr, err == nil, "%d, encrypt %v", idx, err)
-			if !m.encryptErr {
-				from := Alice
-				if m.from != "" {
-					from = m.from
-				}
-				plainText, err := bob.Decrypt(ctx, cipherText, from)
-				require.Equal(t, !m.decryptErr, err == nil, "%d, decrypt %v", idx, err)
-				if !m.decryptErr {
-					require.True(t, bytes.Equal(data, plainText), "%d text should be equal", idx)
-				}
-			}
+	for _, tt := range tests {
+		t.Run(tt.description, func(t *testing.T) {
+			val := KeyHash(tt.key)
+			require.Equal(t, tt.output, val)
 		})
 	}
 }
 
-// setupWonka sets up a wonkamaster instance and enrolls two entities, alice and bob,
-// suitable for communicating with each other like any two wonka entities.
-func setupWonka(t testing.TB, fn func(alice, bob wonka.Wonka)) {
-	os.Unsetenv("SSH_AUTH_SOCK")
-	WithTempDir(func(dir string) {
-		alicePrivPem := path.Join(dir, "alice.private.pem")
-		aliceK := PrivateKeyFromPem(RSAPrivKey)
-		err := WritePrivateKey(aliceK, alicePrivPem)
-		require.NoError(t, err, "error writing alice private %v", err)
+func newRSAKey(t *testing.T) *rsa.PrivateKey {
+	privkey, err := rsa.GenerateKey(newMockRandReader(), 1024)
+	require.NoError(t, err)
+	return privkey
+}
 
-		bobPrivPem := path.Join(dir, "bob.private.pem")
-		bobK := PrivateKeyFromPem(RSAPriv2)
-		err = WritePrivateKey(bobK, bobPrivPem)
-		require.NoError(t, err, "error writing bob private %v", err)
+func newRSAPubKey(t *testing.T) crypto.PublicKey {
+	privkey := newRSAKey(t)
+	return privkey.Public()
+}
 
-		wonkatestdata.WithWonkaMaster("wonkaSample:test", func(r common.Router, handlerCfg common.HandlerConfig) {
-			handlers.SetupHandlers(r, handlerCfg)
-			ctx := context.TODO()
+func newSSHPubKey(t *testing.T) *ssh.PublicKey {
+	sshPubkey, err := ssh.NewPublicKey(newRSAPubKey(t))
+	require.NoError(t, err)
+	return &sshPubkey
+}
 
-			aliceEntity := wonka.Entity{
-				EntityName:   "wonkaSample:alice",
-				PublicKey:    string(PublicPemFromKey(aliceK)),
-				ECCPublicKey: ECCPublicFromPrivateKey(aliceK),
-			}
-			err := handlerCfg.DB.Create(ctx, &aliceEntity)
-			require.NoError(t, err, "create alice failed")
+func newECDSAKey(t *testing.T) *ecdsa.PrivateKey {
+	privkey, err := ecdsa.GenerateKey(elliptic.P256(), newMockRandReader())
+	require.NoError(t, err)
+	return privkey
+}
 
-			aliceCfg := wonka.Config{
-				EntityName:     "wonkaSample:alice",
-				PrivateKeyPath: alicePrivPem,
-			}
-			alice, err := wonka.Init(aliceCfg)
-			require.NoError(t, err, "alice wonka init error: %v", err)
-
-			bobEntity := wonka.Entity{
-				EntityName:   "wonkaSample:bob",
-				PublicKey:    string(PublicPemFromKey(bobK)),
-				ECCPublicKey: ECCPublicFromPrivateKey(bobK),
-			}
-			err = handlerCfg.DB.Create(ctx, &bobEntity)
-			require.NoError(t, err, "create bob failed")
-
-			bobCfg := wonka.Config{
-				EntityName:     "wonkaSample:bob",
-				PrivateKeyPath: bobPrivPem,
-			}
-			bob, err := wonka.Init(bobCfg)
-			require.NoError(t, err, "bob wonka init error: %v", err)
-
-			// now run our test
-			fn(alice, bob)
-
-			// cleanup
-			handlerCfg.DB.Delete(ctx, aliceEntity.Name())
-			handlerCfg.DB.Delete(ctx, bobEntity.Name())
-		})
-	})
+func newMockRandReader() io.Reader {
+	return rand.New(rand.NewSource(mockRandSeed))
 }

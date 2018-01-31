@@ -1,4 +1,4 @@
-// Copyright (c) 2017 Uber Technologies, Inc.
+// Copyright (c) 2018 Uber Technologies, Inc.
 //
 // Permission is hereby granted, free of charge, to any person obtaining a copy
 // of this software and associated documentation files (the "Software"), to deal
@@ -24,6 +24,7 @@ import (
 	"bytes"
 	"context"
 	"fmt"
+	"io"
 	"io/ioutil"
 	"net"
 	"net/http"
@@ -34,6 +35,7 @@ import (
 	"github.com/golang/mock/gomock"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
+	"go.uber.org/yarpc"
 	"go.uber.org/yarpc/api/transport"
 	"go.uber.org/yarpc/api/transport/transporttest"
 	"go.uber.org/yarpc/encoding/raw"
@@ -52,11 +54,11 @@ func TestStartAddrInUse(t *testing.T) {
 	// comparison
 	assert.True(t, t1 == i1.Transports()[0], "transports must match")
 
-	i1.SetRouter(new(transporttest.MockRouter))
+	i1.SetRouter(newTestRouter(nil))
 	require.NoError(t, i1.Start(), "inbound 1 must start without an error")
 	t2 := NewTransport()
 	i2 := t2.NewInbound(i1.Addr().String())
-	i2.SetRouter(new(transporttest.MockRouter))
+	i2.SetRouter(newTestRouter(nil))
 	err := i2.Start()
 
 	require.Error(t, err)
@@ -73,7 +75,7 @@ func TestStartAddrInUse(t *testing.T) {
 func TestNilAddrAfterStop(t *testing.T) {
 	x := NewTransport()
 	i := x.NewInbound(":0")
-	i.SetRouter(new(transporttest.MockRouter))
+	i.SetRouter(newTestRouter(nil))
 	require.NoError(t, i.Start())
 	assert.NotEqual(t, ":0", i.Addr().String())
 	assert.NotNil(t, i.Addr())
@@ -84,7 +86,7 @@ func TestNilAddrAfterStop(t *testing.T) {
 func TestInboundStartAndStop(t *testing.T) {
 	x := NewTransport()
 	i := x.NewInbound(":0")
-	i.SetRouter(new(transporttest.MockRouter))
+	i.SetRouter(newTestRouter(nil))
 	require.NoError(t, i.Start())
 	assert.NotEqual(t, ":0", i.Addr().String())
 	assert.NoError(t, i.Stop())
@@ -127,6 +129,7 @@ func TestInboundMux(t *testing.T) {
 	i := httpTransport.NewInbound(":0", Mux("/rpc/v1", mux))
 	h := transporttest.NewMockUnaryHandler(mockCtrl)
 	reg := transporttest.NewMockRouter(mockCtrl)
+	reg.EXPECT().Procedures()
 	i.SetRouter(reg)
 	require.NoError(t, i.Start())
 
@@ -188,5 +191,58 @@ func TestInboundMux(t *testing.T) {
 		if assert.NoError(t, err) {
 			assert.Empty(t, s)
 		}
+	}
+}
+
+func TestMuxWithInterceptor(t *testing.T) {
+	tests := []struct {
+		path string
+		want string
+	}{
+		{
+			path: "/health",
+			want: "OK",
+		},
+		{
+			path: "/",
+			want: "intercepted",
+		},
+	}
+
+	mux := http.NewServeMux()
+	mux.HandleFunc("/health", func(w http.ResponseWriter, r *http.Request) {
+		io.WriteString(w, "OK")
+	})
+	intercept := func(transportHandler http.Handler) http.Handler {
+		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			io.WriteString(w, "intercepted")
+		})
+	}
+
+	transport := NewTransport()
+	inbound := transport.NewInbound("127.0.0.1:0", Mux("/", mux), Interceptor(intercept))
+	inbound.SetRouter(newTestRouter(nil))
+	require.NoError(t, inbound.Start(), "Failed to start inbound")
+	defer inbound.Stop()
+
+	dispatcher := yarpc.NewDispatcher(yarpc.Config{
+		Name:     "server",
+		Inbounds: yarpc.Inbounds{inbound},
+	})
+	require.NoError(t, dispatcher.Start(), "Failed to start dispatcher")
+	defer dispatcher.Stop()
+
+	for _, tt := range tests {
+		t.Run(tt.path, func(t *testing.T) {
+
+			url := fmt.Sprintf("http://%v%v", inbound.Addr(), tt.path)
+			resp, err := http.Get(url)
+			require.NoError(t, err, "GET failed")
+			defer resp.Body.Close()
+
+			body, err := ioutil.ReadAll(resp.Body)
+			require.NoError(t, err, "Failed to read body")
+			assert.Equal(t, tt.want, string(body))
+		})
 	}
 }

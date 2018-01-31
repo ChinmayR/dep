@@ -1,4 +1,4 @@
-// Copyright (c) 2017 Uber Technologies, Inc.
+// Copyright (c) 2018 Uber Technologies, Inc.
 //
 // Permission is hereby granted, free of charge, to any person obtaining a copy
 // of this software and associated documentation files (the "Software"), to deal
@@ -32,9 +32,12 @@ import (
 
 	"github.com/opentracing/opentracing-go"
 	"github.com/opentracing/opentracing-go/ext"
+	opentracinglog "github.com/opentracing/opentracing-go/log"
+	"go.uber.org/yarpc"
 	"go.uber.org/yarpc/api/peer"
 	"go.uber.org/yarpc/api/transport"
 	"go.uber.org/yarpc/internal/introspection"
+	intyarpcerrors "go.uber.org/yarpc/internal/yarpcerrors"
 	peerchooser "go.uber.org/yarpc/peer"
 	"go.uber.org/yarpc/peer/hostport"
 	"go.uber.org/yarpc/pkg/lifecycle"
@@ -98,11 +101,12 @@ func AddHeader(key, value string) OutboundOption {
 // The concrete peer type is private and intrinsic to the HTTP transport.
 func (t *Transport) NewOutbound(chooser peer.Chooser, opts ...OutboundOption) *Outbound {
 	o := &Outbound{
-		once:        lifecycle.NewOnce(),
-		chooser:     chooser,
-		urlTemplate: defaultURLTemplate,
-		tracer:      t.tracer,
-		transport:   t,
+		once:              lifecycle.NewOnce(),
+		chooser:           chooser,
+		urlTemplate:       defaultURLTemplate,
+		tracer:            t.tracer,
+		transport:         t,
+		bothResponseError: true,
 	}
 	for _, opt := range opts {
 		opt(o)
@@ -157,6 +161,9 @@ type Outbound struct {
 	headers http.Header
 
 	once *lifecycle.Once
+
+	// should only be false in testing
+	bothResponseError bool
 }
 
 // setURLTemplate configures an alternate URL template.
@@ -197,8 +204,11 @@ func (o *Outbound) IsRunning() bool {
 
 // Call makes a HTTP request
 func (o *Outbound) Call(ctx context.Context, treq *transport.Request) (*transport.Response, error) {
+	if treq == nil {
+		return nil, yarpcerrors.InvalidArgumentErrorf("request for http unary outbound was nil")
+	}
 	if err := o.once.WaitUntilRunning(ctx); err != nil {
-		return nil, err
+		return nil, intyarpcerrors.AnnotateWithInfo(yarpcerrors.FromError(err), "error waiting for http unary outbound to start for service: %s", treq.Service)
 	}
 
 	start := time.Now()
@@ -210,12 +220,16 @@ func (o *Outbound) Call(ctx context.Context, treq *transport.Request) (*transpor
 
 // CallOneway makes a oneway request
 func (o *Outbound) CallOneway(ctx context.Context, treq *transport.Request) (transport.Ack, error) {
+	if treq == nil {
+		return nil, yarpcerrors.InvalidArgumentErrorf("request for http oneway outbound was nil")
+	}
 	if err := o.once.WaitUntilRunning(ctx); err != nil {
-		return nil, err
+		return nil, intyarpcerrors.AnnotateWithInfo(yarpcerrors.FromError(err), "error waiting for http oneway outbound to start for service: %s", treq.Service)
 	}
 
 	start := time.Now()
-	var ttl time.Duration
+	deadline, _ := ctx.Deadline()
+	ttl := deadline.Sub(start)
 
 	_, err := o.call(ctx, treq, start, ttl)
 	if err != nil {
@@ -270,7 +284,7 @@ func (o *Outbound) callWithPeer(
 		}
 
 		span.SetTag("error", true)
-		span.LogEvent(err.Error())
+		span.LogFields(opentracinglog.String("event", err.Error()))
 		if err == context.DeadlineExceeded {
 			end := time.Now()
 			return nil, yarpcerrors.Newf(
@@ -288,18 +302,22 @@ func (o *Outbound) callWithPeer(
 
 	span.SetTag("http.status_code", response.StatusCode)
 
-	if response.StatusCode >= 200 && response.StatusCode < 300 {
-		appHeaders := applicationHeaders.FromHTTPHeaders(
-			response.Header, transport.NewHeaders())
-		appError := response.Header.Get(ApplicationStatusHeader) == ApplicationErrorStatus
-		return &transport.Response{
-			Headers:          appHeaders,
-			Body:             response.Body,
-			ApplicationError: appError,
-		}, nil
+	tres := &transport.Response{
+		Headers:          applicationHeaders.FromHTTPHeaders(response.Header, transport.NewHeaders()),
+		Body:             response.Body,
+		ApplicationError: response.Header.Get(ApplicationStatusHeader) == ApplicationErrorStatus,
 	}
-
-	return nil, getYARPCErrorFromResponse(response)
+	bothResponseError := response.Header.Get(BothResponseErrorHeader) == AcceptTrue
+	if bothResponseError && o.bothResponseError {
+		if response.StatusCode >= 300 {
+			return tres, getYARPCErrorFromResponse(response, true)
+		}
+		return tres, nil
+	}
+	if response.StatusCode >= 200 && response.StatusCode < 300 {
+		return tres, nil
+	}
+	return nil, getYARPCErrorFromResponse(response, false)
 }
 
 func (o *Outbound) getPeerForRequest(ctx context.Context, treq *transport.Request) (*httpPeer, func(error), error) {
@@ -332,16 +350,20 @@ func (o *Outbound) withOpentracingSpan(ctx context.Context, req *http.Request, t
 	if parentSpan := opentracing.SpanFromContext(ctx); parentSpan != nil {
 		parent = parentSpan.Context()
 	}
+	tags := opentracing.Tags{
+		"rpc.caller":    treq.Caller,
+		"rpc.service":   treq.Service,
+		"rpc.encoding":  treq.Encoding,
+		"rpc.transport": "http",
+	}
+	for k, v := range yarpc.OpentracingTags {
+		tags[k] = v
+	}
 	span := tracer.StartSpan(
 		treq.Procedure,
 		opentracing.StartTime(start),
 		opentracing.ChildOf(parent),
-		opentracing.Tags{
-			"rpc.caller":    treq.Caller,
-			"rpc.service":   treq.Service,
-			"rpc.encoding":  treq.Encoding,
-			"rpc.transport": "http",
-		},
+		tags,
 	)
 	ext.PeerService.Set(span, treq.Service)
 	ext.SpanKindRPCClient.Set(span)
@@ -386,16 +408,26 @@ func (o *Outbound) withCoreHeaders(req *http.Request, treq *transport.Request, t
 		req.Header.Set(EncodingHeader, encoding)
 	}
 
+	if o.bothResponseError {
+		req.Header.Set(AcceptsBothResponseErrorHeader, AcceptTrue)
+	}
+
 	return req
 }
 
-func getYARPCErrorFromResponse(response *http.Response) error {
-	contents, err := ioutil.ReadAll(response.Body)
-	if err != nil {
-		return yarpcerrors.Newf(yarpcerrors.CodeInternal, err.Error())
-	}
-	if err := response.Body.Close(); err != nil {
-		return yarpcerrors.Newf(yarpcerrors.CodeInternal, err.Error())
+func getYARPCErrorFromResponse(response *http.Response, bothResponseError bool) error {
+	var contents string
+	if bothResponseError {
+		contents = response.Header.Get(ErrorMessageHeader)
+	} else {
+		contentsBytes, err := ioutil.ReadAll(response.Body)
+		if err != nil {
+			return yarpcerrors.Newf(yarpcerrors.CodeInternal, err.Error())
+		}
+		contents = string(contentsBytes)
+		if err := response.Body.Close(); err != nil {
+			return yarpcerrors.Newf(yarpcerrors.CodeInternal, err.Error())
+		}
 	}
 	// use the status code if we can't get a code from the headers
 	code := statusCodeToBestCode(response.StatusCode)
@@ -406,10 +438,11 @@ func getYARPCErrorFromResponse(response *http.Response) error {
 			code = errorCode
 		}
 	}
-	return yarpcerrors.Newf(
+	return intyarpcerrors.NewWithNamef(
 		code,
-		strings.TrimSuffix(string(contents), "\n"),
-	).WithName(response.Header.Get(ErrorNameHeader))
+		response.Header.Get(ErrorNameHeader),
+		strings.TrimSuffix(contents, "\n"),
+	)
 }
 
 // Introspect returns basic status about this outbound.

@@ -1,6 +1,6 @@
 // Package tallyfx configures telemetry using Uber's open-source Tally
 // library.
-package tallyfx
+package tallyfx // import "code.uber.internal/go/tallyfx.git"
 
 import (
 	"context"
@@ -17,7 +17,7 @@ import (
 
 const (
 	// Version is the current package version.
-	Version = "1.1.2"
+	Version = "1.2.2"
 	// ConfigurationKey is the portion of the service configuration that this
 	// package reads.
 	ConfigurationKey = "metrics"
@@ -25,7 +25,7 @@ const (
 	_hostPort      = "127.0.0.1:9052"
 	_maxPacketSize = 1440
 	_interval      = 500 * time.Millisecond
-	_maxQueueSize  = 1000
+	_maxQueueSize  = 4096
 	_runtimeEnvTag = "runtime_env"
 )
 

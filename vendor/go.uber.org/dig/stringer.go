@@ -23,20 +23,28 @@ package dig
 import (
 	"bytes"
 	"fmt"
+	"strings"
 )
 
 // String representation of the entire Container
 func (c *Container) String() string {
 	b := &bytes.Buffer{}
 	fmt.Fprintln(b, "nodes: {")
-	for k, v := range c.nodes {
-		fmt.Fprintln(b, "\t", k, "->", v)
+	for k, vs := range c.providers {
+		for _, v := range vs {
+			fmt.Fprintln(b, "\t", k, "->", v)
+		}
 	}
 	fmt.Fprintln(b, "}")
 
-	fmt.Fprintln(b, "cache: {")
-	for k, v := range c.cache {
+	fmt.Fprintln(b, "values: {")
+	for k, v := range c.values {
 		fmt.Fprintln(b, "\t", k, "=>", v)
+	}
+	for k, vs := range c.groups {
+		for _, v := range vs {
+			fmt.Fprintln(b, "\t", k, "=>", v)
+		}
 	}
 	fmt.Fprintln(b, "}")
 
@@ -44,24 +52,55 @@ func (c *Container) String() string {
 }
 
 func (n *node) String() string {
-	deps := make([]string, len(n.deps))
-	for i, d := range n.deps {
-		if d.optional {
-			// ~tally.Scope means optional
-			// ~tally.Scope:foo means named optional
-			deps[i] = fmt.Sprintf("~%v", d.key)
-			continue
-		}
-		deps[i] = d.key.String()
-	}
-	return fmt.Sprintf(
-		"deps: %v, ctor: %v", deps, n.ctype,
-	)
+	return fmt.Sprintf("deps: %v, ctor: %v", n.Params, n.ctype)
 }
 
 func (k key) String() string {
 	if k.name != "" {
-		return fmt.Sprintf("%v:%s", k.t, k.name)
+		return fmt.Sprintf("%v[name=%q]", k.t, k.name)
+	}
+	if k.group != "" {
+		return fmt.Sprintf("%v[group=%q]", k.t, k.group)
 	}
 	return k.t.String()
+}
+
+func (pl paramList) String() string {
+	args := make([]string, len(pl.Params))
+	for i, p := range pl.Params {
+		args[i] = p.String()
+	}
+	return fmt.Sprint(args)
+}
+
+func (sp paramSingle) String() string {
+	// tally.Scope[optional] means optional
+	// tally.Scope[optional, name="foo"] means named optional
+
+	var opts []string
+	if sp.Optional {
+		opts = append(opts, "optional")
+	}
+	if sp.Name != "" {
+		opts = append(opts, fmt.Sprintf("name=%q", sp.Name))
+	}
+
+	if len(opts) == 0 {
+		return fmt.Sprint(sp.Type)
+	}
+
+	return fmt.Sprintf("%v[%v]", sp.Type, strings.Join(opts, ", "))
+}
+
+func (op paramObject) String() string {
+	fields := make([]string, len(op.Fields))
+	for i, f := range op.Fields {
+		fields[i] = f.Param.String()
+	}
+	return strings.Join(fields, " ")
+}
+
+func (pt paramGroupedSlice) String() string {
+	// io.Reader[group="foo"] refers to a group of io.Readers called 'foo'
+	return fmt.Sprintf("%v[group=%q]", pt.Type.Elem(), pt.Group)
 }

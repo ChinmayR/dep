@@ -1,5 +1,50 @@
 # Changelog
 
+## v1.7.0 (2018-01-22)
+
+- Log when authenticated entity name and unauthenticated caller name are different.
+- Change name of M3 metric that indicates Wonka is globally disabled. No metric
+  when Galileo is disabled by local configuration.
+- Add `galileo.CallerName` option to `AuthenticateIn` and `ValidateCredential`
+- `AuthenticateHTTPRequest` makes use of `galileo.CallerName`
+- Logs and metrics from `AuthenticateIn` indicate when caller is considered
+  derelict.
+- Logs and metrics from `AuthenticateIn` now use more specific values for
+  `unauthorized_reason`
+- Add dynamic `SetConfig` API with `EnforcePercentage` option
+- Upgrade to wonka-go v1.6
+
+## v1.6.0 (2017-12-13)
+
+- Don't validated cached outbound claims.
+- Add `galileo.GetCredential` and `galileo.ValidateCredential`
+- `galileotest.WithServerGalileo` and `galileotest.WithClientGalileo` now
+  default to a mock Jaeger tracer.
+- Add caching of inbound claim validation, with `cache.max_size` config.
+
+## v1.5.0 (2017-12-07)
+
+- Instantiating Galileo no longer attempts to enroll an entity.
+- Log inbound authentication errors at `info` instead of `warn`.
+- Add `servicealiases` configuration parameter allowing services to accept
+  tokens with one of multiple allowed destinations.
+- Add `galileotest.NewDisabled` to help customers with unit testing.
+- GetClaim and AuthenticateIn now remove Wonka token from baggage to prevent
+  leaking outside Uber or to other entities. (Wonka tokens are bearer tokens.)
+- Add metricsversion:v1 tag to M3 metrics.
+- Add yab request interceptor implementation.
+
+## v1.4.0 (2017-11-14)
+
+- AuthenticateOut returns an unmodified context without error when it cannot get
+  a Wonka token.
+- Improve observability by adding logs and M3 metrics to AuthenticateIn and
+  AuthenticateOut.
+
+## v1.3.4 (2017-11-08)
+
+- bump wonka v1.4.1
+
 ## v1.3.3 (2017.09-26)
 
 - ensure wonka never falls below 1.1.2

@@ -7,15 +7,9 @@ import (
 	galileo "code.uber.internal/engsec/galileo-go.git"
 	"code.uber.internal/engsec/galileo-go.git/galileotest"
 	"github.com/opentracing/opentracing-go/mocktracer"
+	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
-
-// We'll want to test for,
-//
-//Unauthenticated request
-//Authenticated request
-//Authenticated for a different server
-//Authenticated by a disallowed client
 
 func TestGalileoTest(t *testing.T) {
 	type ctxKey string
@@ -58,4 +52,13 @@ func TestGalileoTest(t *testing.T) {
 		galileotest.EnrolledEntities("server", "not-server", "client", "not-client"),
 		galileotest.Tracer(tracer),
 	)
+}
+
+func TestNewDisabled(t *testing.T) {
+	g := galileotest.NewDisabled(t, "Testy-McTestface")
+	ctx := context.Background()
+	ctx, err := g.AuthenticateOut(ctx, "Antarctica")
+	assert.NoError(t, err, "AuthenticateOut should succeed when Galileo is disabled")
+	err = g.AuthenticateIn(ctx)
+	assert.NoError(t, err, "AuthenticateIn should succeed when Galileo is disabled")
 }

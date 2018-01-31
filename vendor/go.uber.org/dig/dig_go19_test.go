@@ -59,8 +59,11 @@ func TestEndToEndSuccessWithAliases(t *testing.T) {
 
 		err := c.Provide(func() B { return B{} })
 		require.Error(t, err, "B should fail to provide")
-		assert.Contains(t, err.Error(), `can't provide func() dig.A`)
-		assert.Contains(t, err.Error(), `already in the container`)
+		assertErrorMatches(t, err,
+			`function "go.uber.org/dig".TestEndToEndSuccessWithAliases\S+ \(\S+:\d+\) cannot be provided:`,
+			`cannot provide dig.A from \[0\]:`,
+			`already provided by "go.uber.org/dig".TestEndToEndSuccessWithAliases\S+`,
+		)
 	})
 
 	t.Run("named instances", func(t *testing.T) {
