@@ -35,7 +35,7 @@ func (e *noVersionError) Error() string {
 	tags, err := uber.GetRepoTagsFromWorkingDirectory()
 	if err != nil {
 		fmt.Printf("\n %s: failed to get repo tag", err)
-		reportMetric = true
+		reportMetric = false
 	}
 	uber.SetTag(tags, "ProjectRoot", string(e.pn.ProjectRoot))
 	if len(e.fails) == 0 {
