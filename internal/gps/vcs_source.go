@@ -11,13 +11,11 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
-	"log"
 
 	"github.com/Masterminds/semver"
 	"github.com/golang/dep/internal/fs"
 	"github.com/golang/dep/internal/gps/pkgtree"
 	"github.com/pkg/errors"
-	"github.com/golang/dep/uber"
 )
 
 type baseVCSSource struct {
@@ -293,30 +291,7 @@ func (s *gitSource) listVersions(ctx context.Context) (vlist []PairedVersion, er
 		}
 	}
 
-	if os.Getenv(uber.UserNonDefaultGitRefs) == "yes" {
-		return
-	}
-
-	if err != nil {
-		err = errors.Wrap(err, "listVersions failed to list all versions on remote repo. No version filtration can happen")
-		return
-	}
-
-	log.New(os.Stdout, fmt.Sprintf("dep will filter non default versions. \n\tAllVersions=%s", vlist), 0)
-	vlist = s.removeNonDefaultVersions(vlist)
-	log.New(os.Stdout, fmt.Sprintf("Version filtration complete!. \n\tFilteredVersions=%s", vlist), 0)
 	return
-
-}
-
-func (s *gitSource) removeNonDefaultVersions(vlist []PairedVersion) ([]PairedVersion) {
-	var versionList []PairedVersion
-	for _, pv := range vlist {
-		if bv, ok := pv.Unpair().(branchVersion); ok && bv.isDefault {
-			versionList = append(versionList, pv)
-		}
-	}
-	return versionList
 }
 
 // gopkginSource is a specialized git source that performs additional filtering

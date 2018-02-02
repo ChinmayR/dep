@@ -16,44 +16,40 @@ import (
 	"github.com/golang/dep"
 	"github.com/golang/dep/internal/test"
 	"github.com/golang/dep/internal/test/integration"
-	"github.com/golang/dep/uber"
 )
 
 func TestIntegration(t *testing.T) {
-	defer uber.SetAndUnsetEnvVar(uber.UserNonDefaultGitRefs, "yes")()
-	//Parallel testing
-	t.Run("group", func(t *testing.T) {
-		test.NeedsExternalNetwork(t)
-		test.NeedsGit(t)
+	t.Parallel()
 
-		wd, err := os.Getwd()
+	test.NeedsExternalNetwork(t)
+	test.NeedsGit(t)
+
+	wd, err := os.Getwd()
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	relPath := filepath.Join("testdata", "harness_tests")
+	filepath.Walk(relPath, func(path string, info os.FileInfo, err error) error {
 		if err != nil {
-			t.Fatal(err)
+			t.Fatal("error walking filepath")
 		}
 
-		relPath := filepath.Join("testdata", "harness_tests")
-		filepath.Walk(relPath, func(path string, info os.FileInfo, err error) error {
-			if err != nil {
-				t.Fatal("error walking filepath")
-			}
-
-			if filepath.Base(path) != "testcase.json" {
-				return nil
-			}
-
-			parse := strings.Split(path, string(filepath.Separator))
-			testName := strings.Join(parse[2:len(parse)-1], "/")
-			t.Run(testName, func(t *testing.T) {
-				t.Parallel()
-
-				t.Run("external", testIntegration(testName, relPath, wd, execCmd))
-				t.Run("internal", testIntegration(testName, relPath, wd, runMain))
-			})
-
+		if filepath.Base(path) != "testcase.json" {
 			return nil
-		})
-	})
+		}
 
+		parse := strings.Split(path, string(filepath.Separator))
+		testName := strings.Join(parse[2:len(parse)-1], "/")
+		t.Run(testName, func(t *testing.T) {
+			t.Parallel()
+
+			t.Run("external", testIntegration(testName, relPath, wd, execCmd))
+			t.Run("internal", testIntegration(testName, relPath, wd, runMain))
+		})
+
+		return nil
+	})
 }
 
 // execCmd is a test.RunFunc which runs the program in another process.

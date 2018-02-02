@@ -22,11 +22,6 @@ const (
 	// this can be set by developers that want to turn off the slower uber specific
 	// checking + mirroring logic
 	TurnOffUberDeduceLogicEnv = "TURN_OFF_UBER_DEP_DEDUCE_LOGIC"
-
-	// this flag forces dep to list all versions on a remote package repository
-	// this can have an performance impact because dep will to use the package from
-	// all possible refs on a remote repository.
-	UserNonDefaultGitRefs = "USE_NON_DEFAULT_GIT_REFS"
 )
 
 const UBER_PREFIX = "[UBER]  "
@@ -86,10 +81,10 @@ func useRewriterWithExecutor(path string, rewriterName string, executor Executor
 
 }
 
-// GetGitoliteUrlWithPath returns a URL pointing to the repo specified by path on gitolite.
+// getGitoliteUrlWithPath returns a URL pointing to the repo specified by path on gitolite.
 // (ex "github/uber/tchannel-go", "googlesource/net", etc)
 // path should not contain a leading "/"
-func GetGitoliteUrlWithPath(path string) *url.URL {
+func getGitoliteUrlWithPath(path string) *url.URL {
 	u := new(url.URL)
 	u.User = url.User("gitolite")
 	u.Host = "code.uber.internal"
@@ -114,7 +109,7 @@ func GetGitoliteRoot(path string) string {
 }
 
 func rewriteGitolite(match []string, ex ExecutorInterface) (*url.URL, string, string, *url.URL, error) {
-	gitoliteURL := GetGitoliteUrlWithPath(strings.TrimPrefix(GetGitoliteRoot(match[0]), "code.uber.internal/"))
+	gitoliteURL := getGitoliteUrlWithPath(strings.TrimPrefix(GetGitoliteRoot(match[0]), "code.uber.internal/"))
 	return gitoliteURL, "", "", gitoliteURL, nil
 }
 
@@ -131,7 +126,7 @@ func rewriteGithub(match []string, ex ExecutorInterface) (*url.URL, string, stri
 
 	gpath := gitolitePathForGithub(user, repo)
 	remote := getGithubRemoteFromUserAndRepo(user, repo)
-	gitoliteURL := GetGitoliteUrlWithPath(gpath)
+	gitoliteURL := getGitoliteUrlWithPath(gpath)
 	return gitoliteURL, gpath, remote, gitoliteURL, nil
 }
 
@@ -196,7 +191,7 @@ func rewriteGopkgIn(match []string, ex ExecutorInterface) (*url.URL, string, str
 	// If we're running during a test/production build, assume a .lock file already exists and
 	// rewrite to gitolite (which doesn't do any HEAD trickery like gopkg.in does)
 	if os.Getenv(UberGopkgRedirectEnv) != "" {
-		gitoliteURL := GetGitoliteUrlWithPath(gpath)
+		gitoliteURL := getGitoliteUrlWithPath(gpath)
 		return gitoliteURL, "", "", gitoliteURL, nil
 	}
 
@@ -206,7 +201,7 @@ func rewriteGopkgIn(match []string, ex ExecutorInterface) (*url.URL, string, str
 
 	fullRepo := match[1]
 	remote := getGithubRemoteFromUserAndRepo(user, repo)
-	gitoliteURL := GetGitoliteUrlWithPath(gpath)
+	gitoliteURL := getGitoliteUrlWithPath(gpath)
 
 	u := new(url.URL)
 	u.Host = "gopkg.uberinternal.com"
@@ -219,7 +214,7 @@ func rewriteGolang(in []string, ex ExecutorInterface) (*url.URL, string, string,
 	repo := in[1]
 	gpath := gitolitePathForGolang(repo)
 	remote := getGolangRemoteFromRepo(repo)
-	gitoliteURL := GetGitoliteUrlWithPath(gpath)
+	gitoliteURL := getGitoliteUrlWithPath(gpath)
 	return gitoliteURL, gpath, remote, gitoliteURL, nil
 }
 

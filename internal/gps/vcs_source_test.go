@@ -5,7 +5,6 @@
 package gps
 
 import (
-	"github.com/golang/dep/uber"
 	"context"
 	"io/ioutil"
 	"net/url"
@@ -22,32 +21,18 @@ import (
 
 // Parent test that executes all the slow vcs interaction tests in parallel.
 func TestSlowVcs(t *testing.T) {
-	defer uber.SetAndUnsetEnvVar(uber.UserNonDefaultGitRefs, "yes")()
-	//Parallel testing
-	t.Run("group", func(t *testing.T) {
-		t.Run("write-deptree", testWriteDepTree)
-		t.Run("source-gateway", testSourceGateway)
-		t.Run("bzr-repo", testBzrRepo)
-		t.Run("bzr-source", testBzrSourceInteractions)
-		t.Run("svn-repo", testSvnRepo)
-		// TODO(sdboyer) svn-source
-		t.Run("hg-repo", testHgRepo)
-		t.Run("hg-source", testHgSourceInteractions)
-		t.Run("git-repo", testGitRepo)
-		t.Run("git-source", testGitSourceInteractions)
-		t.Run("gopkgin-source", testGopkginSourceInteractions)
-	})
-
-}
-
-// Parent test that executes all the slow vcs interaction tests in parallel with non-default refs filtration.
-func TestSlowVcsWithFiltrationParallel(t *testing.T) {
-	//Parallel testing
-	t.Run("group", func(t *testing.T) {
-		t.Run("git-source-one-default", testGitSourceInteractionsWithMasterOnlyBranches)
-		t.Run("git-source-multi-default", testGitSourceInteractionsWithMultiDefaultBranches)
-		t.Run("git-source-no-default", testGitSourceInteractionsWithNoDefaultBranches)
-	})
+	t.Parallel()
+	t.Run("write-deptree", testWriteDepTree)
+	t.Run("source-gateway", testSourceGateway)
+	t.Run("bzr-repo", testBzrRepo)
+	t.Run("bzr-source", testBzrSourceInteractions)
+	t.Run("svn-repo", testSvnRepo)
+	// TODO(sdboyer) svn-source
+	t.Run("hg-repo", testHgRepo)
+	t.Run("hg-source", testHgSourceInteractions)
+	t.Run("git-repo", testGitRepo)
+	t.Run("git-source", testGitSourceInteractions)
+	t.Run("gopkgin-source", testGopkginSourceInteractions)
 }
 
 func testGitSourceInteractions(t *testing.T) {
@@ -143,100 +128,6 @@ func testGitSourceInteractions(t *testing.T) {
 		t.Errorf("Unexpected error while re-checking revision presence: %s", err)
 	} else if !is {
 		t.Errorf("Revision that should exist was not present on re-check")
-	}
-}
-
-func testGitSourceInteractionsWithMasterOnlyBranches(t *testing.T) {
-	n := "github.com/sdboyer/gpkt"
-	un := "https://" + n
-	u, err := url.Parse(un)
-	if err != nil {
-		t.Fatalf("Error parsing URL %s: %s", un, err)
-	}
-	evl := []Version{
-		newDefaultBranch("master").Pair(Revision("bf85021c0405edbc4f3648b0603818d641674f72")),
-	}
-	testGitSourceInteractionsWithVersionFiltration(t, u, un, evl, 1)
-}
-
-func testGitSourceInteractionsWithMultiDefaultBranches(t *testing.T) {
-	n := "devexp/dep-utest1"
-	un := uber.GetGitoliteUrlWithPath(n)
-	evl := []Version{
-		newDefaultBranch("master").Pair(Revision("bcaedf91e9e74b970bcc2bd8b8c926c63553bf7e")),
-	}
-	testGitSourceInteractionsWithVersionFiltration(t, un, un.String(), evl, 1)
-}
-
-func testGitSourceInteractionsWithNoDefaultBranches(t *testing.T) {
-	n := "devexp/dep-utest2"
-	un := uber.GetGitoliteUrlWithPath(n)
-	evl := []Version{}
-	testGitSourceInteractionsWithVersionFiltration(t, un, un.String(), evl, 0)
-}
-
-func testGitSourceInteractionsWithVersionFiltration(t *testing.T, un *url.URL, urlString string, evl []Version, evlLen int) {
-	t.Parallel()
-
-	// This test is slowish, skip it on -short
-	if testing.Short() {
-		t.Skip("Skipping git source version fetching test in short mode")
-	}
-	requiresBins(t, "git")
-
-	cpath, err := ioutil.TempDir("", "smcache")
-	if err != nil {
-		t.Errorf("Failed to create temp dir: %s", err)
-	}
-	defer func() {
-		if err := os.RemoveAll(cpath); err != nil {
-			t.Errorf("removeAll failed: %s", err)
-		}
-	}()
-
-	mb := maybeGitSource{
-		url: un,
-	}
-
-	ctx := context.Background()
-	superv := newSupervisor(ctx)
-	isrc, state, err := mb.try(ctx, cpath, newMemoryCache(), superv)
-	if err != nil {
-		t.Fatalf("Unexpected error while setting up gitSource for test repo: %s", err)
-	}
-
-	wantstate := sourceIsSetUp | sourceExistsUpstream | sourceHasLatestVersionList
-	if state != wantstate {
-		t.Errorf("Expected return state to be %v, got %v", wantstate, state)
-	}
-
-	err = isrc.initLocal(ctx)
-	if err != nil {
-		t.Fatalf("Error on cloning git repo: %s", err)
-	}
-
-	src, ok := isrc.(*gitSource)
-	if !ok {
-		t.Fatalf("Expected a gitSource, got a %T", isrc)
-	}
-
-	if un.String() != src.upstreamURL() {
-		t.Errorf("Expected %s as source URL, got %s", un, src.upstreamURL())
-	}
-
-	pvlist, err := src.listVersions(ctx)
-	if err != nil {
-		t.Fatalf("Unexpected error getting version pairs from git repo: %s", err)
-	}
-
-	vlist := hidePair(pvlist)
-
-	if len(vlist) != evlLen {
-		t.Errorf("git test repo should've produced %s version(s), got %v: vlist was %s", evlLen, len(vlist), vlist)
-	} else {
-		if !reflect.DeepEqual(vlist, evl) {
-			t.Errorf("Version list was not what we expected:\n\t(GOT): %s\n\t(WNT): %s", vlist, evl)
-		}
 	}
 }
 
@@ -634,64 +525,60 @@ func testHgSourceInteractions(t *testing.T) {
 }
 
 func TestGitSourceListVersionsNoHEAD(t *testing.T) {
-	defer uber.SetAndUnsetEnvVar(uber.UserNonDefaultGitRefs, "yes")()
-	//Parallel testing
-	t.Run("group", func(t *testing.T) {
-		requiresBins(t, "git")
+	t.Parallel()
 
-		h := test.NewHelper(t)
-		defer h.Cleanup()
+	requiresBins(t, "git")
 
-		h.TempDir("smcache")
-		cpath := h.Path("smcache")
-		h.TempDir("repo")
-		repoPath := h.Path("repo")
+	h := test.NewHelper(t)
+	defer h.Cleanup()
+	h.TempDir("smcache")
+	cpath := h.Path("smcache")
+	h.TempDir("repo")
+	repoPath := h.Path("repo")
 
-		// Create test repo with a single commit on the master branch
-		h.RunGit(repoPath, "init")
-		h.RunGit(repoPath, "config", "--local", "user.email", "test@example.com")
-		h.RunGit(repoPath, "config", "--local", "user.name", "Test author")
-		h.RunGit(repoPath, "commit", "--allow-empty", `--message="Initial commit"`)
+	// Create test repo with a single commit on the master branch
+	h.RunGit(repoPath, "init")
+	h.RunGit(repoPath, "config", "--local", "user.email", "test@example.com")
+	h.RunGit(repoPath, "config", "--local", "user.name", "Test author")
+	h.RunGit(repoPath, "commit", "--allow-empty", `--message="Initial commit"`)
 
-		// Make HEAD point at a nonexistent branch (deleting it is not allowed)
-		// The `git ls-remote` that listVersions() calls will not return a HEAD ref
-		// because it points at a nonexistent branch
-		h.RunGit(repoPath, "symbolic-ref", "HEAD", "refs/heads/nonexistent")
+	// Make HEAD point at a nonexistent branch (deleting it is not allowed)
+	// The `git ls-remote` that listVersions() calls will not return a HEAD ref
+	// because it points at a nonexistent branch
+	h.RunGit(repoPath, "symbolic-ref", "HEAD", "refs/heads/nonexistent")
 
-		un := "file://" + filepath.ToSlash(repoPath)
-		u, err := url.Parse(un)
-		if err != nil {
-			t.Fatalf("Error parsing URL %s: %s", un, err)
-		}
-		mb := maybeGitSource{u}
+	un := "file://" + filepath.ToSlash(repoPath)
+	u, err := url.Parse(un)
+	if err != nil {
+		t.Fatalf("Error parsing URL %s: %s", un, err)
+	}
+	mb := maybeGitSource{u}
 
-		ctx := context.Background()
-		superv := newSupervisor(ctx)
-		isrc, _, err := mb.try(ctx, cpath, newMemoryCache(), superv)
-		if err != nil {
-			t.Fatalf("Unexpected error while setting up gitSource for test repo: %s", err)
-		}
+	ctx := context.Background()
+	superv := newSupervisor(ctx)
+	isrc, _, err := mb.try(ctx, cpath, newMemoryCache(), superv)
+	if err != nil {
+		t.Fatalf("Unexpected error while setting up gitSource for test repo: %s", err)
+	}
 
-		err = isrc.initLocal(ctx)
-		if err != nil {
-			t.Fatalf("Error on cloning git repo: %s", err)
-		}
+	err = isrc.initLocal(ctx)
+	if err != nil {
+		t.Fatalf("Error on cloning git repo: %s", err)
+	}
 
-		src, ok := isrc.(*gitSource)
-		if !ok {
-			t.Fatalf("Expected a gitSource, got a %T", isrc)
-		}
+	src, ok := isrc.(*gitSource)
+	if !ok {
+		t.Fatalf("Expected a gitSource, got a %T", isrc)
+	}
 
-		pvlist, err := src.listVersions(ctx)
-		if err != nil {
-			t.Fatalf("Unexpected error getting version pairs from git repo: %s", err)
-		}
+	pvlist, err := src.listVersions(ctx)
+	if err != nil {
+		t.Fatalf("Unexpected error getting version pairs from git repo: %s", err)
+	}
 
-		if len(pvlist) != 1 {
-			t.Errorf("Unexpected version pair length:\n\t(GOT): %d\n\t(WNT): %d", len(pvlist), 1)
-		}
-	})
-
+	if len(pvlist) != 1 {
+		t.Errorf("Unexpected version pair length:\n\t(GOT): %d\n\t(WNT): %d", len(pvlist), 1)
+	}
 }
 
 func TestGitSourceListVersionsNoDupes(t *testing.T) {

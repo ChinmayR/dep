@@ -15,11 +15,9 @@ import (
 	"github.com/golang/dep/internal/importers/importertest"
 	"github.com/golang/dep/internal/test"
 	"github.com/pkg/errors"
-	"github.com/golang/dep/uber"
 )
 
 func TestGvtConfig_Convert(t *testing.T) {
-	defer uber.SetAndUnsetEnvVar(uber.UserNonDefaultGitRefs, "yes")()
 	testCases := map[string]struct {
 		importertest.TestCase
 		gvtConfig gvtManifest
@@ -126,11 +124,9 @@ func TestGvtConfig_Convert(t *testing.T) {
 			}
 		})
 	}
-
 }
 
 func TestGvtConfig_Import(t *testing.T) {
-	defer uber.SetAndUnsetEnvVar(uber.UserNonDefaultGitRefs, "yes")()
 	h := test.NewHelper(t)
 	defer h.Cleanup()
 
@@ -180,7 +176,6 @@ func TestGvtConfig_Import(t *testing.T) {
 			t.Fatalf("want %s, got %s", want, got)
 		}
 	}
-
 }
 
 func TestGvtConfig_JsonLoad(t *testing.T) {

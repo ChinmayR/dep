@@ -15,11 +15,9 @@ import (
 	"github.com/golang/dep/internal/importers/importertest"
 	"github.com/golang/dep/internal/test"
 	"github.com/pkg/errors"
-	"github.com/golang/dep/uber"
 )
 
 func TestGovendConfig_Convert(t *testing.T) {
-	defer uber.SetAndUnsetEnvVar(uber.UserNonDefaultGitRefs, "yes")()
 	testCases := map[string]struct {
 		yaml govendYAML
 		importertest.TestCase
@@ -83,7 +81,6 @@ func TestGovendConfig_Convert(t *testing.T) {
 }
 
 func TestGovendConfig_Import(t *testing.T) {
-	defer uber.SetAndUnsetEnvVar(uber.UserNonDefaultGitRefs, "yes")()
 	h := test.NewHelper(t)
 	defer h.Cleanup()
 
