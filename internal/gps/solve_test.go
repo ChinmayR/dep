@@ -11,6 +11,7 @@ import (
 	"reflect"
 	"sort"
 	"testing"
+	"github.com/golang/dep/uber"
 
 	"github.com/golang/dep/internal/test"
 )
@@ -42,6 +43,7 @@ func fixSolve(params SolveParameters, sm SourceManager, t *testing.T) (Solution,
 //
 // Or, just the one named in the fix arg.
 func TestBasicSolves(t *testing.T) {
+	defer uber.SetAndUnsetEnvVar(uber.UseNonDefaultVersionBranches, "yes")()
 	// sort them by their keys so we get stable output
 	names := make([]string, 0, len(basicFixtures))
 	for n := range basicFixtures {
@@ -88,6 +90,7 @@ func solveBasicsAndCheck(fix basicFixture, t *testing.T) (res Solution, err erro
 //
 // Or, just the one named in the fix arg.
 func TestBimodalSolves(t *testing.T) {
+	defer uber.SetAndUnsetEnvVar(uber.UseNonDefaultVersionBranches, "yes")()
 	// sort them by their keys so we get stable output
 	names := make([]string, 0, len(bimodalFixtures))
 	for n := range bimodalFixtures {
@@ -214,6 +217,7 @@ func fixtureSolveSimpleChecks(fix specfix, soln Solution, err error, t *testing.
 // requirement to a mutable lock automagically is a bad direction that could
 // produce weird side effects.
 func TestRootLockNoVersionPairMatching(t *testing.T) {
+	defer uber.SetAndUnsetEnvVar(uber.UseNonDefaultVersionBranches, "yes")()
 	fix := basicFixture{
 		n: "does not match unpaired lock versions with paired real versions",
 		ds: []depspec{

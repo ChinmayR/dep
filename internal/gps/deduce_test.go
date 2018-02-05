@@ -798,7 +798,7 @@ func TestDeduceFromPath(t *testing.T) {
 					}
 
 					if fix.gopkgRedirectToGitolite == true {
-						defer uber.SetEnvVar(uber.UberGopkgRedirectEnv, "yes")()
+						defer uber.SetAndUnsetEnvVar(uber.UberGopkgRedirectEnv, "yes")()
 					}
 
 					u, in, uerr := normalizeURI(fix.in)

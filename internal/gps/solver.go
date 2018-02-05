@@ -492,7 +492,7 @@ func (s *solver) solve() (map[atom]map[string]struct{}, error) {
 				// Err means a failure somewhere down the line; try backtracking.
 				s.traceStartBacktrack(bmi, err, false)
 				s.mtr.pop()
-				if s.backtrack() {
+				if s.backtrack(bmi) {
 					// backtracking succeeded, move to the next unselected id
 					continue
 				}
@@ -539,7 +539,7 @@ func (s *solver) solve() (map[atom]map[string]struct{}, error) {
 			if err != nil {
 				// Err means a failure somewhere down the line; try backtracking.
 				s.traceStartBacktrack(bmi, err, true)
-				if s.backtrack() {
+				if s.backtrack(bmi) {
 					// backtracking succeeded, move to the next unselected id
 					continue
 				}
@@ -759,7 +759,7 @@ func (s *solver) createVersionQueue(bmi bimodalIdentifier) (*versionQueue, error
 	id := bmi.id
 	// If on the root package, there's no queue to make
 	if s.rd.isRoot(id.ProjectRoot) {
-		return newVersionQueue(id, nil, nil, s.b)
+		return newVersionQueue(id, nil, nil, s.b, s.getCurrProjectConstraint(bmi))
 	}
 
 	exists, err := s.b.SourceExists(id)
@@ -835,7 +835,7 @@ func (s *solver) createVersionQueue(bmi bimodalIdentifier) (*versionQueue, error
 		prefv = bmi.prefv
 	}
 
-	q, err := newVersionQueue(id, lockv, prefv, s.b)
+	q, err := newVersionQueue(id, lockv, prefv, s.b, s.getCurrProjectConstraint(bmi))
 	if err != nil {
 		// TODO(sdboyer) this particular err case needs to be improved to be ONLY for cases
 		// where there's absolutely nothing findable about a given project name
@@ -865,7 +865,17 @@ func (s *solver) createVersionQueue(bmi bimodalIdentifier) (*versionQueue, error
 
 	// Having assembled the queue, search it for a valid version.
 	s.traceCheckQueue(q, bmi, false, 1)
-	return q, s.findValidVersion(q, bmi.pl)
+	return q, s.findValidVersion(q, bmi.pl, bmi)
+}
+
+func (s *solver) getCurrProjectConstraint(bmi bimodalIdentifier) (Constraint) {
+	constraints := s.rd.rm.DependencyConstraints()
+	projectRoot := ProjectRoot(bmi.id.ProjectRoot)
+	if currConst, ok := constraints[projectRoot]; !ok {
+		return nil
+	} else {
+		return currConst.Constraint
+	}
 }
 
 // findValidVersion walks through a versionQueue until it finds a version that
@@ -874,7 +884,7 @@ func (s *solver) createVersionQueue(bmi bimodalIdentifier) (*versionQueue, error
 // The satisfiability checks triggered from here are constrained to operate only
 // on those dependencies induced by the list of packages given in the second
 // parameter.
-func (s *solver) findValidVersion(q *versionQueue, pl []string) error {
+func (s *solver) findValidVersion(q *versionQueue, pl []string, bmi bimodalIdentifier) error {
 	if nil == q.current() {
 		// this case should not be reachable, but reflects improper solver state
 		// if it is, so panic immediately
@@ -898,7 +908,7 @@ func (s *solver) findValidVersion(q *versionQueue, pl []string) error {
 			return nil
 		}
 
-		if q.advance(err) != nil {
+		if q.advance(err, s.getCurrProjectConstraint(bmi), ProjectRoot(bmi.id.ProjectRoot)) != nil {
 			// Error on advance, have to bail out
 			break
 		}
@@ -999,7 +1009,7 @@ func (s *solver) getLockVersionIfValid(id ProjectIdentifier) (Version, error) {
 
 // backtrack works backwards from the current failed solution to find the next
 // solution to try.
-func (s *solver) backtrack() bool {
+func (s *solver) backtrack(bmi bimodalIdentifier) bool {
 	if len(s.vqs) == 0 {
 		// nothing to backtrack to
 		return false
@@ -1029,7 +1039,6 @@ func (s *solver) backtrack() bool {
 
 		// Grab the last versionQueue off the list of queues
 		q := s.vqs[len(s.vqs)-1]
-
 		// Walk back to the next project. This may entail walking through some
 		// package-only selections.
 		var proj bool
@@ -1045,10 +1054,10 @@ func (s *solver) backtrack() bool {
 
 		// Advance the queue past the current version, which we know is bad
 		// TODO(sdboyer) is it feasible to make available the failure reason here?
-		if q.advance(nil) == nil && !q.isExhausted() {
+		if q.advance(nil, s.getCurrProjectConstraint(bmi), ProjectRoot(bmi.id.ProjectRoot)) == nil && !q.isExhausted() {
 			// Search for another acceptable version of this failed dep in its queue
 			s.traceCheckQueue(q, awp.bmi(), true, 0)
-			if s.findValidVersion(q, awp.pl) == nil {
+			if s.findValidVersion(q, awp.pl, bmi) == nil {
 				// Found one! Put it back on the selected queue and stop
 				// backtracking
 

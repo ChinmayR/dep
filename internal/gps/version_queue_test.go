@@ -8,6 +8,8 @@ import (
 	"testing"
 
 	"github.com/pkg/errors"
+	"reflect"
+	"github.com/golang/dep/uber"
 )
 
 // just need a listVersions method
@@ -22,6 +24,34 @@ var fakevl = []Version{
 	NewVersion("v1.1.0").Pair("110rev"),
 	NewVersion("v1.0.0").Pair("100rev"),
 	NewBranch("master").Pair("masterrev"),
+}
+
+var allFakeFilterVl = []Version{
+	NewVersion("v2.0.0").Pair("200rev"),
+	NewVersion("v1.1.1").Pair("111rev"),
+	NewVersion("v2.3").Pair("23rev"),
+	NewBranch("non-default-branch-version-2").Pair("non-default-branch-version-2rev"),
+	NewBranch("non-default-branch-version-3").Pair("non-default-branch-version-3rev"),
+	NewBranch("non-default-branch-version-1").Pair("non-default-branch-version-1rev"),
+	newDefaultBranch("master").Pair("masterrev"),
+	newDefaultBranch("non-master-default-branch-version").Pair("non-master-default-branch-versionrev"),
+}
+
+var withNonDefaultBranchConstVl = []Version{
+	NewVersion("v2.0.0").Pair("200rev"),
+	NewVersion("v1.1.1").Pair("111rev"),
+	NewVersion("v2.3").Pair("23rev"),
+	NewBranch("non-default-branch-version-1").Pair("non-default-branch-version-1rev"),
+	newDefaultBranch("master").Pair("masterrev"),
+	newDefaultBranch("non-master-default-branch-version").Pair("non-master-default-branch-versionrev"),
+}
+
+var withoutNonDefaultBranchConstVl = []Version{
+	NewVersion("v2.0.0").Pair("200rev"),
+	NewVersion("v1.1.1").Pair("111rev"),
+	NewVersion("v2.3").Pair("23rev"),
+	newDefaultBranch("master").Pair("masterrev"),
+	newDefaultBranch("non-master-default-branch-version").Pair("non-master-default-branch-versionrev"),
 }
 
 func init() {
@@ -44,18 +74,19 @@ func (fb *fakeFailBridge) listVersions(id ProjectIdentifier) ([]Version, error) 
 }
 
 func TestVersionQueueSetup(t *testing.T) {
+	defer uber.SetAndUnsetEnvVar(uber.UseNonDefaultVersionBranches, "yes")()
 	id := ProjectIdentifier{ProjectRoot: ProjectRoot("foo")}.normalize()
 
 	// shouldn't even need to embed a real bridge
 	fb := &fakeBridge{vl: fakevl}
 	ffb := &fakeFailBridge{}
 
-	_, err := newVersionQueue(id, nil, nil, ffb)
+	_, err := newVersionQueue(id, nil, nil, ffb, nil)
 	if err == nil {
 		t.Error("Expected err when providing no prefv or lockv, and injected bridge returns err from ListVersions()")
 	}
 
-	vq, err := newVersionQueue(id, nil, nil, fb)
+	vq, err := newVersionQueue(id, nil, nil, fb, nil)
 	if err != nil {
 		t.Errorf("Unexpected err on vq create: %s", err)
 	} else {
@@ -76,7 +107,7 @@ func TestVersionQueueSetup(t *testing.T) {
 
 	lockv := fakevl[0]
 	prefv := fakevl[1]
-	vq, err = newVersionQueue(id, lockv, nil, fb)
+	vq, err = newVersionQueue(id, lockv, nil, fb, nil)
 	if err != nil {
 		t.Errorf("Unexpected err on vq create: %s", err)
 	} else {
@@ -94,7 +125,7 @@ func TestVersionQueueSetup(t *testing.T) {
 		}
 	}
 
-	vq, err = newVersionQueue(id, nil, prefv, fb)
+	vq, err = newVersionQueue(id, nil, prefv, fb, nil)
 	if err != nil {
 		t.Errorf("Unexpected err on vq create: %s", err)
 	} else {
@@ -112,7 +143,7 @@ func TestVersionQueueSetup(t *testing.T) {
 		}
 	}
 
-	vq, err = newVersionQueue(id, lockv, prefv, fb)
+	vq, err = newVersionQueue(id, lockv, prefv, fb, nil)
 	if err != nil {
 		t.Errorf("Unexpected err on vq create: %s", err)
 	} else {
@@ -134,18 +165,57 @@ func TestVersionQueueSetup(t *testing.T) {
 	}
 }
 
+func TestFilterNonDefaultBranches(t *testing.T) {
+	id := ProjectIdentifier{ProjectRoot: ProjectRoot("testProjectRoot")}.normalize()
+
+	anyConst := anyConstraint{}
+	assertVersionListsEquality(t, id, allFakeFilterVl, anyConst, withoutNonDefaultBranchConstVl)
+
+	nonConst := noneConstraint{}
+	assertVersionListsEquality(t, id, allFakeFilterVl, nonConst, withoutNonDefaultBranchConstVl)
+
+	branchConst := NewBranch("non-default-branch-version-1")
+	assertVersionListsEquality(t, id, allFakeFilterVl, branchConst, withNonDefaultBranchConstVl)
+
+	defaultBranchConst := newDefaultBranch("non-master-default-branch-version")
+	assertVersionListsEquality(t, id, allFakeFilterVl, defaultBranchConst, withoutNonDefaultBranchConstVl)
+
+	plainVersionConst := plainVersion("2.3")
+	assertVersionListsEquality(t, id, allFakeFilterVl, plainVersionConst, withoutNonDefaultBranchConstVl)
+
+	semverConstraint,_ := NewSemverConstraint("=1.0.0")
+	assertVersionListsEquality(t, id, allFakeFilterVl, semverConstraint, withoutNonDefaultBranchConstVl)
+
+	revisionConst := Revision("branchRevision")
+	assertVersionListsEquality(t, id, allFakeFilterVl, revisionConst, withoutNonDefaultBranchConstVl)
+}
+
+func assertVersionListsEquality(t *testing.T, id ProjectIdentifier, allVersions []Version, constraint Constraint, expected []Version) {
+	actual := filterNonDefaultBranches(allVersions, constraint, id.ProjectRoot)
+	if actual == nil {
+		t.Error("Error - actual version list is nil. Expected=%s Actual=%s", expected, actual)
+	}
+	if len(actual) != len(expected) {
+		t.Error("Error - atual and expected version lists has different lengths. Actual=%s Expected=%s", len(actual), len(expected))
+	}
+	if !reflect.DeepEqual(actual, expected) {
+		t.Error("Expected version list does not equal actual version list. Expected=%s Actual=%s", expected, actual)
+	}
+}
+
 func TestVersionQueueAdvance(t *testing.T) {
+	defer uber.SetAndUnsetEnvVar(uber.UseNonDefaultVersionBranches, "yes")()
 	fb := &fakeBridge{vl: fakevl}
 	id := ProjectIdentifier{ProjectRoot: ProjectRoot("foo")}.normalize()
 
 	// First with no prefv or lockv
-	vq, err := newVersionQueue(id, nil, nil, fb)
+	vq, err := newVersionQueue(id, nil, nil, fb, nil)
 	if err != nil {
 		t.Fatalf("Unexpected err on vq create: %s", err)
 	}
 
 	for k, v := range fakevl[1:] {
-		err = vq.advance(errors.Errorf("advancment fail for %s", fakevl[k]))
+		err = vq.advance(errors.Errorf("advancment fail for %s", fakevl[k]), nil, "")
 		if err != nil {
 			t.Errorf("error on advancing vq from %s to %s", fakevl[k], v)
 			break
@@ -159,7 +229,7 @@ func TestVersionQueueAdvance(t *testing.T) {
 	if vq.isExhausted() {
 		t.Error("should not be exhausted until advancing 'past' the end")
 	}
-	if err = vq.advance(errors.Errorf("final advance failure")); err != nil {
+	if err = vq.advance(errors.Errorf("final advance failure"), nil, ""); err != nil {
 		t.Errorf("should not error on advance, even past end, but got %s", err)
 	}
 
@@ -173,7 +243,7 @@ func TestVersionQueueAdvance(t *testing.T) {
 	// now, do one with both a prefv and lockv
 	lockv := fakevl[2]
 	prefv := fakevl[0]
-	vq, err = newVersionQueue(id, lockv, prefv, fb)
+	vq, err = newVersionQueue(id, lockv, prefv, fb, nil)
 	if err != nil {
 		t.Errorf("error creating version queue: %v", err)
 	}
@@ -184,7 +254,7 @@ func TestVersionQueueAdvance(t *testing.T) {
 		t.Error("can't be exhausted, we aren't even 'allLoaded' yet")
 	}
 
-	err = vq.advance(errors.Errorf("dequeue lockv"))
+	err = vq.advance(errors.Errorf("dequeue lockv"), nil, "")
 	if err != nil {
 		t.Error("unexpected error when advancing past lockv", err)
 	} else {
@@ -196,7 +266,7 @@ func TestVersionQueueAdvance(t *testing.T) {
 		}
 	}
 
-	err = vq.advance(errors.Errorf("dequeue prefv"))
+	err = vq.advance(errors.Errorf("dequeue prefv"), nil, "")
 	if err != nil {
 		t.Error("unexpected error when advancing past prefv", err)
 	} else {
@@ -212,46 +282,46 @@ func TestVersionQueueAdvance(t *testing.T) {
 	}
 
 	// make sure the queue ordering is still right even with a double-delete
-	vq.advance(nil)
+	vq.advance(nil, nil, "")
 	if vq.current() != fakevl[3] {
 		t.Errorf("second elem after ListVersions() should be idx 3 of fakevl (%s), got %s", fakevl[3], vq.current())
 	}
-	vq.advance(nil)
+	vq.advance(nil, nil, "")
 	if vq.current() != fakevl[4] {
 		t.Errorf("third elem after ListVersions() should be idx 4 of fakevl (%s), got %s", fakevl[4], vq.current())
 	}
-	vq.advance(nil)
+	vq.advance(nil, nil, "")
 	if vq.current() != nil || !vq.isExhausted() {
 		t.Error("should be out of versions in the queue")
 	}
 
 	// Make sure we handle things correctly when listVersions adds nothing new
 	fb = &fakeBridge{vl: []Version{lockv, prefv}}
-	vq, err = newVersionQueue(id, lockv, prefv, fb)
+	vq, err = newVersionQueue(id, lockv, prefv, fb, nil)
 	if err != nil {
 		t.Errorf("error creating version queue: %v", err)
 	}
-	vq.advance(nil)
-	vq.advance(nil)
+	vq.advance(nil, nil, "")
+	vq.advance(nil, nil, "")
 	if vq.current() != nil || !vq.isExhausted() {
 		t.Errorf("should have no versions left, as ListVersions() added nothing new, but still have %s", vq.String())
 	}
-	err = vq.advance(nil)
+	err = vq.advance(nil, nil, "")
 	if err != nil {
 		t.Errorf("should be fine to advance on empty queue, per docs, but got err %s", err)
 	}
 
 	// Also handle it well when advancing calls ListVersions() and it gets an
 	// error
-	vq, err = newVersionQueue(id, lockv, nil, &fakeFailBridge{})
+	vq, err = newVersionQueue(id, lockv, nil, &fakeFailBridge{}, nil)
 	if err != nil {
 		t.Errorf("should not err on creation when preseeded with lockv, but got err %s", err)
 	}
-	err = vq.advance(nil)
+	err = vq.advance(nil, nil, "")
 	if err == nil {
 		t.Error("advancing should trigger call to erroring bridge, but no err")
 	}
-	err = vq.advance(nil)
+	err = vq.advance(nil, nil, "")
 	if err == nil {
 		t.Error("err should be stored for reuse on any subsequent calls")
 	}

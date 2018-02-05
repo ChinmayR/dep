@@ -7,6 +7,9 @@ package gps
 import (
 	"fmt"
 	"strings"
+	"log"
+	"os"
+	"github.com/golang/dep/uber"
 )
 
 type failedVersion struct {
@@ -25,7 +28,7 @@ type versionQueue struct {
 	adverr       error
 }
 
-func newVersionQueue(id ProjectIdentifier, lockv, prefv Version, b sourceBridge) (*versionQueue, error) {
+func newVersionQueue(id ProjectIdentifier, lockv, prefv Version, b sourceBridge, constraint Constraint) (*versionQueue, error) {
 	vq := &versionQueue{
 		id: id,
 		b:  b,
@@ -45,18 +48,54 @@ func newVersionQueue(id ProjectIdentifier, lockv, prefv Version, b sourceBridge)
 
 	if len(vq.pi) == 0 {
 		var err error
-		vq.pi, err = vq.b.listVersions(vq.id)
+		allVersions, err := vq.b.listVersions(vq.id)
 		if err != nil {
 			// TODO(sdboyer) pushing this error this early entails that we
 			// unconditionally deep scan (e.g. vendor), as well as hitting the
 			// network.
 			return nil, err
 		}
+		vq.pi = filterNonDefaultBranches(allVersions, constraint, vq.id.ProjectRoot)
 		vq.allLoaded = true
 	}
 
 	return vq, nil
 }
+
+
+//This function filters non-default branch versions according to these criteria:
+//1. The version is a branch version
+//2. The version is not a default branch version – a default branch version has a hash that matches that of HEAD's
+//3. There is not constraint defined on that branch version and the constraint must not be of type anyConstraint
+// – a catch-all constraint, especially when a glide file exists and is translated into dep
+func filterNonDefaultBranches(allVersions []Version, constraint Constraint, root ProjectRoot) ([]Version) {
+	if os.Getenv(uber.UseNonDefaultVersionBranches) == "yes" {
+		return allVersions
+	}
+	var filteredVersions []Version
+	for _, version := range allVersions {
+		if version.Type() == IsBranch {
+			bv := version.(versionPair).v.(branchVersion)
+			if bv.isDefault || (constraint != nil && !isAnyConstraint(constraint) && constraint.Matches(bv)) {
+				filteredVersions = append(filteredVersions, version)
+			}
+		} else {
+			filteredVersions = append(filteredVersions, version)
+		}
+	}
+	if len(allVersions) == len(filteredVersions) {
+		log.Printf("No non-default branch versions found. \n\tprojectRoot=[%s] \n\twas=%s \n\tnow=%s", root, allVersions, filteredVersions)
+	} else {
+		log.Printf("Branch version filtration complete. \n\tprojectRoot=[%s] \n\twas=%s \n\tnow=%s", root, allVersions, filteredVersions)
+	}
+	return filteredVersions
+}
+
+func isAnyConstraint(constraint Constraint) bool {
+	_, isAnyConstraint := constraint.(anyConstraint)
+	return isAnyConstraint
+}
+
 
 func (vq *versionQueue) current() Version {
 	if len(vq.pi) > 0 {
@@ -66,9 +105,10 @@ func (vq *versionQueue) current() Version {
 	return nil
 }
 
+
 // advance moves the versionQueue forward to the next available version,
 // recording the failure that eliminated the current version.
-func (vq *versionQueue) advance(fail error) error {
+func (vq *versionQueue) advance(fail error, constraint Constraint, root ProjectRoot) error {
 	// Nothing in the queue means...nothing in the queue, nicely enough
 	if vq.adverr != nil || len(vq.pi) == 0 { // should be a redundant check, but just in case
 		return vq.adverr
@@ -95,6 +135,8 @@ func (vq *versionQueue) advance(fail error) error {
 		if vq.adverr != nil {
 			return vq.adverr
 		}
+		vltmp = filterNonDefaultBranches(vltmp, constraint, root)
+
 		// defensive copy - calling listVersions here means slice contents may
 		// be modified when removing prefv/lockv.
 		vq.pi = make([]Version, len(vltmp))

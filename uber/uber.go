@@ -22,6 +22,11 @@ const (
 	// this can be set by developers that want to turn off the slower uber specific
 	// checking + mirroring logic
 	TurnOffUberDeduceLogicEnv = "TURN_OFF_UBER_DEP_DEDUCE_LOGIC"
+
+	// this flag forces dep to list all versions on a remote package repository
+	// it can have a performance impact because dep will try to use the packages
+	// from all possible refs on a remote repository
+	UseNonDefaultVersionBranches = "USE_NON_DEFAULT_VERSION_BRANCHES"
 )
 
 const UBER_PREFIX = "[UBER]  "

@@ -48,11 +48,11 @@ func TestUber_IsGopkg(t *testing.T) {
 	for _, c := range cases {
 		func(c repoTestCase) {
 			if c.redirect {
-				defer SetEnvVar(UberGopkgRedirectEnv, "yes")()
+				defer SetAndUnsetEnvVar(UberGopkgRedirectEnv, "yes")()
 			}
 
 			if !c.autocreate {
-				defer SetEnvVar(UberDisableGitoliteAutocreation, "yes")()
+				defer SetAndUnsetEnvVar(UberDisableGitoliteAutocreation, "yes")()
 			}
 			gotUrl, gotGpath, gotRemote, gotGitoliteURL, err := GetGitoliteUrlForRewriter(c.given, "gopkg.in")
 
@@ -163,7 +163,7 @@ func TestUber_IsGitoliteForGithub(t *testing.T) {
 	for _, c := range cases {
 		func(c repoTestCase) {
 			if !c.autocreate {
-				defer SetEnvVar(UberDisableGitoliteAutocreation, "yes")()
+				defer SetAndUnsetEnvVar(UberDisableGitoliteAutocreation, "yes")()
 			}
 			gotUrl, gotGpath, gotRemote, gotGitoliteURL, err := GetGitoliteUrlForRewriter(c.given, "github.com")
 
