@@ -723,6 +723,12 @@ var pathDeductionFixtures = map[string][]pathDeductionFixture{
 			mb:   maybeGitoliteSource{url: mkurl("ssh://gitolite@code.uber.internal/devexp/crashagg"),
 				gpath: "", remote:"", gitoliteURL: mkurl("ssh://gitolite@code.uber.internal/devexp/crashagg")},
 		},
+		{
+			in:   "ssh://gitolite@code.uber.internal:2222/infra/stapi-gocql.git",
+			root: "code.uber.internal/infra/stapi-gocql.git",
+			mb:   maybeGitoliteSource{url: mkurl("ssh://gitolite@code.uber.internal/infra/stapi-gocql.git"),
+				gpath: "", remote:"", gitoliteURL: mkurl("ssh://gitolite@code.uber.internal/infra/stapi-gocql.git")},
+		},
 	},
 }
 
@@ -931,6 +937,24 @@ func TestVanityDeductionSchemeMismatch(t *testing.T) {
 	_, err := dc.deduceRootPath(ctx, "ssh://golang.org/exp")
 	if err == nil {
 		t.Error("should have errored on scheme mismatch between input and go-get metadata")
+	}
+}
+
+func TestGitolitePathAsFullUrl(t *testing.T) {
+	if testing.Short() {
+		t.Skip("Skipping slow test in short mode")
+	}
+
+	ctx := context.Background()
+	cm := newSupervisor(ctx)
+	dc := newDeductionCoordinator(cm)
+	pd, err := dc.deduceRootPath(ctx, "ssh://gitolite@code.uber.internal:2222/infra/stapi-gocql.git")
+	if err != nil {
+		t.Error("should not have errored out for a full gitolite url")
+	}
+	goturl, wanturl := pd.mb.(maybeGitoliteSource).url.String(), "ssh://gitolite@code.uber.internal/infra/stapi-gocql.git"
+	if goturl != wanturl {
+		t.Errorf("Deduced repo ident does not match fixture:\n\t(GOT) %s\n\t(WNT) %s", goturl, wanturl)
 	}
 }
 

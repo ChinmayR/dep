@@ -899,6 +899,11 @@ func normalizeURI(p string) (u *url.URL, newpath string, err error) {
 		}
 	}
 
+	// Filter out the port from the url host
+	if strings.Contains(u.Host, ":") {
+		u.Host = strings.Split(u.Host, ":")[0]
+	}
+
 	// If no scheme was passed, then the entire path will have been put into
 	// u.Path. Either way, construct the normalized path correctly.
 	if u.Host == "" {
