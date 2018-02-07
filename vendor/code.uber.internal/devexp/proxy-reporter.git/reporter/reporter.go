@@ -169,7 +169,6 @@ func (b *backend) postHTTP(values url.Values) {
 		if err != nil {
 			if i < _retryCount-1 {
 				delay := int(math.Pow(float64(i), 2))
-				fmt.Fprintf(os.Stderr, "Error posting request: (%v), retrying again in %d seconds...\n", err, delay)
 				time.Sleep(time.Duration(delay) * time.Second)
 			} else {
 				fmt.Fprintf(os.Stderr, "Error posting request: (%v), no retries remain\n", err)
