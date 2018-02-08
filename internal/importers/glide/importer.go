@@ -84,15 +84,19 @@ func (g *Importer) HasDepMetadata(dir string) bool {
 }
 
 // Import the config found in the directory.
-func (g *Importer) Import(dir string, pr gps.ProjectRoot) (*dep.Manifest, *dep.Lock, error) {
+func (g *Importer) Import(dir string, pr gps.ProjectRoot, importCustomConfig bool) (*dep.Manifest, *dep.Lock, error) {
 	err := g.load(dir)
 	if err != nil {
 		return nil, nil, err
 	}
 
-	impPkgs, customExcludeDirs, err := base.ReadCustomConfig(dir)
-	if err != nil {
-		return nil, nil, errors.Wrap(err, "failed to read custom configuration")
+	var impPkgs []base.ImportedPackage
+	var customExcludeDirs []string
+	if importCustomConfig {
+		impPkgs, customExcludeDirs, err = base.ReadCustomConfig(dir)
+		if err != nil {
+			return nil, nil, errors.Wrap(err, "failed to read custom configuration")
+		}
 	}
 
 	return g.convert(impPkgs, customExcludeDirs, pr)

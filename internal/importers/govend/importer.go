@@ -57,11 +57,13 @@ func (g *Importer) HasDepMetadata(dir string) bool {
 }
 
 // Import the config found in the directory.
-func (g *Importer) Import(dir string, pr gps.ProjectRoot) (*dep.Manifest, *dep.Lock, error) {
+func (g *Importer) Import(dir string, pr gps.ProjectRoot, importCustomConfig bool) (*dep.Manifest, *dep.Lock, error) {
 	err := g.load(dir)
 	if err != nil {
 		return nil, nil, err
 	}
+
+	// TODO import custom config when and if we support migrating from govend to dep
 
 	return g.convert(pr)
 }

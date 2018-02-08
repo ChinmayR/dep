@@ -23,7 +23,7 @@ type Importer interface {
 	Name() string
 
 	// Import the config found in the directory.
-	Import(path string, pr gps.ProjectRoot) (*dep.Manifest, *dep.Lock, error)
+	Import(path string, pr gps.ProjectRoot, importCustomConfig bool) (*dep.Manifest, *dep.Lock, error)
 
 	// HasDepMetadata checks if a directory contains config that the importer can handle.
 	HasDepMetadata(dir string) bool

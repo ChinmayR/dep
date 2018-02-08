@@ -153,7 +153,7 @@ func TestGvtConfig_Import(t *testing.T) {
 		t.Fatal("Expected the importer to detect gvt configuration file")
 	}
 
-	m, l, err := g.Import(projectRoot, importertest.RootProject)
+	m, l, err := g.Import(projectRoot, importertest.RootProject, false)
 	h.Must(err)
 
 	if m == nil {

@@ -42,13 +42,15 @@ func (v *Importer) HasDepMetadata(dir string) bool {
 }
 
 // Import the config found in the directory.
-func (v *Importer) Import(dir string, pr gps.ProjectRoot) (*dep.Manifest, *dep.Lock, error) {
+func (v *Importer) Import(dir string, pr gps.ProjectRoot, importCustomConfig bool) (*dep.Manifest, *dep.Lock, error) {
 	v.Logger.Println("Detected vndr configuration file...")
 
 	err := v.loadVndrFile(dir)
 	if err != nil {
 		return nil, nil, errors.Wrapf(err, "unable to load vndr file")
 	}
+
+	// TODO import custom config when and if we support migrating from vndr to dep
 
 	return v.convert(pr)
 }

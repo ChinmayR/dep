@@ -244,7 +244,7 @@ func TestGlideConfig_Import(t *testing.T) {
 		t.Fatal("Expected the importer to detect the glide configuration files")
 	}
 
-	m, l, err := g.Import(projectRoot, importertest.RootProject)
+	m, l, err := g.Import(projectRoot, importertest.RootProject, false)
 	h.Must(err)
 
 	if m == nil {
