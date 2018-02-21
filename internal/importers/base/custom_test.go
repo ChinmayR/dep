@@ -1,18 +1,18 @@
 package base
 
 import (
+	"reflect"
 	"testing"
 
 	"github.com/golang/dep/internal/importers/importertest"
-	"reflect"
 )
 
 func TestCustomConfig_Parse(t *testing.T) {
 	testCases := map[string]struct {
-		config  CustomConfig
-		impPkgs []ImportedPackage
+		config      CustomConfig
+		impPkgs     []ImportedPackage
 		excludeDirs []string
-		wantErr bool
+		wantErr     bool
 	}{
 		"read single override": {
 			config: CustomConfig{
@@ -32,8 +32,7 @@ func TestCustomConfig_Parse(t *testing.T) {
 					IsOverride:     true,
 				},
 			},
-			excludeDirs: []string {
-				".gen",
+			excludeDirs: []string{
 				".tmp",
 			},
 			wantErr: false,
@@ -125,27 +124,25 @@ func TestCustomConfig_Parse(t *testing.T) {
 
 func TestCustomConfig_BasicExcludeDirs(t *testing.T) {
 	testCases := map[string]struct {
-		currentExcludeDirs []string
+		currentExcludeDirs  []string
 		expectedExcludeDirs []string
-		wantErr bool
-	} {
+		wantErr             bool
+	}{
 		"no overlapping exclude dirs": {
-			currentExcludeDirs: []string {},
-			expectedExcludeDirs: []string {
-				".gen",
+			currentExcludeDirs: []string{},
+			expectedExcludeDirs: []string{
 				".tmp",
 			},
 			wantErr: false,
 		},
 		"overlapping exclude dirs are not duplicated": {
-			currentExcludeDirs: []string {
+			currentExcludeDirs: []string{
 				".random",
 				".tmp",
 			},
-			expectedExcludeDirs: []string {
+			expectedExcludeDirs: []string{
 				".random",
 				".tmp",
-				".gen",
 			},
 			wantErr: false,
 		},
@@ -167,13 +164,13 @@ func TestCustomConfig_BasicExcludeDirs(t *testing.T) {
 func TestCustomConfig_BasicOverrides(t *testing.T) {
 	testCases := map[string]struct {
 		existPkgs []ImportedPackage
-		pkgSeen map[string]bool
-		impPkgs []ImportedPackage
-		wantErr bool
+		pkgSeen   map[string]bool
+		impPkgs   []ImportedPackage
+		wantErr   bool
 	}{
 		"basic case with no existing config": {
 			existPkgs: make([]ImportedPackage, 0),
-			pkgSeen: make(map[string]bool),
+			pkgSeen:   make(map[string]bool),
 			impPkgs: []ImportedPackage{
 				{
 					Name:           "golang.org/x/net",
@@ -202,12 +199,12 @@ func TestCustomConfig_BasicOverrides(t *testing.T) {
 		"overlapping override source returns error": {
 			existPkgs: []ImportedPackage{
 				{
-					Name:      "golang.org/x/net",
+					Name:           "golang.org/x/net",
 					ConstraintHint: importertest.V1Constraint,
-					Source:    "overrideSource",
+					Source:         "overrideSource",
 				},
 			},
-			pkgSeen: map[string]bool {
+			pkgSeen: map[string]bool{
 				"golang.org/x/net": true,
 			},
 			impPkgs: nil,
@@ -216,13 +213,13 @@ func TestCustomConfig_BasicOverrides(t *testing.T) {
 		"overlapping override ref throws no error": {
 			existPkgs: []ImportedPackage{
 				{
-					Name:      "golang.org/x/net",
+					Name:           "golang.org/x/net",
 					ConstraintHint: importertest.V1Constraint,
-					Source:    "",
-					IsOverride: true,
+					Source:         "",
+					IsOverride:     true,
 				},
 			},
-			pkgSeen: map[string]bool {
+			pkgSeen: map[string]bool{
 				"golang.org/x/net": true,
 			},
 			impPkgs: []ImportedPackage{

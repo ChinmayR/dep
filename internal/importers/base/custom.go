@@ -130,7 +130,6 @@ we want to ignore while scanning for imports in dep. Bootstrap
 the dep config with these preset.
  */
 var basicExcludeDirs = []string {
-	".gen",
 	".tmp",
 }
 

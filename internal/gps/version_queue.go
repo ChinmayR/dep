@@ -6,9 +6,10 @@ package gps
 
 import (
 	"fmt"
-	"strings"
 	"log"
 	"os"
+	"strings"
+
 	"github.com/golang/dep/uber"
 )
 
@@ -62,13 +63,12 @@ func newVersionQueue(id ProjectIdentifier, lockv, prefv Version, b sourceBridge,
 	return vq, nil
 }
 
-
 //This function filters non-default branch versions according to these criteria:
 //1. The version is a branch version
 //2. The version is not a default branch version – a default branch version has a hash that matches that of HEAD's
 //3. There is not constraint defined on that branch version and the constraint must not be of type anyConstraint
 // – a catch-all constraint, especially when a glide file exists and is translated into dep
-func filterNonDefaultBranches(allVersions []Version, constraint Constraint, root ProjectRoot) ([]Version) {
+func filterNonDefaultBranches(allVersions []Version, constraint Constraint, root ProjectRoot) []Version {
 	if os.Getenv(uber.UseNonDefaultVersionBranches) == "yes" {
 		return allVersions
 	}
@@ -96,7 +96,6 @@ func isAnyConstraint(constraint Constraint) bool {
 	return isAnyConstraint
 }
 
-
 func (vq *versionQueue) current() Version {
 	if len(vq.pi) > 0 {
 		return vq.pi[0]
@@ -104,7 +103,6 @@ func (vq *versionQueue) current() Version {
 
 	return nil
 }
-
 
 // advance moves the versionQueue forward to the next available version,
 // recording the failure that eliminated the current version.
