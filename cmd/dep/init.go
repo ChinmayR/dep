@@ -6,6 +6,7 @@ package main
 
 import (
 	"flag"
+	"fmt"
 	"io/ioutil"
 	"log"
 	"os"
@@ -18,6 +19,7 @@ import (
 	"github.com/golang/dep/internal/gps"
 	"github.com/golang/dep/internal/gps/paths"
 	"github.com/golang/dep/internal/gps/pkgtree"
+	"github.com/golang/dep/internal/importers/base"
 	"github.com/golang/dep/uber"
 	"github.com/pkg/errors"
 )
@@ -139,6 +141,7 @@ func (cmd *initCommand) Run(ctx *dep.Ctx, args []string) error {
 	sm.UseDefaultSignalHandling()
 	defer sm.Release()
 
+restart:
 	if ctx.Verbose {
 		ctx.Out.Println("Getting direct dependencies...")
 	}
@@ -191,7 +194,11 @@ func (cmd *initCommand) Run(ctx *dep.Ctx, args []string) error {
 	soln, err := s.Solve()
 	if err != nil {
 		handleAllTheFailuresOfTheWorld(err)
-		return err
+		errInternal := handleSolveConflicts(ctx, err)
+		if errInternal != nil {
+			return err
+		}
+		goto restart
 	}
 	p.Lock = dep.LockFromSolution(soln)
 
@@ -253,4 +260,27 @@ func getDirectDependencies(sm gps.SourceManager, p *dep.Project) (pkgtree.Packag
 // TODO solve failures can be really creative - we need to be similarly creative
 // in handling them and informing the user appropriately
 func handleAllTheFailuresOfTheWorld(err error) {
+}
+
+func handleSolveConflicts(ctx *dep.Ctx, err error) error {
+	ovrPkgs, errInternal := gps.HandleErrors(ctx.Out, err)
+	if errInternal != nil {
+		ctx.Err.Println(errInternal)
+		return errInternal
+	}
+	ctx.Out.Print("Select an option: ")
+	var i int
+	fmt.Scan(&i)
+	if i == gps.EXIT_NUM {
+		ctx.Out.Println("User selected exit")
+		return errors.New("User selected exit")
+	}
+	ovrPkgSelected := ovrPkgs[i-1]
+	errInternal = base.AddOverrideToConfig(ovrPkgSelected.Name, ovrPkgSelected.Constraint, ovrPkgSelected.Source,
+		ctx.WorkingDir, ctx.Out)
+	if errInternal != nil {
+		ctx.Err.Println(errInternal)
+		return errInternal
+	}
+	return nil
 }

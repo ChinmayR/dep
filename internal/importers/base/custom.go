@@ -6,18 +6,19 @@ import (
 
 	"os"
 
-	"github.com/go-yaml/yaml"
-	"github.com/pkg/errors"
 	"fmt"
 	"log"
 	"strings"
+
+	"github.com/go-yaml/yaml"
+	"github.com/pkg/errors"
 )
 
 const CustomConfigName = "DepConfig.yaml"
 
 type CustomConfig struct {
-	Overrides []overridePackage `yaml:"override"`
-	ExcludeDirs []string `yaml:"excludeDirs"`
+	Overrides   []overridePackage `yaml:"override"`
+	ExcludeDirs []string          `yaml:"excludeDirs"`
 }
 
 type overridePackage struct {
@@ -57,9 +58,9 @@ func WriteCustomConfig(dir string, impPkgs []ImportedPackage, excludeDirs []stri
 
 	out.Println("Overwriting custom configuration files...")
 	yb, err := yaml.Marshal(CustomConfig{
-			Overrides: convertImpPkgToOveridePkg(impPkgs),
-			ExcludeDirs: excludeDirs,
-		})
+		Overrides:   convertImpPkgToOveridePkg(impPkgs),
+		ExcludeDirs: excludeDirs,
+	})
 	if err != nil {
 		return errors.Wrap(err, "unable to marshall imported packages")
 	}
@@ -76,9 +77,9 @@ func convertImpPkgToOveridePkg(impPkgs []ImportedPackage) []overridePackage {
 	var overidePkgs []overridePackage
 	for _, impPkg := range impPkgs {
 		overidePkgs = append(overidePkgs, overridePackage{
-			Name: impPkg.Name,
+			Name:      impPkg.Name,
 			Reference: impPkg.ConstraintHint,
-			Source: impPkg.Source,
+			Source:    impPkg.Source,
 		})
 	}
 	return overidePkgs
@@ -108,18 +109,18 @@ func ParseConfig(config CustomConfig) ([]ImportedPackage, []string, error) {
 These are basic uber specific overrides that help avoid conflicts
 and speed up resolution for uber repos. These were derived through
 testing and data collected from resolve failures.
- */
-var basicOverrides = []overridePackage {
+*/
+var basicOverrides = []overridePackage{
 	{
-		Name: "golang.org/x/net",
+		Name:   "golang.org/x/net",
 		Source: "golang.org/x/net",
 	},
 	{
-		Name: "golang.org/x/sys",
+		Name:   "golang.org/x/sys",
 		Source: "golang.org/x/sys",
 	},
 	{
-		Name: "golang.org/x/tools",
+		Name:   "golang.org/x/tools",
 		Source: "golang.org/x/tools",
 	},
 }
@@ -128,8 +129,8 @@ var basicOverrides = []overridePackage {
 These are the basic directories that could be auto generated and
 we want to ignore while scanning for imports in dep. Bootstrap
 the dep config with these preset.
- */
-var basicExcludeDirs = []string {
+*/
+var basicExcludeDirs = []string{
 	".tmp",
 }
 
@@ -193,4 +194,20 @@ func AppendBasicOverrides(impPkgs []ImportedPackage, pkgSeen map[string]bool) ([
 	}
 
 	return impPkgs, nil
+}
+
+func AddOverrideToConfig(name, constraint, source, workingDir string, logOut *log.Logger) error {
+	curPkgs, basicExcludeDirs, err := ReadCustomConfig(workingDir)
+	if err != nil {
+		return err
+	}
+
+	curPkgs = append(curPkgs, ImportedPackage{
+		Name:           name,
+		ConstraintHint: constraint,
+		Source:         source,
+		IsOverride:     true,
+	})
+
+	return WriteCustomConfig(workingDir, curPkgs, basicExcludeDirs, true, logOut)
 }

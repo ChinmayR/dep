@@ -7,6 +7,7 @@ package gps
 import (
 	"bytes"
 	"fmt"
+	"log"
 	"sort"
 	"strings"
 
@@ -75,6 +76,40 @@ func (e *noVersionError) traceString() string {
 	}
 
 	return buf.String()
+}
+
+func (e *noVersionError) FixError(out *log.Logger) ([]OverridePackage, error) {
+	var ovrPkgs []OverridePackage
+
+	for _, f := range e.fails {
+		if te, ok := f.f.(ErrorOptions); ok {
+			ovrPkgs = append(ovrPkgs, te.GetOptions()...)
+		} else {
+			out.Printf("No options for type %T", f.f)
+		}
+	}
+
+	// there can be duplicate override options, so filter them out, for ex:
+	// Set an override for blah.git on constraint ^1.0.0
+	// Set an override for blah.git on constraint v1.0.0-rc3
+	// Set an override for blah.git on constraint ^1.0.0
+	// Set an override for blah.git on constraint v1.0.0-rc2
+	var filteredOvrPkgs []OverridePackage
+	for i, ovrPkg := range ovrPkgs {
+		dupFound := false
+		for j := 0; j < i; j++ {
+			if ovrPkg.Name == ovrPkgs[j].Name &&
+				ovrPkg.Constraint == ovrPkgs[j].Constraint &&
+				ovrPkg.Source == ovrPkgs[j].Source {
+				dupFound = true
+			}
+		}
+		if !dupFound {
+			filteredOvrPkgs = append(filteredOvrPkgs, ovrPkg)
+		}
+	}
+
+	return filteredOvrPkgs, nil
 }
 
 // caseMismatchFailure occurs when there are import paths that differ only by
@@ -197,6 +232,26 @@ type disjointConstraintFailure struct {
 	c Constraint
 }
 
+func (e *disjointConstraintFailure) GetOptions() []OverridePackage {
+	var ovrPkgs []OverridePackage
+	// TODO support the other complex cases when failsib > 1 and when it is 0 (cases covered in Error())
+	if len(e.failsib) == 1 {
+		ovrPkgs = append(ovrPkgs, OverridePackage{
+			Name:       e.goal.dep.Ident.String(),
+			Constraint: e.goal.dep.Constraint.String(),
+			Source:     "",
+		})
+
+		ovrPkgs = append(ovrPkgs, OverridePackage{
+			Name:       e.goal.dep.Ident.String(),
+			Constraint: e.failsib[0].dep.Constraint.String(),
+			Source:     "",
+		})
+	}
+
+	return ovrPkgs
+}
+
 func (e *disjointConstraintFailure) Error() string {
 	tags, err := uber.GetRepoTagsFromWorkingDirectory()
 	if err != nil {
@@ -309,6 +364,26 @@ type versionNotAllowedFailure struct {
 	c Constraint
 }
 
+func (e *versionNotAllowedFailure) GetOptions() []OverridePackage {
+	var ovrPkgs []OverridePackage
+	// TODO support the other complex cases when failParent > 1 (cases covered in Error())
+	if len(e.failparent) == 1 {
+		ovrPkgs = append(ovrPkgs, OverridePackage{
+			Name:       e.goal.id.String(),
+			Constraint: e.failparent[0].dep.Constraint.String(),
+			Source:     "",
+		})
+
+		ovrPkgs = append(ovrPkgs, OverridePackage{
+			Name:       e.goal.id.String(),
+			Constraint: e.goal.v.String(),
+			Source:     "",
+		})
+	}
+
+	return ovrPkgs
+}
+
 func (e *versionNotAllowedFailure) Error() string {
 	tags, err := uber.GetRepoTagsFromWorkingDirectory()
 	if err != nil {
@@ -387,6 +462,23 @@ type sourceMismatchFailure struct {
 	sel []dependency
 	// The atom with the constraint that has the new, incompatible network source
 	prob atom
+}
+
+func (e *sourceMismatchFailure) GetOptions() []OverridePackage {
+	var ovrPkgs []OverridePackage
+	ovrPkgs = append(ovrPkgs, OverridePackage{
+		Name:       string(e.shared),
+		Constraint: "",
+		Source:     e.current,
+	})
+
+	ovrPkgs = append(ovrPkgs, OverridePackage{
+		Name:       string(e.shared),
+		Constraint: "",
+		Source:     e.mismatch,
+	})
+
+	return ovrPkgs
 }
 
 func (e *sourceMismatchFailure) Error() string {
