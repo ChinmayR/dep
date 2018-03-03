@@ -3,45 +3,47 @@ package uber
 
 import (
 	"testing"
+	"time"
 
-	"github.com/stretchr/testify/assert"
 	"fmt"
 	"net/url"
+
 	"github.com/golang/dep/uber/mocks"
 	"github.com/pkg/errors"
+	"github.com/stretchr/testify/assert"
 )
 
 type repoTestCase struct {
 	given, expUrl, expGpath, expRemote, expGitoliteUrl string
-	redirect      bool
-	autocreate    bool
+	redirect                                           bool
+	autocreate                                         bool
 }
 
 func TestUber_IsGopkg(t *testing.T) {
 	cases := []repoTestCase{
 		{
-			given:      "gopkg.in/validator.v2",
-			expUrl:     "https://gopkg.uberinternal.com/validator.v2",
-			expGpath:     "github/go-validator/validator",
-			expRemote:     "git@github.com:go-validator/validator",
-			expGitoliteUrl:     "ssh://gitolite@code.uber.internal/github/go-validator/validator",
-			autocreate: false,
+			given:          "gopkg.in/validator.v2",
+			expUrl:         "https://gopkg.uberinternal.com/validator.v2",
+			expGpath:       "github/go-validator/validator",
+			expRemote:      "https://github.com:go-validator/validator",
+			expGitoliteUrl: "ssh://gitolite@code.uber.internal/github/go-validator/validator",
+			autocreate:     false,
 		},
 		{
-			given:    "gopkg.in/validator.v2",
-			expUrl:   "ssh://gitolite@code.uber.internal/github/go-validator/validator",
-			expGpath:     "",
-			expRemote:     "",
-			expGitoliteUrl:     "ssh://gitolite@code.uber.internal/github/go-validator/validator",
-			redirect: true,
+			given:          "gopkg.in/validator.v2",
+			expUrl:         "ssh://gitolite@code.uber.internal/github/go-validator/validator",
+			expGpath:       "",
+			expRemote:      "",
+			expGitoliteUrl: "ssh://gitolite@code.uber.internal/github/go-validator/validator",
+			redirect:       true,
 		},
 		{
-			given:    "gopkg.in/go-validator/validator.v2",
-			expUrl:   "ssh://gitolite@code.uber.internal/github/go-validator/validator",
-			expGpath:     "",
-			expRemote:     "",
-			expGitoliteUrl:     "ssh://gitolite@code.uber.internal/github/go-validator/validator",
-			redirect: true,
+			given:          "gopkg.in/go-validator/validator.v2",
+			expUrl:         "ssh://gitolite@code.uber.internal/github/go-validator/validator",
+			expGpath:       "",
+			expRemote:      "",
+			expGitoliteUrl: "ssh://gitolite@code.uber.internal/github/go-validator/validator",
+			redirect:       true,
 		},
 	}
 
@@ -68,39 +70,39 @@ func TestUber_IsGopkg(t *testing.T) {
 func TestUber_IsGitoliteForGitolite(t *testing.T) {
 	cases := []repoTestCase{
 		{
-			given:  "code.uber.internal/go-common.git",
-			expUrl: "ssh://gitolite@code.uber.internal/go-common.git",
-			expGpath:     "",
-			expRemote:     "",
-			expGitoliteUrl:     "ssh://gitolite@code.uber.internal/go-common.git",
+			given:          "code.uber.internal/go-common.git",
+			expUrl:         "ssh://gitolite@code.uber.internal/go-common.git",
+			expGpath:       "",
+			expRemote:      "",
+			expGitoliteUrl: "ssh://gitolite@code.uber.internal/go-common.git",
 		},
 		{
-			given:  "code.uber.internal/go-common.git/blah",
-			expUrl: "ssh://gitolite@code.uber.internal/go-common.git",
-			expGpath:     "",
-			expRemote:     "",
-			expGitoliteUrl:     "ssh://gitolite@code.uber.internal/go-common.git",
+			given:          "code.uber.internal/go-common.git/blah",
+			expUrl:         "ssh://gitolite@code.uber.internal/go-common.git",
+			expGpath:       "",
+			expRemote:      "",
+			expGitoliteUrl: "ssh://gitolite@code.uber.internal/go-common.git",
 		},
 		{
-			given:  "code.uber.internal/rt/filter.git",
-			expUrl: "ssh://gitolite@code.uber.internal/rt/filter.git",
-			expGpath:     "",
-			expRemote:     "",
-			expGitoliteUrl:     "ssh://gitolite@code.uber.internal/rt/filter.git",
+			given:          "code.uber.internal/rt/filter.git",
+			expUrl:         "ssh://gitolite@code.uber.internal/rt/filter.git",
+			expGpath:       "",
+			expRemote:      "",
+			expGitoliteUrl: "ssh://gitolite@code.uber.internal/rt/filter.git",
 		},
 		{
-			given:  "code.uber.internal/rt/filter",
-			expUrl: "ssh://gitolite@code.uber.internal/rt/filter",
-			expGpath:     "",
-			expRemote:     "",
-			expGitoliteUrl:     "ssh://gitolite@code.uber.internal/rt/filter",
+			given:          "code.uber.internal/rt/filter",
+			expUrl:         "ssh://gitolite@code.uber.internal/rt/filter",
+			expGpath:       "",
+			expRemote:      "",
+			expGitoliteUrl: "ssh://gitolite@code.uber.internal/rt/filter",
 		},
 		{
-			given:  "code.uber.internal/rt/filter/.gen/go/filter",
-			expUrl: "ssh://gitolite@code.uber.internal/rt/filter",
-			expGpath:     "",
-			expRemote:     "",
-			expGitoliteUrl:     "ssh://gitolite@code.uber.internal/rt/filter",
+			given:          "code.uber.internal/rt/filter/.gen/go/filter",
+			expUrl:         "ssh://gitolite@code.uber.internal/rt/filter",
+			expGpath:       "",
+			expRemote:      "",
+			expGitoliteUrl: "ssh://gitolite@code.uber.internal/rt/filter",
 		},
 	}
 
@@ -120,18 +122,18 @@ func TestUber_IsGitoliteForGitolite(t *testing.T) {
 func TestUber_IsGitoliteForGolang(t *testing.T) {
 	cases := []repoTestCase{
 		{
-			given:  "golang.org/x/net",
-			expUrl: "ssh://gitolite@code.uber.internal/googlesource/net",
-			expGpath:     "googlesource/net",
-			expRemote:     "https://go.googlesource.com/net",
-			expGitoliteUrl:     "ssh://gitolite@code.uber.internal/googlesource/net",
+			given:          "golang.org/x/net",
+			expUrl:         "ssh://gitolite@code.uber.internal/googlesource/net",
+			expGpath:       "googlesource/net",
+			expRemote:      "https://go.googlesource.com/net",
+			expGitoliteUrl: "ssh://gitolite@code.uber.internal/googlesource/net",
 		},
 		{
-			given:  "golang.org/x/net/ipv4",
-			expUrl: "ssh://gitolite@code.uber.internal/googlesource/net",
-			expGpath:     "googlesource/net",
-			expRemote:     "https://go.googlesource.com/net",
-			expGitoliteUrl:     "ssh://gitolite@code.uber.internal/googlesource/net",
+			given:          "golang.org/x/net/ipv4",
+			expUrl:         "ssh://gitolite@code.uber.internal/googlesource/net",
+			expGpath:       "googlesource/net",
+			expRemote:      "https://go.googlesource.com/net",
+			expGitoliteUrl: "ssh://gitolite@code.uber.internal/googlesource/net",
 		},
 	}
 
@@ -151,12 +153,12 @@ func TestUber_IsGitoliteForGolang(t *testing.T) {
 func TestUber_IsGitoliteForGithub(t *testing.T) {
 	cases := []repoTestCase{
 		{
-			given:      "github.com/Masterminds/glide",
-			expUrl:     "ssh://gitolite@code.uber.internal/github/Masterminds/glide",
-			expGpath:     "github/Masterminds/glide",
-			expRemote:     "git@github.com:Masterminds/glide",
-			expGitoliteUrl:     "ssh://gitolite@code.uber.internal/github/Masterminds/glide",
-			autocreate: true,
+			given:          "github.com/Masterminds/glide",
+			expUrl:         "ssh://gitolite@code.uber.internal/github/Masterminds/glide",
+			expGpath:       "github/Masterminds/glide",
+			expRemote:      "https://github.com:Masterminds/glide",
+			expGitoliteUrl: "ssh://gitolite@code.uber.internal/github/Masterminds/glide",
+			autocreate:     true,
 		},
 	}
 
@@ -191,7 +193,7 @@ func TestUber_MirrorsToGitolite(t *testing.T) {
 	cases := []mirrorTestCase{
 		{
 			importPath:   "github.com/test/repo",
-			remoteUrl:    "git@github.com:test/repo",
+			remoteUrl:    "https://github.com:test/repo",
 			gpath:        "github/test/repo",
 			mirrorGpath:  "github/test/repo",
 			rewritername: "github.com",
@@ -200,7 +202,7 @@ func TestUber_MirrorsToGitolite(t *testing.T) {
 		},
 		{
 			importPath:   "github.com/test/repo.git",
-			remoteUrl:    "git@github.com:test/repo.git",
+			remoteUrl:    "https://github.com:test/repo.git",
 			gpath:        "github/test/repo.git",
 			mirrorGpath:  "github/test/repo",
 			rewritername: "github.com",
@@ -209,7 +211,7 @@ func TestUber_MirrorsToGitolite(t *testing.T) {
 		},
 		{
 			importPath:   "gopkg.in/repo.v0",
-			remoteUrl:    "git@github.com:go-repo/repo",
+			remoteUrl:    "https://github.com:go-repo/repo",
 			gpath:        "github/go-repo/repo",
 			mirrorGpath:  "github/go-repo/repo",
 			rewritername: "gopkg.in",
@@ -239,20 +241,20 @@ func TestUber_MirrorsToGitolite(t *testing.T) {
 		func(c mirrorTestCase) {
 			ex := &mocks.ExecutorInterface{}
 			//does not exist on gitolite
-			ex.On("ExecCommand", "git",
+			ex.On("ExecCommand", "git", time.Duration(1*time.Minute), false,
 				"ls-remote", "ssh://gitolite@code.uber.internal/"+c.gpath, "HEAD",
 			).Return("", "FATAL: autocreate denied", fmt.Errorf("1"))
 
 			if c.remoteExists {
-				ex.On("ExecCommand", "git",
+				ex.On("ExecCommand", "git", time.Duration(1*time.Minute), false,
 					"ls-remote", c.remoteUrl, "HEAD",
 				).Return("", "", nil)
 				//successful creation on gitolite
-				ex.On("ExecCommand", "ssh",
+				ex.On("ExecCommand", "ssh", time.Duration(2*time.Minute), true,
 					"gitolite@code.uber.internal", "create", c.mirrorGpath,
 				).Return("", "", nil).Once()
 			} else {
-				ex.On("ExecCommand", "git",
+				ex.On("ExecCommand", "git", time.Duration(1*time.Minute), false,
 					"ls-remote", c.remoteUrl, "HEAD",
 				).Return("", "", errors.Errorf("failing remote check"))
 			}
@@ -261,7 +263,7 @@ func TestUber_MirrorsToGitolite(t *testing.T) {
 			if err != nil {
 				t.Fatalf("Failed to parse URL %s", c.expected)
 			}
-			err = assertPanic(t, func() error {return CheckAndMirrorRepo(ex, c.gpath, c.remoteUrl, u)}, !c.remoteExists)
+			err = assertPanic(t, func() error { return CheckAndMirrorRepo(ex, c.gpath, c.remoteUrl, u) }, !c.remoteExists)
 			assert.Nil(t, err)
 			ex.AssertExpectations(t)
 		}(c)

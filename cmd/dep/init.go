@@ -268,6 +268,9 @@ func handleSolveConflicts(ctx *dep.Ctx, err error) error {
 		ctx.Err.Println(errInternal)
 		return errInternal
 	}
+	if len(ovrPkgs) == 0 {
+		return errors.New("No resolution options to provide")
+	}
 	ctx.Out.Print("Select an option: ")
 	var i int
 	fmt.Scan(&i)

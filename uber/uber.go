@@ -9,6 +9,10 @@ import (
 	"os/exec"
 	"regexp"
 	"strings"
+	"syscall"
+	"time"
+
+	"github.com/pkg/errors"
 )
 
 const (
@@ -42,7 +46,7 @@ type internalRewriter struct {
 }
 
 type ExecutorInterface interface {
-	ExecCommand(name string, arg ...string) (string, string, error)
+	ExecCommand(name string, cmdTimeout time.Duration, runInBackground bool, arg ...string) (string, string, error)
 }
 
 type CommandExecutor struct {
@@ -139,9 +143,8 @@ func CheckAndMirrorRepo(ex ExecutorInterface, gpath, remote string, gitoliteURL 
 	if os.Getenv(UberDisableGitoliteAutocreation) != "" {
 		return nil
 	}
-
 	// Ping Gitolite to see if the mirror exists.
-	stdout, stderr, err := ex.ExecCommand("git", "ls-remote", gitoliteURL.String(), "HEAD")
+	_, stderr, err := ex.ExecCommand("git", time.Duration(1*time.Minute), false, "ls-remote", gitoliteURL.String(), "HEAD")
 
 	// If so, nothing more is needed, return the Gitolite mirror URL.
 	if err == nil {
@@ -152,7 +155,7 @@ func CheckAndMirrorRepo(ex ExecutorInterface, gpath, remote string, gitoliteURL 
 
 	// First, ensure the remote repo exists
 	UberLogger.Printf("%s not found on Gitolite, checking %s", gpath, remote)
-	rstdout, _, rerr := ex.ExecCommand("git", "ls-remote", remote, "HEAD")
+	rstdout, _, rerr := ex.ExecCommand("git", time.Duration(1*time.Minute), false, "ls-remote", remote, "HEAD")
 	UberLogger.Print(rstdout)
 	if rerr != nil {
 		UberLogger.Printf("Upstream repo does not exist: %v", remote)
@@ -171,18 +174,15 @@ func CheckAndMirrorRepo(ex ExecutorInterface, gpath, remote string, gitoliteURL 
 
 	// Create a mirror.
 	mirrorGpath := strings.Replace(gpath, ".git", "", -1)
-	stdout, stderr, err = ex.ExecCommand("ssh", "gitolite@code.uber.internal", "create", mirrorGpath)
-	UberLogger.Print(stdout)
+	_, _, err = ex.ExecCommand("ssh", time.Duration(2*time.Minute), true, "gitolite@code.uber.internal", "create", mirrorGpath)
 
 	// Return with an error if that failed.
 	if err != nil {
-		UberLogger.Print(stderr)
 		UberLogger.Printf("Error creating repo %s on Gitolite: %s", gpath, err.Error())
 		return err
 	}
 
 	// All done.
-	UberLogger.Printf("Created Gitolite GitHub mirror %s", gitoliteURL)
 	return nil
 }
 
@@ -224,7 +224,7 @@ func rewriteGolang(in []string, ex ExecutorInterface) (*url.URL, string, string,
 }
 
 func getGithubRemoteFromUserAndRepo(user, repo string) string {
-	return fmt.Sprintf("git@github.com:%s/%s", user, repo)
+	return fmt.Sprintf("https://github.com:%s/%s", user, repo)
 }
 
 func gitolitePathForGithub(user, repo string) string {
@@ -239,12 +239,47 @@ func gitolitePathForGolang(repo string) string {
 	return fmt.Sprintf("googlesource/%s", repo)
 }
 
-func (c *CommandExecutor) ExecCommand(name string, arg ...string) (string, string, error) {
+// ExecCommand creates and executes the command defined by the name and args fields
+// The command can be specified to run in background via the runInBackground flag
+// which will only return an error if there is a problem starting the command.
+// If run in background is not specified then the command can be given a timeout
+// duration which will cause the command to time out and return an error, unless
+// the command completes successfully first.
+func (c *CommandExecutor) ExecCommand(name string, cmdTimeout time.Duration, runInBackground bool, arg ...string) (string, string, error) {
 	command := exec.Command(name, arg...)
 	command.Env = os.Environ()
+
+	// Start a timer
+	timeout := time.After(cmdTimeout)
+	// Force subprocesses into their own process group, rather than being in the
+	// same process group as the dep process. Because Ctrl-C sent from a
+	// terminal will send the signal to the entire currently running process
+	// group, this allows us to directly manage the issuance of signals to
+	// subprocesses.
+	command.SysProcAttr = &syscall.SysProcAttr{
+		Setpgid: true,
+	}
+
 	var stdoutbytes, stderrbytes bytes.Buffer
 	command.Stdout = &stdoutbytes
 	command.Stderr = &stderrbytes
-	err := command.Run()
-	return stdoutbytes.String(), stderrbytes.String(), err
+	if err := command.Start(); err != nil {
+		return "", "", err
+	}
+
+	if !runInBackground {
+		done := make(chan error)
+		go func() { done <- command.Wait() }()
+
+		select {
+		case <-timeout:
+			command.Process.Kill()
+			fmt.Printf("Command %s with args %s timed out\n", name, arg)
+			return "", "", errors.New("Command timed out")
+		case err := <-done:
+			return stdoutbytes.String(), stderrbytes.String(), err
+		}
+	}
+
+	return "", "", nil
 }

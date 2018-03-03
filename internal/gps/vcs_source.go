@@ -176,16 +176,18 @@ func (s *gitSource) listVersions(ctx context.Context) (vlist []PairedVersion, er
 	cmd := commandContext(ctx, "git", "ls-remote", r.Remote())
 	// Ensure no prompting for PWs
 	cmd.SetEnv(append([]string{"GIT_ASKPASS=", "GIT_TERMINAL_PROMPT=0"}, os.Environ()...))
-
-	cmdOutput := &bytes.Buffer{}
-	cmd.Cmd.Stdout = cmdOutput
-	err = cmd.Cmd.Run()
-	out := cmdOutput.Bytes()
+	out, err := cmd.CombinedOutput()
 	if err != nil {
 		return nil, errors.Wrap(err, string(out))
 	}
 
 	all := bytes.Split(bytes.TrimSpace(out), []byte("\n"))
+	// gitolite hosts always print the below two lines and it is important to filter them out
+	// # Using gitolite-code secondary gitolite06-sjc1
+	// Killed by signal 1.
+	if strings.Contains(r.Remote(), "code.uber.internal") && len(all) > 2 {
+		all = all[2:]
+	}
 	if len(all) == 1 && len(all[0]) == 0 {
 		return nil, fmt.Errorf("no data returned from ls-remote")
 	}

@@ -12,8 +12,8 @@ import (
 	"path/filepath"
 
 	"github.com/Masterminds/vcs"
-	"github.com/pkg/errors"
 	"github.com/golang/dep/uber"
+	"github.com/pkg/errors"
 )
 
 // A maybeSource represents a set of information that, given some
@@ -77,14 +77,22 @@ func sourceCachePath(cacheDir, sourceURL string) string {
 // with the addition of cloning external repos on gitolite and trying again
 // if it fails
 type maybeGitoliteSource struct {
-	url *url.URL
-	gpath string
-	remote string
+	url         *url.URL
+	gpath       string
+	remote      string
 	gitoliteURL *url.URL
 }
 
 func (m maybeGitoliteSource) try(ctx context.Context, cachedir string, c singleSourceCache, superv *supervisor) (source, sourceState, error) {
-	ustr := m.url.String()
+	var ustr string
+	var runningOnRemote bool
+	if m.remote != "" {
+		runningOnRemote = true
+		ustr = m.remote
+	} else {
+		runningOnRemote = false
+		ustr = m.url.String()
+	}
 
 	r, err := newCtxRepo(vcs.Git, ustr, sourceCachePath(cachedir, ustr))
 	if err != nil {
@@ -105,14 +113,24 @@ func (m maybeGitoliteSource) try(ctx context.Context, cachedir string, c singleS
 		return errors.Wrapf(err, "remote repository at %s does not exist, or is inaccessible", ustr)
 	}
 
+	// Check and mirror repo in the background and continue to make calls to the github path, we still need to
+	// mirror in the background. Incase github goes down in the future, the will fall back to the gitolite mirror
+	go func() { uber.CheckAndMirrorRepo(new(uber.CommandExecutor), m.gpath, m.remote, m.gitoliteURL) }()
+
 	if err := superv.do(ctx, "git:lv:maybe", ctListVersions, tryListVersions); err != nil {
-		mirrorErr := uber.CheckAndMirrorRepo(new(uber.CommandExecutor), m.gpath, m.remote, m.gitoliteURL)
-		if mirrorErr == nil {
+		// if the call to remote url failed, then it means remote server is down so fall back to gitolite
+		if runningOnRemote {
+			ustr = m.url.String()
+			r, err := newCtxRepo(vcs.Git, ustr, sourceCachePath(cachedir, ustr))
+			if err != nil {
+				return nil, 0, unwrapVcsErr(err)
+			}
+			src.baseVCSSource.repo = r
 			if err2 := superv.do(ctx, "git:lv:maybe", ctListVersions, tryListVersions); err2 != nil {
-				return nil, 0, errors.Wrapf(err, "mirrored repo but repository at %s still does not exist, or is inaccessible", ustr)
+				return nil, 0, errors.Wrapf(err, "repository at %s does not exist, or is inaccessible", ustr)
 			}
 		} else {
-			return nil, 0, errors.Wrapf(err, "failed to mirror repo at %s", ustr)
+			return nil, 0, errors.Wrapf(err, "repository at %s does not exist, or is inaccessible", ustr)
 		}
 	}
 
