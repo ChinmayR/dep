@@ -190,7 +190,7 @@ func (i *Importer) ImportPackages(packages []ImportedPackage, defaultConstraintF
 		return err
 	}
 
-	numThreadsAllowed := 30
+	numThreadsAllowed := 25
 	// we want to use a single thread for tests since they have a golden.txt
 	// that check for the order of logging during importing, multiple threads
 	// put the logs out of sync (although correct) causing the tests to fail

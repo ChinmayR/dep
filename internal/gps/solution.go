@@ -48,7 +48,7 @@ type solution struct {
 	solv Solver
 }
 
-const concurrentWriters = 32
+const concurrentWriters = 25
 
 // WriteDepTree takes a basedir and a Lock, and exports all the projects
 // listed in the lock to the appropriate target location within the basedir.

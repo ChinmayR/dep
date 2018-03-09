@@ -10,6 +10,7 @@ import (
 	"fmt"
 	"net/url"
 	"path/filepath"
+	"strings"
 
 	"github.com/Masterminds/vcs"
 	"github.com/golang/dep/uber"
@@ -86,7 +87,7 @@ type maybeGitoliteSource struct {
 func (m maybeGitoliteSource) try(ctx context.Context, cachedir string, c singleSourceCache, superv *supervisor) (source, sourceState, error) {
 	var ustr string
 	var runningOnRemote bool
-	if m.remote != "" {
+	if strings.TrimSpace(m.remote) != "" {
 		runningOnRemote = true
 		ustr = m.remote
 	} else {
@@ -94,7 +95,7 @@ func (m maybeGitoliteSource) try(ctx context.Context, cachedir string, c singleS
 		ustr = m.url.String()
 	}
 
-	r, err := newCtxRepo(vcs.Git, ustr, sourceCachePath(cachedir, ustr))
+	r, err := newCtxRepo(vcs.Git, ustr, sourceCachePath(cachedir, m.url.String()))
 	if err != nil {
 		return nil, 0, unwrapVcsErr(err)
 	}
@@ -121,11 +122,15 @@ func (m maybeGitoliteSource) try(ctx context.Context, cachedir string, c singleS
 		// if the call to remote url failed, then it means remote server is down so fall back to gitolite
 		if runningOnRemote {
 			ustr = m.url.String()
-			r, err := newCtxRepo(vcs.Git, ustr, sourceCachePath(cachedir, ustr))
+			r, err := newCtxRepo(vcs.Git, ustr, sourceCachePath(cachedir, m.url.String()))
 			if err != nil {
 				return nil, 0, unwrapVcsErr(err)
 			}
-			src.baseVCSSource.repo = r
+			src = &gitSource{
+				baseVCSSource: baseVCSSource{
+					repo: r,
+				},
+			}
 			if err2 := superv.do(ctx, "git:lv:maybe", ctListVersions, tryListVersions); err2 != nil {
 				return nil, 0, errors.Wrapf(err, "repository at %s does not exist, or is inaccessible", ustr)
 			}

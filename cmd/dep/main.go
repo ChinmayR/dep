@@ -15,8 +15,10 @@ import (
 	"path/filepath"
 	"strings"
 	"text/tabwriter"
+	"time"
 
 	"github.com/golang/dep"
+	"github.com/golang/dep/uber"
 )
 
 type command interface {
@@ -122,6 +124,18 @@ func (c *Config) Run() (exitCode int) {
 		usage()
 		exitCode = 1
 		return
+	}
+
+	_, _, err := new(uber.CommandExecutor).ExecCommand("git", time.Duration(1*time.Minute),
+		false, "config", "--global", "--unset", "url.ssh://git@github.com/uber/.insteadof", "https://github.com/uber/")
+	if err != nil {
+		errLogger.Println("Unable to unset git config ssh://git@github.com/uber/ to https://github.com/uber/, maybe it was already unset")
+		errLogger.Println("If dep hangs, run \"ssh-add\" and try again")
+	} else {
+		defer func() {
+			new(uber.CommandExecutor).ExecCommand("git", time.Duration(1*time.Minute),
+				false, "config", "--global", "url.ssh://git@github.com/uber/.insteadof", "https://github.com/uber/")
+		}()
 	}
 
 	for _, cmd := range commands {

@@ -15,6 +15,7 @@ import (
 	"github.com/Masterminds/semver"
 	"github.com/golang/dep/internal/fs"
 	"github.com/golang/dep/internal/gps/pkgtree"
+	"github.com/golang/dep/uber"
 	"github.com/pkg/errors"
 )
 
@@ -171,6 +172,11 @@ func (s *gitSource) exportRevisionTo(ctx context.Context, rev Revision, to strin
 }
 
 func (s *gitSource) listVersions(ctx context.Context) (vlist []PairedVersion, err error) {
+	<-uber.ThreadSema
+	defer func() {
+		uber.ThreadSema <- "free"
+	}()
+
 	r := s.repo
 
 	cmd := commandContext(ctx, "git", "ls-remote", r.Remote())

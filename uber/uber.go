@@ -39,6 +39,15 @@ var UberLogger = log.New(os.Stdout, UBER_PREFIX, 0)
 
 type rewriteFn func([]string, ExecutorInterface) (*url.URL, string, string, *url.URL, error)
 
+var numThreadsAllowed = 25
+var ThreadSema = make(chan string, numThreadsAllowed)
+
+func init() {
+	for i := 0; i < numThreadsAllowed; i++ {
+		ThreadSema <- "free"
+	}
+}
+
 type internalRewriter struct {
 	log     bool
 	pattern *regexp.Regexp
@@ -140,6 +149,11 @@ func rewriteGithub(match []string, ex ExecutorInterface) (*url.URL, string, stri
 }
 
 func CheckAndMirrorRepo(ex ExecutorInterface, gpath, remote string, gitoliteURL *url.URL) error {
+	<-ThreadSema
+	defer func() {
+		ThreadSema <- "free"
+	}()
+
 	if os.Getenv(UberDisableGitoliteAutocreation) != "" {
 		return nil
 	}
@@ -224,7 +238,7 @@ func rewriteGolang(in []string, ex ExecutorInterface) (*url.URL, string, string,
 }
 
 func getGithubRemoteFromUserAndRepo(user, repo string) string {
-	return fmt.Sprintf("https://github.com:%s/%s", user, repo)
+	return fmt.Sprintf("https://github.com/%s/%s", user, repo)
 }
 
 func gitolitePathForGithub(user, repo string) string {
