@@ -142,6 +142,7 @@ func (cmd *ensureCommand) Register(fs *flag.FlagSet) {
 	fs.BoolVar(&cmd.noVendor, "no-vendor", false, "update Gopkg.lock (if needed), but do not update vendor/")
 	fs.BoolVar(&cmd.dryRun, "dry-run", false, "only report the changes that would be made")
 	fs.BoolVar(&cmd.withMirror, "withMirror", false, "enable github mirroring internally in gitolite")
+	fs.BoolVar(&cmd.gopath, "gopath", false, "search in GOPATH for dependencies")
 }
 
 type ensureCommand struct {
@@ -152,6 +153,7 @@ type ensureCommand struct {
 	vendorOnly bool
 	dryRun     bool
 	withMirror bool
+	gopath     bool
 }
 
 func (cmd *ensureCommand) Run(ctx *dep.Ctx, args []string) error {
@@ -194,6 +196,10 @@ func (cmd *ensureCommand) Run(ctx *dep.Ctx, args []string) error {
 		return err
 	}
 
+	if cmd.gopath {
+		pkgtree.SetLocator(gopathLocator{ctx:ctx, sm:sm})
+	}
+
 	params := p.MakeParams()
 
 	ctx.Out.Println("Getting direct dependencies...")
@@ -226,6 +232,11 @@ func (cmd *ensureCommand) Run(ctx *dep.Ctx, args []string) error {
 			ctx.Out.Println(err)
 		}
 	}
+
+	if cmd.gopath {
+		pkgtree.SetRoot(params.RootPackageTree.Copy())
+	}
+
 	if ineffs := p.FindIneffectualConstraints(sm); len(ineffs) > 0 {
 		ctx.Err.Printf("Warning: the following project(s) have [[constraint]] stanzas in %s:\n\n", dep.ManifestName)
 		for _, ineff := range ineffs {
@@ -458,6 +469,38 @@ func (cmd *ensureCommand) runUpdate(ctx *dep.Ctx, args []string, p *dep.Project,
 	}
 	return errors.Wrap(sw.Write(p.AbsRoot, sm, false, logger), "grouped write of manifest, lock and vendor")
 }
+
+type gopathLocator struct{
+	sm gps.SourceManager
+	ctx *dep.Ctx
+}
+
+// This function is used during reach map construction to defferentiate internal imports from external ones.
+// Solver would try to resolve only external imports.
+func (l gopathLocator) Locate(imp, prefix string) bool {
+	root, e := l.sm.DeduceProjectRoot(imp)
+	if e != nil { // Unable to deduce root, consider project external.
+		return false
+	}
+	_, e = l.ctx.AbsForImport(string(root))
+	if e != nil {
+		if prefix == "" {
+			return false
+		}
+		return eqOrSlashedPrefix(imp, prefix) // fall back to the logic of standard locator.
+	}
+	return true
+}
+
+func eqOrSlashedPrefix(s, prefix string) bool {
+	if !strings.HasPrefix(s, prefix) {
+		return false
+	}
+
+	prflen, pathlen := len(prefix), len(s)
+	return prflen == pathlen || strings.Index(s[prflen:], "/") == 0
+}
+
 
 func (cmd *ensureCommand) runAdd(ctx *dep.Ctx, args []string, p *dep.Project, sm gps.SourceManager, params gps.SolveParameters) error {
 	if len(args) == 0 {

@@ -60,16 +60,6 @@ func TestBadSolveOpts(t *testing.T) {
 
 	params.RootPackageTree = pkgtree.PackageTree{
 		ImportRoot: pn,
-	}
-	_, err = Prepare(params, sm)
-	if err == nil {
-		t.Errorf("Prepare should have errored on empty name")
-	} else if !strings.Contains(err.Error(), "at least one package") {
-		t.Error("Prepare should have given error on empty import root, but gave:", err)
-	}
-
-	params.RootPackageTree = pkgtree.PackageTree{
-		ImportRoot: pn,
 		Packages: map[string]pkgtree.PackageOrErr{
 			pn: {
 				P: pkgtree.Package{

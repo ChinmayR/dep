@@ -89,7 +89,7 @@ func ListPackages(fileRoot, importRoot string) (PackageTree, error) {
 		// We don't skip _*, or testdata dirs because, while it may be poor
 		// form, importing them is not a compilation error.
 		switch fi.Name() {
-		case "vendor", "Godeps":
+		case "vendor", "Godeps", "buck-out":
 			return filepath.SkipDir
 		}
 
@@ -129,7 +129,7 @@ func ListPackages(fileRoot, importRoot string) (PackageTree, error) {
 		// Compute the import path. Run the result through ToSlash(), so that
 		// windows file paths are normalized to slashes, as is expected of
 		// import paths.
-		ip := filepath.ToSlash(filepath.Join(importRoot, strings.TrimPrefix(wp, fileRoot)))
+		ip := strings.TrimPrefix(filepath.ToSlash(filepath.Join(importRoot, strings.TrimPrefix(wp, fileRoot))), "/")
 
 		// Find all the imports, across all os/arch combos
 		p := &build.Package{
@@ -588,10 +588,10 @@ func (t PackageTree) ToReachMap(main, tests, backprop bool, ignore *IgnoredRules
 				continue
 			}
 
-			if !eqOrSlashedPrefix(imp, t.ImportRoot) {
-				w.ex[imp] = true
-			} else {
+			if locator.Locate(imp, t.ImportRoot) {
 				w.in[imp] = true
+			} else {
+				w.ex[imp] = true
 			}
 		}
 
@@ -599,6 +599,33 @@ func (t PackageTree) ToReachMap(main, tests, backprop bool, ignore *IgnoredRules
 	}
 
 	return wmToReach(workmap, backprop)
+}
+
+// Locator checks if an import should be considered internal or external.
+type Locator interface {
+	Locate(imp, prefix string) bool
+}
+
+type standardLocator struct{}
+
+// Locate, returns true if import is located inside of a directory named prefix.
+// Normally prefix is a working directory where dep was executed hence all underlying imports are considered internal.
+// This is a good approximation but doesn't work well when you want to resolve dependencies for multiple projects at the same time.
+func (standardLocator) Locate(imp, prefix string) bool {
+	return eqOrSlashedPrefix(imp, prefix)
+}
+
+func SetLocator(l Locator) {
+	locator = l
+}
+
+var locator Locator = standardLocator{}
+
+// Root package tree is used during the ToReachMap transformation to identify packages that are available locally.
+var root PackageTree
+
+func SetRoot(t PackageTree) {
+	root = t
 }
 
 // Copy copies the PackageTree.
@@ -846,6 +873,27 @@ func wmToReach(workmap map[string]wm, backprop bool) (ReachMap, map[string]*Prob
 			// recursion levels as a value has the effect of auto-popping the
 			// slice, while also giving us safe memory reuse.
 			path = append(path, pkg)
+
+			// Check if package is available in the GOPATH source root in case if it doesn't exist in the workmap.
+			// This typically happens when you run ensure with -gopath flag and there is a transitive dependency that goes back into GOPATH.
+			// For example GOPATH/src/code.uber.internal/foo -> code.uber.internal:bar -> GOPATH/src/code.uber.internal/baz
+			poe, existsInRoot := root.Packages[pkg]
+			if !exists || w.err != nil {
+				if existsInRoot && poe.Err == nil {
+					w = wm{in: make(map[string]bool), ex: make(map[string]bool)}
+					for _, imp := range append(poe.P.Imports, poe.P.TestImports...) {
+						if locator.Locate(imp, pkg) {
+							w.in[imp] = true
+						} else {
+							w.ex[imp] = true
+						}
+					}
+					exists = true
+				} else if strings.Contains(pkg, "/.gen/") {
+					w = wm{in: make(map[string]bool), ex: make(map[string]bool)}
+					exists = true
+				}
+			}
 
 			if !exists || w.err != nil {
 				if backprop {

@@ -177,9 +177,6 @@ func (params SolveParameters) toRootdata() (rootdata, error) {
 	if params.RootDir == "" {
 		return rootdata{}, badOptsFailure("params must specify a non-empty root directory")
 	}
-	if params.RootPackageTree.ImportRoot == "" {
-		return rootdata{}, badOptsFailure("params must include a non-empty import root")
-	}
 	if len(params.RootPackageTree.Packages) == 0 {
 		return rootdata{}, badOptsFailure("at least one package must be present in the PackageTree")
 	}

@@ -91,7 +91,6 @@ func (c *Config) Run() int {
 	// Build the list of available commands.
 	commands := [...]command{
 		&initCommand{},
-		&monorepoCommand{},
 		&statusCommand{},
 		&ensureCommand{},
 		&pruneCommand{},

@@ -254,3 +254,58 @@ func TestValidateUpdateArgs(t *testing.T) {
 		})
 	}
 }
+
+func TestGoPathLocator(t *testing.T) {
+	cases := []struct {
+		name         string
+		existingPath string
+		imp          string
+		prefix       string
+		expected     bool
+	}{
+		{name: "github import exists", existingPath: "src/github.com/foo/bar",
+			imp: "github.com/foo/bar/baz", prefix: "", expected: true},
+		{name: "import root with prefix", existingPath: "src/github.com/foo/bar",
+			imp: "github.com/bar/baz", prefix: "github.com/bar/baz", expected: true},
+		{name: "import with prefix", existingPath: "src/github.com/foo/bar",
+			imp: "github.com/bar/baz/boo", prefix: "github.com/bar/baz", expected: true},
+		{name: "github .gen import exist", existingPath: "src/github.com/foo/bar",
+			imp: "github.com/foo/bar/.gen/baz", prefix: "", expected: true},
+		{name: "internal go-common import exists", existingPath: "src/code.uber.internal/go-common.git",
+			imp: "code.uber.internal/go-common.git/x/log", prefix: "", expected: true},
+		{name: "github import doesn't exist", existingPath: "src/github.com/foo/bar",
+			imp: "github.com/foo/baz",prefix: "",  expected: false},
+		{name: "github import doesn't exist with prefix", existingPath: "src/github.com/foo/bar",
+			imp: "github.com/foo/baz",prefix: "code.uber.internal/common",  expected: false},
+		{name: "internal import doesn't exist", existingPath: "src/github.com/foo/bar",
+			imp: "code.uber.internal/go-common.git", prefix: "", expected: true},
+	}
+	h := test.NewHelper(t)
+	defer h.Cleanup()
+
+	h.TempDir("src")
+	pwd := h.Path(".")
+
+	stderrOutput := &bytes.Buffer{}
+	errLogger := log.New(stderrOutput, "", 0)
+	ctx := &dep.Ctx{
+		GOPATH: pwd,
+		Out:    log.New(ioutil.Discard, "", 0),
+		Err:    errLogger,
+	}
+
+	sm, err := ctx.SourceManager()
+	h.Must(err)
+	defer sm.Release()
+
+	locator := gopathLocator{ctx: ctx, sm: sm}
+	for _, c := range cases {
+		t.Run(c.name, func(t *testing.T) {
+			h.TempDir(c.existingPath)
+			result := locator.Locate(c.imp, c.prefix)
+			if result != c.expected {
+				t.Fail()
+			}
+		})
+	}
+}
