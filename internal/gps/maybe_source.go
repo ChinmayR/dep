@@ -87,7 +87,7 @@ type maybeGitoliteSource struct {
 func (m maybeGitoliteSource) try(ctx context.Context, cachedir string, c singleSourceCache, superv *supervisor) (source, sourceState, error) {
 	var ustr string
 	var runningOnRemote bool
-	if strings.TrimSpace(m.remote) != "" {
+	if strings.TrimSpace(m.remote) != "" && !uber.IsGoUberOrgPath(m.remote) {
 		runningOnRemote = true
 		ustr = m.remote
 	} else {

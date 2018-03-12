@@ -12,12 +12,13 @@ import (
 	"path/filepath"
 	"strings"
 
+	"regexp"
+
 	"github.com/Masterminds/semver"
 	"github.com/golang/dep/internal/fs"
 	"github.com/golang/dep/internal/gps/pkgtree"
 	"github.com/golang/dep/uber"
 	"github.com/pkg/errors"
-	"regexp"
 )
 
 type baseVCSSource struct {

@@ -127,7 +127,7 @@ func (m gitoliteDeducer) deduceSource(path string, u *url.URL) (maybeSource, err
 	if err != nil {
 		return nil, err
 	}
-	return maybeGitoliteSource{url:u, gpath:gpath, remote:remote, gitoliteURL:gitoliteURL}, nil
+	return maybeGitoliteSource{url: u, gpath: gpath, remote: remote, gitoliteURL: gitoliteURL}, nil
 }
 
 type golangDeducer struct {
@@ -154,7 +154,7 @@ func (m golangDeducer) deduceSource(path string, u *url.URL) (maybeSource, error
 		(RunUberDeduceLogicForTest == true && inTest) {
 		golangUrl, gpath, remote, gitoliteURL, err := uber.GetGitoliteUrlForRewriter(path, "golang.org")
 		if err == nil {
-			return maybeGitoliteSource{url:golangUrl, gpath:gpath, remote:remote, gitoliteURL:gitoliteURL}, nil
+			return maybeGitoliteSource{url: golangUrl, gpath: gpath, remote: remote, gitoliteURL: gitoliteURL}, nil
 		}
 	}
 
@@ -198,7 +198,7 @@ func (m githubDeducer) deduceSource(path string, u *url.URL) (maybeSource, error
 		uberUrl, gpath, remote, gitoliteURL, err := uber.GetGitoliteUrlForRewriter(path, "github.com")
 		if err == nil {
 			u = uberUrl
-			return maybeGitoliteSource{url:u, gpath:gpath, remote:remote, gitoliteURL:gitoliteURL}, nil
+			return maybeGitoliteSource{url: u, gpath: gpath, remote: remote, gitoliteURL: gitoliteURL}, nil
 		} // if there is an error, continue to pull it directly from github
 	}
 	// END UBER PATCH
