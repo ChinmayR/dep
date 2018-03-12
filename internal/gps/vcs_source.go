@@ -17,6 +17,7 @@ import (
 	"github.com/golang/dep/internal/gps/pkgtree"
 	"github.com/golang/dep/uber"
 	"github.com/pkg/errors"
+	"regexp"
 )
 
 type baseVCSSource struct {
@@ -171,6 +172,19 @@ func (s *gitSource) exportRevisionTo(ctx context.Context, rev Revision, to strin
 	return nil
 }
 
+func filterGitoliteLsRemoteOutput(output [][]byte) [][]byte {
+	linesToRemove := 0
+	for _, line := range output {
+		//Filter first few ls-remote lines that doesn't start with sha1 and then either HEAD or ref/
+		if match, _ := regexp.MatchString("^[a-z0-9]{40}\\s(HEAD|refs/)", string(line)); !match {
+			linesToRemove++
+		} else {
+			break
+		}
+	}
+	return output[linesToRemove:]
+}
+
 func (s *gitSource) listVersions(ctx context.Context) (vlist []PairedVersion, err error) {
 	<-uber.ThreadSema
 	defer func() {
@@ -178,7 +192,6 @@ func (s *gitSource) listVersions(ctx context.Context) (vlist []PairedVersion, er
 	}()
 
 	r := s.repo
-
 	cmd := commandContext(ctx, "git", "ls-remote", r.Remote())
 	// Ensure no prompting for PWs
 	cmd.SetEnv(append([]string{"GIT_ASKPASS=", "GIT_TERMINAL_PROMPT=0"}, os.Environ()...))
@@ -188,11 +201,11 @@ func (s *gitSource) listVersions(ctx context.Context) (vlist []PairedVersion, er
 	}
 
 	all := bytes.Split(bytes.TrimSpace(out), []byte("\n"))
-	// gitolite hosts always print the below two lines and it is important to filter them out
+	// gitolite hosts sometimes print extra lines at the top and it is important to filter them out, e.g.
 	// # Using gitolite-code secondary gitolite06-sjc1
 	// Killed by signal 1.
-	if strings.Contains(r.Remote(), "code.uber.internal") && len(all) > 2 {
-		all = all[2:]
+	if strings.Contains(r.Remote(), "code.uber.internal") {
+		all = filterGitoliteLsRemoteOutput(all)
 	}
 	if len(all) == 1 && len(all[0]) == 0 {
 		return nil, fmt.Errorf("no data returned from ls-remote")

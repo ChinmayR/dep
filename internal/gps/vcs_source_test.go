@@ -17,6 +17,7 @@ import (
 	"testing"
 
 	"github.com/golang/dep/internal/test"
+	"bytes"
 )
 
 // Parent test that executes all the slow vcs interaction tests in parallel.
@@ -754,6 +755,43 @@ func Test_hgSource_exportRevisionTo_removeVcsFiles(t *testing.T) {
 	} else if !os.IsNotExist(err) {
 		t.Fatalf("unexpected error: %v", err)
 	}
+}
+
+func TestFilterGitoliteLsRemoteOutput(t *testing.T) {
+	lsRemoteOutput1 := "# Using gitolite-code secondary gitolite06-sjc1\n" +
+						"0bdc17e10b933ff96c3cf147a9f9a9a1a36ac209	HEAD\n" +
+						"82c4eaa194cb8b1eca22016f577fadce94b84b67	refs/heads/CleopatraSendSMSResponse\n" +
+						"32f4b5e48c9f8cf1e736cc1ba9a49a0868d77a1e	refs/tags/43221"
+	assertEqualLsRemoteOutputLines(t, lsRemoteOutput1, 3)
+
+	lsRemoteOutput2 := "# Using gitolite-code secondary gitolite06-sjc1\n" +
+						"Killed by signal 1. \n" +
+						"82c4eaa194cb8b1eca22016f577fadce94b84b67	refs/heads/CleopatraSendSMSResponse\n" +
+						"32f4b5e48c9f8cf1e736cc1ba9a49a0868d77a1e	refs/tags/43221"
+	assertEqualLsRemoteOutputLines(t, lsRemoteOutput2, 2)
+
+	lsRemoteOutput3 := "0bdc17e10b933ff96c3cf147a9f9a9a1a36ac209	HEAD\n" +
+						"82c4eaa194cb8b1eca22016f577fadce94b84b67	refs/heads/CleopatraSendSMSResponse\n" +
+						"32f4b5e48c9f8cf1e736cc1ba9a49a0868d77a1e	refs/tags/43221"
+	assertEqualLsRemoteOutputLines(t, lsRemoteOutput3, 3)
+
+	lsRemoteOutput4 := "82c4eaa194cb8b1eca22016f577fadce94b84b67	refs/heads/CleopatraSendSMSResponse\n" +
+						"32f4b5e48c9f8cf1e736cc1ba9a49a0868d77a1e	refs/tags/43221"
+	assertEqualLsRemoteOutputLines(t, lsRemoteOutput4, 2)
+
+	lsRemoteOutput5 := ""
+	assertEqualLsRemoteOutputLines(t, lsRemoteOutput5, 0)
+}
+
+func assertEqualLsRemoteOutputLines(t *testing.T, lsRemoteOutput string, expected int) {
+	actual := len(filterGitoliteLsRemoteOutput(toTwoDimensionalByteArray(lsRemoteOutput)))
+	if expected != actual {
+		t.Errorf("Actual doesn't equal expected ls-remote output lines. expected=%v actual=%v", expected, actual)
+	}
+}
+
+func toTwoDimensionalByteArray(str string) [][]byte {
+	return bytes.Split(bytes.TrimSpace([]byte(str)), []byte("\n"))
 }
 
 // Fail a test if the specified binaries aren't installed.
