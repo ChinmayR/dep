@@ -52,7 +52,7 @@ var pathDeductionFixtures = map[string][]pathDeductionFixture{
 			in:   "github.com/sdboyer/gps",
 			root: "github.com/sdboyer/gps",
 			mb: maybeGitoliteSource{url: mkurl("ssh://gitolite@code.uber.internal/github/sdboyer/gps"),
-				gpath: "github/sdboyer/gps", remote: "https://github.com:sdboyer/gps", gitoliteURL: mkurl("ssh://gitolite@code.uber.internal/github/sdboyer/gps")},
+				gpath: "github/sdboyer/gps", remote: "https://github.com/sdboyer/gps", gitoliteURL: mkurl("ssh://gitolite@code.uber.internal/github/sdboyer/gps")},
 			runUberLogic: true,
 		},
 		{
@@ -69,7 +69,7 @@ var pathDeductionFixtures = map[string][]pathDeductionFixture{
 			in:   "github.com/sdboyer/gps/foo",
 			root: "github.com/sdboyer/gps",
 			mb: maybeGitoliteSource{url: mkurl("ssh://gitolite@code.uber.internal/github/sdboyer/gps"),
-				gpath: "github/sdboyer/gps", remote: "https://github.com:sdboyer/gps", gitoliteURL: mkurl("ssh://gitolite@code.uber.internal/github/sdboyer/gps")},
+				gpath: "github/sdboyer/gps", remote: "https://github.com/sdboyer/gps", gitoliteURL: mkurl("ssh://gitolite@code.uber.internal/github/sdboyer/gps")},
 			runUberLogic: true,
 		},
 		{
@@ -90,7 +90,7 @@ var pathDeductionFixtures = map[string][]pathDeductionFixture{
 			in:   "github.com/sdboyer/gps.git/foo",
 			root: "github.com/sdboyer/gps.git",
 			mb: maybeGitoliteSource{url: mkurl("ssh://gitolite@code.uber.internal/github/sdboyer/gps.git"),
-				gpath: "github/sdboyer/gps.git", remote: "https://github.com:sdboyer/gps.git", gitoliteURL: mkurl("ssh://gitolite@code.uber.internal/github/sdboyer/gps.git")},
+				gpath: "github/sdboyer/gps.git", remote: "https://github.com/sdboyer/gps.git", gitoliteURL: mkurl("ssh://gitolite@code.uber.internal/github/sdboyer/gps.git")},
 			runUberLogic: true,
 		},
 		{
@@ -102,7 +102,7 @@ var pathDeductionFixtures = map[string][]pathDeductionFixture{
 			in:   "git@github.com:sdboyer/gps",
 			root: "github.com/sdboyer/gps",
 			mb: maybeGitoliteSource{url: mkurl("ssh://gitolite@code.uber.internal/github/sdboyer/gps"),
-				gpath: "github/sdboyer/gps", remote: "https://github.com:sdboyer/gps", gitoliteURL: mkurl("ssh://gitolite@code.uber.internal/github/sdboyer/gps")},
+				gpath: "github/sdboyer/gps", remote: "https://github.com/sdboyer/gps", gitoliteURL: mkurl("ssh://gitolite@code.uber.internal/github/sdboyer/gps")},
 			runUberLogic: true,
 		},
 		{
@@ -114,7 +114,7 @@ var pathDeductionFixtures = map[string][]pathDeductionFixture{
 			in:   "https://github.com/sdboyer/gps",
 			root: "github.com/sdboyer/gps",
 			mb: maybeGitoliteSource{url: mkurl("ssh://gitolite@code.uber.internal/github/sdboyer/gps"),
-				gpath: "github/sdboyer/gps", remote: "https://github.com:sdboyer/gps", gitoliteURL: mkurl("ssh://gitolite@code.uber.internal/github/sdboyer/gps")},
+				gpath: "github/sdboyer/gps", remote: "https://github.com/sdboyer/gps", gitoliteURL: mkurl("ssh://gitolite@code.uber.internal/github/sdboyer/gps")},
 			runUberLogic: true,
 		},
 		{
@@ -126,7 +126,7 @@ var pathDeductionFixtures = map[string][]pathDeductionFixture{
 			in:   "https://github.com/sdboyer/gps/foo/bar",
 			root: "github.com/sdboyer/gps",
 			mb: maybeGitoliteSource{url: mkurl("ssh://gitolite@code.uber.internal/github/sdboyer/gps"),
-				gpath: "github/sdboyer/gps", remote: "https://github.com:sdboyer/gps", gitoliteURL: mkurl("ssh://gitolite@code.uber.internal/github/sdboyer/gps")},
+				gpath: "github/sdboyer/gps", remote: "https://github.com/sdboyer/gps", gitoliteURL: mkurl("ssh://gitolite@code.uber.internal/github/sdboyer/gps")},
 			runUberLogic: true,
 		},
 		{
@@ -143,7 +143,7 @@ var pathDeductionFixtures = map[string][]pathDeductionFixture{
 			in:   "github.com/sdboyer-/gps/foo",
 			root: "github.com/sdboyer-/gps",
 			mb: maybeGitoliteSource{url: mkurl("ssh://gitolite@code.uber.internal/github/sdboyer-/gps"),
-				gpath: "github/sdboyer-/gps", remote: "https://github.com:sdboyer-/gps", gitoliteURL: mkurl("ssh://gitolite@code.uber.internal/github/sdboyer-/gps")},
+				gpath: "github/sdboyer-/gps", remote: "https://github.com/sdboyer-/gps", gitoliteURL: mkurl("ssh://gitolite@code.uber.internal/github/sdboyer-/gps")},
 			runUberLogic: true,
 		},
 		{
@@ -160,7 +160,7 @@ var pathDeductionFixtures = map[string][]pathDeductionFixture{
 			in:   "github.com/a/gps/foo",
 			root: "github.com/a/gps",
 			mb: maybeGitoliteSource{url: mkurl("ssh://gitolite@code.uber.internal/github/a/gps"),
-				gpath: "github/a/gps", remote: "https://github.com:a/gps", gitoliteURL: mkurl("ssh://gitolite@code.uber.internal/github/a/gps")},
+				gpath: "github/a/gps", remote: "https://github.com/a/gps", gitoliteURL: mkurl("ssh://gitolite@code.uber.internal/github/a/gps")},
 			runUberLogic: true,
 		},
 		// some invalid github username patterns
@@ -206,7 +206,7 @@ var pathDeductionFixtures = map[string][]pathDeductionFixture{
 			in:   "github.com/kr/pretty",
 			root: "github.com/kr/pretty",
 			mb: maybeGitoliteSource{url: mkurl("ssh://gitolite@code.uber.internal/github/kr/pretty"),
-				gpath: "github/kr/pretty", remote: "https://github.com:kr/pretty", gitoliteURL: mkurl("ssh://gitolite@code.uber.internal/github/kr/pretty")},
+				gpath: "github/kr/pretty", remote: "https://github.com/kr/pretty", gitoliteURL: mkurl("ssh://gitolite@code.uber.internal/github/kr/pretty")},
 			runUberLogic: true,
 		},
 	},

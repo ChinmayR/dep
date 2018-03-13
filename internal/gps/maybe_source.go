@@ -87,7 +87,7 @@ type maybeGitoliteSource struct {
 func (m maybeGitoliteSource) try(ctx context.Context, cachedir string, c singleSourceCache, superv *supervisor) (source, sourceState, error) {
 	var ustr string
 	var runningOnRemote bool
-	if strings.TrimSpace(m.remote) != "" && !uber.IsGoUberOrgPath(m.remote) {
+	if strings.TrimSpace(m.remote) != "" {
 		runningOnRemote = true
 		ustr = m.remote
 	} else {
@@ -102,7 +102,8 @@ func (m maybeGitoliteSource) try(ctx context.Context, cachedir string, c singleS
 
 	src := &gitSource{
 		baseVCSSource: baseVCSSource{
-			repo: r,
+			repo:        r,
+			upstreamUrl: m.url.String(),
 		},
 	}
 
@@ -128,7 +129,8 @@ func (m maybeGitoliteSource) try(ctx context.Context, cachedir string, c singleS
 			}
 			src = &gitSource{
 				baseVCSSource: baseVCSSource{
-					repo: r,
+					repo:        r,
+					upstreamUrl: m.url.String(),
 				},
 			}
 			if err2 := superv.do(ctx, "git:lv:maybe", ctListVersions, tryListVersions); err2 != nil {
@@ -167,7 +169,8 @@ func (m maybeGitSource) try(ctx context.Context, cachedir string, c singleSource
 
 	src := &gitSource{
 		baseVCSSource: baseVCSSource{
-			repo: r,
+			repo:        r,
+			upstreamUrl: m.url.String(),
 		},
 	}
 
@@ -225,7 +228,8 @@ func (m maybeGopkginSource) try(ctx context.Context, cachedir string, c singleSo
 	src := &gopkginSource{
 		gitSource: gitSource{
 			baseVCSSource: baseVCSSource{
-				repo: r,
+				repo:        r,
+				upstreamUrl: m.url.String(),
 			},
 		},
 		major:    m.major,
@@ -284,7 +288,8 @@ func (m maybeBzrSource) try(ctx context.Context, cachedir string, c singleSource
 
 	src := &bzrSource{
 		baseVCSSource: baseVCSSource{
-			repo: r,
+			repo:        r,
+			upstreamUrl: m.url.String(),
 		},
 	}
 
@@ -323,7 +328,8 @@ func (m maybeHgSource) try(ctx context.Context, cachedir string, c singleSourceC
 
 	src := &hgSource{
 		baseVCSSource: baseVCSSource{
-			repo: r,
+			repo:        r,
+			upstreamUrl: m.url.String(),
 		},
 	}
 

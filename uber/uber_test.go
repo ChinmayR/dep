@@ -25,7 +25,7 @@ func TestUber_IsGopkg(t *testing.T) {
 			given:          "gopkg.in/validator.v2",
 			expUrl:         "https://gopkg.uberinternal.com/validator.v2",
 			expGpath:       "github/go-validator/validator",
-			expRemote:      "https://github.com:go-validator/validator",
+			expRemote:      "https://github.com/go-validator/validator",
 			expGitoliteUrl: "ssh://gitolite@code.uber.internal/github/go-validator/validator",
 			autocreate:     false,
 		},
@@ -156,7 +156,7 @@ func TestUber_IsGitoliteForGithub(t *testing.T) {
 			given:          "github.com/Masterminds/glide",
 			expUrl:         "ssh://gitolite@code.uber.internal/github/Masterminds/glide",
 			expGpath:       "github/Masterminds/glide",
-			expRemote:      "https://github.com:Masterminds/glide",
+			expRemote:      "https://github.com/Masterminds/glide",
 			expGitoliteUrl: "ssh://gitolite@code.uber.internal/github/Masterminds/glide",
 			autocreate:     true,
 		},
@@ -193,7 +193,7 @@ func TestUber_MirrorsToGitolite(t *testing.T) {
 	cases := []mirrorTestCase{
 		{
 			importPath:   "github.com/test/repo",
-			remoteUrl:    "https://github.com:test/repo",
+			remoteUrl:    "https://github.com/test/repo",
 			gpath:        "github/test/repo",
 			mirrorGpath:  "github/test/repo",
 			rewritername: "github.com",
@@ -202,7 +202,7 @@ func TestUber_MirrorsToGitolite(t *testing.T) {
 		},
 		{
 			importPath:   "github.com/test/repo.git",
-			remoteUrl:    "https://github.com:test/repo.git",
+			remoteUrl:    "https://github.com/test/repo.git",
 			gpath:        "github/test/repo.git",
 			mirrorGpath:  "github/test/repo",
 			rewritername: "github.com",
@@ -211,7 +211,7 @@ func TestUber_MirrorsToGitolite(t *testing.T) {
 		},
 		{
 			importPath:   "gopkg.in/repo.v0",
-			remoteUrl:    "https://github.com:go-repo/repo",
+			remoteUrl:    "https://github.com/go-repo/repo",
 			gpath:        "github/go-repo/repo",
 			mirrorGpath:  "github/go-repo/repo",
 			rewritername: "gopkg.in",

@@ -22,7 +22,8 @@ import (
 )
 
 type baseVCSSource struct {
-	repo ctxRepo
+	repo        ctxRepo
+	upstreamUrl string
 }
 
 func (bs *baseVCSSource) sourceType() string {
@@ -39,7 +40,7 @@ func (bs *baseVCSSource) existsUpstream(ctx context.Context) bool {
 }
 
 func (bs *baseVCSSource) upstreamURL() string {
-	return bs.repo.Remote()
+	return bs.upstreamUrl
 }
 
 func (bs *baseVCSSource) disambiguateRevision(ctx context.Context, r Revision) (Revision, error) {
