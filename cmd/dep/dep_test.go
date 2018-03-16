@@ -34,7 +34,6 @@ func TestMain(m *testing.M) {
 		// those systems.  Set CCACHE_DIR to cope.  Issue 17668.
 		os.Setenv("CCACHE_DIR", filepath.Join(home, ".ccache"))
 	}
-	os.Setenv("HOME", "/test-dep-home-does-not-exist")
 
 	r := m.Run()
 

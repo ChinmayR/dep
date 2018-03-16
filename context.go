@@ -9,6 +9,7 @@ import (
 	"os"
 	"path/filepath"
 	"runtime"
+	"strings"
 
 	"github.com/golang/dep/internal/fs"
 	"github.com/golang/dep/internal/gps"
@@ -87,8 +88,14 @@ func defaultGOPATH() string {
 // SourceManager produces an instance of gps's built-in SourceManager
 // initialized to log to the receiver's logger.
 func (c *Ctx) SourceManager() (*gps.SourceMgr, error) {
+	cacheDirPrefix := os.Getenv("HOME")
+	if strings.Trim(cacheDirPrefix, " ") == "" {
+		cacheDirPrefix = c.GOPATH
+	} else {
+		cacheDirPrefix = filepath.Join(cacheDirPrefix, ".dep-cache")
+	}
 	return gps.NewSourceManager(gps.SourceManagerConfig{
-		Cachedir:       filepath.Join(c.GOPATH, "pkg", "dep"),
+		Cachedir:       filepath.Join(cacheDirPrefix, "pkg", "dep"),
 		Logger:         c.Out,
 		DisableLocking: c.DisableLocking,
 	})
