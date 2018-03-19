@@ -292,6 +292,11 @@ func NewSourceManager(c SourceManagerConfig) (*SourceMgr, error) {
 	return sm, nil
 }
 
+// ClearCache is used to remove the cache directory managed by this source manager
+func (sm *SourceMgr) ClearCacheDir() error {
+	return os.RemoveAll(sm.cachedir)
+}
+
 // UseDefaultSignalHandling sets up typical os.Interrupt signal handling for a
 // SourceMgr.
 func (sm *SourceMgr) UseDefaultSignalHandling() {

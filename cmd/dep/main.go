@@ -67,6 +67,7 @@ func (c *Config) Run() (exitCode int) {
 		&pruneCommand{},
 		&versionCommand{},
 		&bootConfigCommand{},
+		&cacheClearCommand{},
 	}
 
 	examples := [][2]string{
@@ -89,6 +90,10 @@ func (c *Config) Run() (exitCode int) {
 		{
 			"dep bootConfig",
 			"bootstrap the uber specific default config",
+		},
+		{
+			"dep cc",
+			"clear the dep cache at $HOME/.dep_cache/pkg/dep",
 		},
 	}
 
