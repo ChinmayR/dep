@@ -9,34 +9,34 @@ type ExecutorInterface struct {
 	mock.Mock
 }
 
-// ExecCommand provides a mock function with given fields: name, cmdTimeout, runInBackground, arg
-func (_m *ExecutorInterface) ExecCommand(name string, cmdTimeout time.Duration, runInBackground bool, arg ...string) (string, string, error) {
+// ExecCommand provides a mock function with given fields: name, cmdTimeout, runInBackground, environment, arg
+func (_m *ExecutorInterface) ExecCommand(name string, cmdTimeout time.Duration, runInBackground bool, environment []string, arg ...string) (string, string, error) {
 	_va := make([]interface{}, len(arg))
 	for _i := range arg {
 		_va[_i] = arg[_i]
 	}
 	var _ca []interface{}
-	_ca = append(_ca, name, cmdTimeout, runInBackground)
+	_ca = append(_ca, name, cmdTimeout, runInBackground, environment)
 	_ca = append(_ca, _va...)
 	ret := _m.Called(_ca...)
 
 	var r0 string
-	if rf, ok := ret.Get(0).(func(string, time.Duration, bool, ...string) string); ok {
-		r0 = rf(name, cmdTimeout, runInBackground, arg...)
+	if rf, ok := ret.Get(0).(func(string, time.Duration, bool, []string, ...string) string); ok {
+		r0 = rf(name, cmdTimeout, runInBackground, environment, arg...)
 	} else {
 		r0 = ret.Get(0).(string)
 	}
 
 	var r1 string
-	if rf, ok := ret.Get(1).(func(string, time.Duration, bool, ...string) string); ok {
-		r1 = rf(name, cmdTimeout, runInBackground, arg...)
+	if rf, ok := ret.Get(1).(func(string, time.Duration, bool, []string, ...string) string); ok {
+		r1 = rf(name, cmdTimeout, runInBackground, environment, arg...)
 	} else {
 		r1 = ret.Get(1).(string)
 	}
 
 	var r2 error
-	if rf, ok := ret.Get(2).(func(string, time.Duration, bool, ...string) error); ok {
-		r2 = rf(name, cmdTimeout, runInBackground, arg...)
+	if rf, ok := ret.Get(2).(func(string, time.Duration, bool, []string, ...string) error); ok {
+		r2 = rf(name, cmdTimeout, runInBackground, environment, arg...)
 	} else {
 		r2 = ret.Error(2)
 	}

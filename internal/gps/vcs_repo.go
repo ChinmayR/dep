@@ -14,6 +14,7 @@ import (
 	"time"
 
 	"github.com/Masterminds/vcs"
+	"github.com/golang/dep/uber"
 	"github.com/pkg/errors"
 )
 
@@ -85,6 +86,9 @@ func newVcsLocalErrorOr(err error, args []string, out, msg string) error {
 }
 
 func (r *gitRepo) get(ctx context.Context) error {
+	conRes := uber.GetThreadFromPool()
+	defer conRes.Release()
+
 	cmd := commandContext(
 		ctx,
 		"git",

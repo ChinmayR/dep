@@ -11,6 +11,7 @@ import (
 	"github.com/golang/dep/uber/mocks"
 	"github.com/pkg/errors"
 	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/mock"
 )
 
 type repoTestCase struct {
@@ -241,20 +242,20 @@ func TestUber_MirrorsToGitolite(t *testing.T) {
 		func(c mirrorTestCase) {
 			ex := &mocks.ExecutorInterface{}
 			//does not exist on gitolite
-			ex.On("ExecCommand", "git", time.Duration(1*time.Minute), false,
+			ex.On("ExecCommand", "git", time.Duration(1*time.Minute), false, mock.AnythingOfType("[]string"),
 				"ls-remote", "ssh://gitolite@code.uber.internal/"+c.gpath, "HEAD",
 			).Return("", "FATAL: autocreate denied", fmt.Errorf("1"))
 
 			if c.remoteExists {
-				ex.On("ExecCommand", "git", time.Duration(1*time.Minute), false,
+				ex.On("ExecCommand", "git", time.Duration(1*time.Minute), false, mock.AnythingOfType("[]string"),
 					"ls-remote", c.remoteUrl, "HEAD",
 				).Return("", "", nil)
 				//successful creation on gitolite
-				ex.On("ExecCommand", "ssh", time.Duration(2*time.Minute), true,
+				ex.On("ExecCommand", "ssh", time.Duration(2*time.Minute), true, mock.AnythingOfType("[]string"),
 					"gitolite@code.uber.internal", "create", c.mirrorGpath,
 				).Return("", "", nil).Once()
 			} else {
-				ex.On("ExecCommand", "git", time.Duration(1*time.Minute), false,
+				ex.On("ExecCommand", "git", time.Duration(1*time.Minute), false, mock.AnythingOfType("[]string"),
 					"ls-remote", c.remoteUrl, "HEAD",
 				).Return("", "", errors.Errorf("failing remote check"))
 			}

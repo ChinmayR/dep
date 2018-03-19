@@ -141,6 +141,7 @@ func (cmd *ensureCommand) Register(fs *flag.FlagSet) {
 	fs.BoolVar(&cmd.vendorOnly, "vendor-only", false, "populate vendor/ from Gopkg.lock without updating it first")
 	fs.BoolVar(&cmd.noVendor, "no-vendor", false, "update Gopkg.lock (if needed), but do not update vendor/")
 	fs.BoolVar(&cmd.dryRun, "dry-run", false, "only report the changes that would be made")
+	fs.BoolVar(&cmd.withMirror, "withMirror", false, "enable github mirroring internally in gitolite")
 }
 
 type ensureCommand struct {
@@ -150,6 +151,7 @@ type ensureCommand struct {
 	noVendor   bool
 	vendorOnly bool
 	dryRun     bool
+	withMirror bool
 }
 
 func (cmd *ensureCommand) Run(ctx *dep.Ctx, args []string) error {
@@ -169,6 +171,11 @@ func (cmd *ensureCommand) Run(ctx *dep.Ctx, args []string) error {
 
 	if err := cmd.validateFlags(); err != nil {
 		return err
+	}
+
+	if !cmd.withMirror {
+		uber.UberLogger.Println("Internal mirroring is turned off for performance optimization. Run with --withMirror flag to mirror into gitolite")
+		os.Setenv(uber.UberDisableGitoliteAutocreation, "yes")
 	}
 
 	p, err := ctx.LoadProject()

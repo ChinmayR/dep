@@ -66,17 +66,24 @@ func (cmd *initCommand) Register(fs *flag.FlagSet) {
 	fs.BoolVar(&cmd.noExamples, "no-examples", false, "don't include example in Gopkg.toml")
 	fs.BoolVar(&cmd.skipTools, "skip-tools", false, "skip importing configuration from other dependency managers")
 	fs.BoolVar(&cmd.gopath, "gopath", false, "search in GOPATH for dependencies")
+	fs.BoolVar(&cmd.withMirror, "withMirror", false, "enable github mirroring internally in gitolite")
 }
 
 type initCommand struct {
 	noExamples bool
 	skipTools  bool
 	gopath     bool
+	withMirror bool
 }
 
 func (cmd *initCommand) Run(ctx *dep.Ctx, args []string) error {
 	if len(args) > 1 {
 		return errors.Errorf("too many args (%d)", len(args))
+	}
+
+	if !cmd.withMirror {
+		uber.UberLogger.Println("Internal mirroring is turned off for performance optimization. Run with --withMirror flag to mirror into gitolite")
+		os.Setenv(uber.UberDisableGitoliteAutocreation, "yes")
 	}
 
 	var root string

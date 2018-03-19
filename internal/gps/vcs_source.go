@@ -188,15 +188,14 @@ func filterGitoliteLsRemoteOutput(output [][]byte) [][]byte {
 }
 
 func (s *gitSource) listVersions(ctx context.Context) (vlist []PairedVersion, err error) {
-	<-uber.ThreadSema
-	defer func() {
-		uber.ThreadSema <- "free"
-	}()
+	conRes := uber.GetThreadFromPool()
+	defer conRes.Release()
 
 	r := s.repo
 	cmd := commandContext(ctx, "git", "ls-remote", r.Remote())
 	// Ensure no prompting for PWs
 	cmd.SetEnv(append([]string{"GIT_ASKPASS=", "GIT_TERMINAL_PROMPT=0"}, os.Environ()...))
+	cmd.SetEnv(append(conRes.GetEnvironmentForCommand(r.Remote()), os.Environ()...))
 	out, err := cmd.CombinedOutput()
 	if err != nil {
 		return nil, errors.Wrap(err, string(out))

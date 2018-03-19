@@ -39,15 +39,6 @@ var UberLogger = log.New(os.Stdout, UBER_PREFIX, 0)
 
 type rewriteFn func([]string, ExecutorInterface) (*url.URL, string, string, *url.URL, error)
 
-var numThreadsAllowed = 25
-var ThreadSema = make(chan string, numThreadsAllowed)
-
-func init() {
-	for i := 0; i < numThreadsAllowed; i++ {
-		ThreadSema <- "free"
-	}
-}
-
 type internalRewriter struct {
 	log     bool
 	pattern *regexp.Regexp
@@ -55,7 +46,7 @@ type internalRewriter struct {
 }
 
 type ExecutorInterface interface {
-	ExecCommand(name string, cmdTimeout time.Duration, runInBackground bool, arg ...string) (string, string, error)
+	ExecCommand(name string, cmdTimeout time.Duration, runInBackground bool, environment []string, arg ...string) (string, string, error)
 }
 
 type CommandExecutor struct {
@@ -149,16 +140,16 @@ func rewriteGithub(match []string, ex ExecutorInterface) (*url.URL, string, stri
 }
 
 func CheckAndMirrorRepo(ex ExecutorInterface, gpath, remote string, gitoliteURL *url.URL) error {
-	<-ThreadSema
-	defer func() {
-		ThreadSema <- "free"
-	}()
-
 	if os.Getenv(UberDisableGitoliteAutocreation) != "" {
 		return nil
 	}
+
+	conRes := GetThreadFromPool()
+	defer conRes.Release()
+
 	// Ping Gitolite to see if the mirror exists.
-	_, stderr, err := ex.ExecCommand("git", time.Duration(1*time.Minute), false, "ls-remote", gitoliteURL.String(), "HEAD")
+	_, stderr, err := ex.ExecCommand("git", time.Duration(1*time.Minute), false, conRes.GetEnvironmentForGitoliteCommand(),
+		"ls-remote", gitoliteURL.String(), "HEAD")
 
 	// If so, nothing more is needed, return the Gitolite mirror URL.
 	if err == nil {
@@ -169,7 +160,8 @@ func CheckAndMirrorRepo(ex ExecutorInterface, gpath, remote string, gitoliteURL 
 
 	// First, ensure the remote repo exists
 	UberLogger.Printf("%s not found on Gitolite, checking %s", gpath, remote)
-	rstdout, _, rerr := ex.ExecCommand("git", time.Duration(1*time.Minute), false, "ls-remote", remote, "HEAD")
+	rstdout, _, rerr := ex.ExecCommand("git", time.Duration(1*time.Minute), false, conRes.GetEnvironmentForGitoliteCommand(),
+		"ls-remote", remote, "HEAD")
 	UberLogger.Print(rstdout)
 	if rerr != nil {
 		UberLogger.Printf("Upstream repo does not exist: %v", remote)
@@ -188,7 +180,8 @@ func CheckAndMirrorRepo(ex ExecutorInterface, gpath, remote string, gitoliteURL 
 
 	// Create a mirror.
 	mirrorGpath := strings.Replace(gpath, ".git", "", -1)
-	_, _, err = ex.ExecCommand("ssh", time.Duration(2*time.Minute), true, "gitolite@code.uber.internal", "create", mirrorGpath)
+	_, _, err = ex.ExecCommand("ssh", time.Duration(2*time.Minute), true, conRes.GetEnvironmentForGitoliteCommand(),
+		"gitolite@code.uber.internal", "create", mirrorGpath)
 
 	// Return with an error if that failed.
 	if err != nil {
@@ -259,9 +252,9 @@ func gitolitePathForGolang(repo string) string {
 // If run in background is not specified then the command can be given a timeout
 // duration which will cause the command to time out and return an error, unless
 // the command completes successfully first.
-func (c *CommandExecutor) ExecCommand(name string, cmdTimeout time.Duration, runInBackground bool, arg ...string) (string, string, error) {
+func (c *CommandExecutor) ExecCommand(name string, cmdTimeout time.Duration, runInBackground bool, environment []string, arg ...string) (string, string, error) {
 	command := exec.Command(name, arg...)
-	command.Env = os.Environ()
+	command.Env = append(environment, os.Environ()...)
 
 	// Start a timer
 	timeout := time.After(cmdTimeout)
