@@ -247,6 +247,50 @@ func TestCustomConfig_BasicOverrides(t *testing.T) {
 			},
 			wantErr: false,
 		},
+		"matching source don't error": {
+			existPkgs: []ImportedPackage{
+				{
+					Name:           "golang.org/x/net",
+					ConstraintHint: "",
+					Source:         "golang.org/x/net",
+					IsOverride:     true,
+				},
+				{
+					Name:           "golang.org/x/sys",
+					ConstraintHint: "",
+					Source:         "golang.org/x/sys",
+					IsOverride:     true,
+				},
+			},
+			pkgSeen: map[string]bool{
+				"golang.org/x/net": true,
+				"golang.org/x/sys": true,
+			},
+			impPkgs: []ImportedPackage{
+				{
+					Name:           "golang.org/x/net",
+					LockHint:       "",
+					Source:         "golang.org/x/net",
+					ConstraintHint: "",
+					IsOverride:     true,
+				},
+				{
+					Name:           "golang.org/x/sys",
+					LockHint:       "",
+					Source:         "golang.org/x/sys",
+					ConstraintHint: "",
+					IsOverride:     true,
+				},
+				{
+					Name:           "golang.org/x/tools",
+					LockHint:       "",
+					Source:         "golang.org/x/tools",
+					ConstraintHint: "",
+					IsOverride:     true,
+				},
+			},
+			wantErr: false,
+		},
 	}
 
 	for name, testCase := range testCases {

@@ -3,70 +3,87 @@ package base
 import (
 	"io/ioutil"
 	"path/filepath"
-
 	"os"
-
+	"bytes"
 	"fmt"
 	"log"
 	"strings"
 
-	"github.com/go-yaml/yaml"
 	"github.com/pkg/errors"
+	"github.com/BurntSushi/toml"
 )
 
-const CustomConfigName = "DepConfig.yaml"
+const (
+	CustomConfigName = "DepConfig.toml"
+)
+
+type ReferenceOverrideAlreadyExistsForBasic struct {
+	subPkg string
+}
+
+type SourceOverrideAlreadyExistsForBasic struct {
+	subPkg string
+}
+
+func (e ReferenceOverrideAlreadyExistsForBasic) Error() string {
+	return fmt.Sprintf("reference override for %s already exists in current config", e.subPkg)
+}
+
+func (e SourceOverrideAlreadyExistsForBasic) Error() string {
+	return fmt.Sprintf("source override for %s already exists in current config", e.subPkg)
+}
 
 type CustomConfig struct {
-	Overrides   []overridePackage `yaml:"override"`
-	ExcludeDirs []string          `yaml:"excludeDirs"`
+	Overrides   []overridePackage `toml:"override"`
+	ExcludeDirs []string          `toml:"excludeDirs"`
 }
 
 type overridePackage struct {
-	Name      string `yaml:"package"`
-	Reference string `yaml:"version"`
-	Source    string `yaml:"source"`
+	Name      string `toml:"package"`
+	Reference string `toml:"version"`
+	Source    string `toml:"source"`
 }
 
 func ReadCustomConfig(dir string) ([]ImportedPackage, []string, error) {
-	y := filepath.Join(dir, CustomConfigName)
-	if _, err := os.Stat(y); err != nil {
+	t := filepath.Join(dir, CustomConfigName)
+	if _, err := os.Stat(t); err != nil {
 		fmt.Printf("Did not detect custom configuration files at %s\n", dir)
 		return nil, nil, nil
 	}
 
 	fmt.Println("Detected custom configuration files...")
-	fmt.Printf("  Loading %s", y)
-	yb, err := ioutil.ReadFile(y)
+	fmt.Printf("Loading %s\n", t)
+	yb, err := ioutil.ReadFile(t)
 	if err != nil {
-		return nil, nil, errors.Wrapf(err, "unable to read %s", y)
+		return nil, nil, errors.Wrapf(err, "unable to read %s", t)
 	}
 	fmt.Println(string(yb))
 	customConfig := CustomConfig{}
-	err = yaml.Unmarshal(yb, &customConfig)
+	err = toml.Unmarshal(yb, &customConfig)
 	if err != nil {
-		return nil, nil, errors.Wrapf(err, "unable to parse %s", y)
+		return nil, nil, errors.Wrapf(err, "unable to parse %s", t)
 	}
 
 	return ParseConfig(customConfig)
 }
 
 func WriteCustomConfig(dir string, impPkgs []ImportedPackage, excludeDirs []string, overwrite bool, out *log.Logger) error {
-	y := filepath.Join(dir, CustomConfigName)
-	if _, err := os.Stat(y); err == nil && overwrite == false {
+	t := filepath.Join(dir, CustomConfigName)
+	if _, err := os.Stat(t); err == nil && overwrite == false {
 		return errors.Errorf("custom config exists and cannot overwrite")
 	}
 
-	out.Println("Overwriting custom configuration files...")
-	yb, err := yaml.Marshal(CustomConfig{
+	tb := new(bytes.Buffer)
+	err := toml.NewEncoder(tb).Encode(CustomConfig{
 		Overrides:   convertImpPkgToOveridePkg(impPkgs),
 		ExcludeDirs: excludeDirs,
 	})
 	if err != nil {
 		return errors.Wrap(err, "unable to marshall imported packages")
 	}
-	out.Println(string(yb))
-	out.Printf("  Writing %s", y)
-	err = ioutil.WriteFile(y, yb, 0644)
+	out.Printf("Writing %s\n", t)
+	out.Println(tb.String())
+	err = ioutil.WriteFile(t, tb.Bytes(), 0644)
 	if err != nil {
 		return errors.Wrap(err, "error writing config file")
 	}
@@ -161,18 +178,16 @@ func AppendBasicOverrides(impPkgs []ImportedPackage, pkgSeen map[string]bool) ([
 					pkgFound = true
 					// overwrite reference if not empty otherwise return error (don't clobber)
 					if pkg.Reference != "" {
-						if subPkg.ConstraintHint != "" {
-							return nil, errors.Errorf("reference override for %s already exists in current config",
-								subPkg.Name)
+						if subPkg.ConstraintHint != "" && pkg.Reference != subPkg.ConstraintHint {
+							return nil, ReferenceOverrideAlreadyExistsForBasic{subPkg:subPkg.Name}
 						} else {
 							subPkg.ConstraintHint = pkg.Reference
 						}
 					}
 					// overwrite source if not empty otherwise return error (don't clobber)
 					if pkg.Source != "" {
-						if subPkg.Source != "" {
-							return nil, errors.Errorf("source override for %s already exists in current config",
-								subPkg.Name)
+						if subPkg.Source != "" && pkg.Source != subPkg.Source {
+							return nil, SourceOverrideAlreadyExistsForBasic{subPkg:subPkg.Name}
 						} else {
 							subPkg.Source = pkg.Source
 						}

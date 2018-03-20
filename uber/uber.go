@@ -31,6 +31,10 @@ const (
 	// it can have a performance impact because dep will try to use the packages
 	// from all possible refs on a remote repository
 	UseNonDefaultVersionBranches = "USE_NON_DEFAULT_VERSION_BRANCHES"
+
+	// this flag is used as a feature flag to control UBER specific features to
+	// avoid modifying the existing integration tests from upstream
+	RunningIntegrationTests = "RUNNING_INTEGRATION_TESTS"
 )
 
 const UBER_PREFIX = "[UBER]  "

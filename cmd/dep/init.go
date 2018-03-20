@@ -81,6 +81,15 @@ func (cmd *initCommand) Run(ctx *dep.Ctx, args []string) error {
 		return errors.Errorf("too many args (%d)", len(args))
 	}
 
+	// this flag controls bootstrapping the custom config when running outside of integration tests
+	if os.Getenv(uber.RunningIntegrationTests) == "" {
+		err := BootConfig(ctx)
+		if err != nil {
+			uber.UberLogger.Printf("Failed to boot custom config, run \"dep bootConfig\" manually: %s", err)
+		}
+	}
+
+	// this flag controls if external github repos need to be mirrored internally at gitolite
 	if !cmd.withMirror {
 		uber.UberLogger.Println("Internal mirroring is turned off for performance optimization. Run with --withMirror flag to mirror into gitolite")
 		os.Setenv(uber.UberDisableGitoliteAutocreation, "yes")

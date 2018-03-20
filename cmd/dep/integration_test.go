@@ -21,6 +21,7 @@ import (
 
 func TestIntegration(t *testing.T) {
 	defer uber.SetAndUnsetEnvVar(uber.UseNonDefaultVersionBranches, "yes")()
+	defer uber.SetAndUnsetEnvVar(uber.RunningIntegrationTests, "yes")()
 	//Parallel testing
 	t.Run("group", func(t *testing.T) {
 
