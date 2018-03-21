@@ -11,7 +11,7 @@ import (
 )
 
 const (
-	FILE_PATTERN = "GIT_SSH_COMMAND=ssh -oControlMaster=auto -oControlPath=~/.ssh/%d-%%r@%%h:%%p -oControlPersist=60s"
+	FILE_PATTERN = "GIT_SSH_COMMAND=ssh -oControlMaster=auto -oControlPath=%s/%d-%%r@%%h:%%p -oControlPersist=60s"
 )
 
 const (
@@ -28,19 +28,22 @@ func init() {
 			threadSema <- conRes
 			err := conRes.createSocketForGitolite()
 			if err != nil {
-				UberLogger.Printf("Error initializing thread %d " +
-					"(will try again when fetching env var): %s", localIter, err)
+				UberLogger.Printf("Warning: Unable to initialize thread %d : %s", localIter, err)
 			}
 		}(i)
 	}
 }
 
+func getCacheDir() string {
+	return filepath.Join(os.Getenv("HOME"), ".dep-cache", "pkg", "dep")
+}
+
 func (conRes ConResource) createSocketForGitolite() error {
-	socketFile := filepath.Join(os.Getenv("HOME"), ".ssh/"+fmt.Sprintf("%d-gitolite@code.uber.internal:2222", conRes))
+	socketFile := filepath.Join(getCacheDir() + "/" +fmt.Sprintf("%d-gitolite@code.uber.internal:2222", conRes))
 	if _, err := os.Stat(socketFile); os.IsNotExist(err) {
 		// Make a dummy ls-remote call to gitolite to create the socket and cache the connection
 		command := exec.Command("git", "ls-remote", "ssh://gitolite@code.uber.internal/devexp/dep", "HEAD")
-		command.Env = append([]string{fmt.Sprintf(FILE_PATTERN, conRes)}, os.Environ()...)
+		command.Env = append([]string{fmt.Sprintf(FILE_PATTERN, getCacheDir(), conRes)}, os.Environ()...)
 		command.Start()
 
 		// Retry every 1 second and check if the socket file exists, if yes then return
@@ -72,7 +75,7 @@ func (conRes ConResource) GetEnvironmentForCommand(remote string) []string {
 		if err != nil {
 			return []string{}
 		}
-		retStr = fmt.Sprintf(FILE_PATTERN, conRes)
+		retStr = fmt.Sprintf(FILE_PATTERN, getCacheDir(), conRes)
 	}
 	return []string{retStr}
 }
