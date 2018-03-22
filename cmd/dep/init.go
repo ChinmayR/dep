@@ -21,6 +21,7 @@ import (
 	"github.com/golang/dep/internal/gps/pkgtree"
 	"github.com/golang/dep/internal/importers/base"
 	"github.com/golang/dep/uber"
+	"github.com/golang/dep/uber/glide"
 	"github.com/pkg/errors"
 )
 
@@ -249,6 +250,9 @@ restart:
 	}
 	if err := sw.Write(root, sm, !cmd.noExamples, logger); err != nil {
 		return errors.Wrap(err, "safe write of manifest and lock")
+	}
+	if err := glide.UpdateGlideArtifacts(sw.Manifest, root); err != nil {
+		return errors.Wrap(err, "writing dep maintained glide file")
 	}
 
 	return nil

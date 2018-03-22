@@ -291,6 +291,10 @@ func toProject(raw rawProject) (n gps.ProjectRoot, pp gps.ProjectProperties, err
 	return n, pp, nil
 }
 
+func (m *Manifest) ConvertToRaw() rawManifest {
+	return m.toRaw()
+}
+
 // toRaw converts the manifest into a representation suitable to write to the manifest file
 func (m *Manifest) toRaw() rawManifest {
 	raw := rawManifest{

@@ -725,6 +725,11 @@ func (cmd *ensureCommand) runAdd(ctx *dep.Ctx, args []string, p *dep.Project, sm
 		return errors.Wrapf(err, "writing to %s failed", dep.ManifestName)
 	}
 
+	err = SyncManifest(p.AbsRoot)
+	if err != nil {
+		return errors.Wrapf(err, "Failed to write glide manifest")
+	}
+
 	switch len(reqlist) {
 	case 0:
 		// nothing to tell the user

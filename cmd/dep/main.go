@@ -68,6 +68,7 @@ func (c *Config) Run() (exitCode int) {
 		&versionCommand{},
 		&bootConfigCommand{},
 		&cacheClearCommand{},
+		&syncManifestCommand{},
 	}
 
 	examples := [][2]string{

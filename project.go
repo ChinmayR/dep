@@ -16,7 +16,7 @@ import (
 )
 
 var (
-	errProjectNotFound    = fmt.Errorf("could not find project %s, use dep bootConfig to create uber config and then use dep init to initiate a manifest", ManifestName)
+	errProjectNotFound    = fmt.Errorf("could not find project %s, use dep init to initiate a manifest", ManifestName)
 	errVendorBackupFailed = fmt.Errorf("failed to create vendor backup. File with same name exists")
 )
 
