@@ -44,8 +44,9 @@ func (cmd *pruneCommand) Register(fs *flag.FlagSet) {
 }
 
 func (cmd *pruneCommand) Run(ctx *dep.Ctx, args []string) error {
-	tags := uber.GetRepoTagFromRoot(ctx.WorkingDir)
-	defer uber.Instrument(cmd.Name(), tags)()
+
+	var flags map[string]string
+	defer uber.ReportMetrics(cmd.Name(), ctx.WorkingDir, flags)()
 
 	p, err := ctx.LoadProject()
 	if err != nil {
@@ -91,7 +92,11 @@ func (cmd *pruneCommand) Run(ctx *dep.Ctx, args []string) error {
 	if !ctx.Verbose {
 		pruneLogger = log.New(ioutil.Discard, "", 0)
 	}
-	return pruneProject(p, sm, pruneLogger)
+	err = pruneProject(p, sm, pruneLogger)
+	if err == nil {
+		uber.ReportSuccess()
+	}
+	return err
 }
 
 // pruneProject removes unused packages from a project.

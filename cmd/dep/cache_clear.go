@@ -38,6 +38,7 @@ func (cmd *cacheClearCommand) Run(ctx *dep.Ctx, args []string) error {
 		return errors.Wrap(err, "error removing cache dir")
 	}
 
+	uber.ReportClearCacheMetric()
 	uber.UberLogger.Println("Cache cleared at $HOME/.dep_cache/pkg/dep")
 
 	return nil

@@ -14,8 +14,8 @@ import (
 	"os"
 	"path/filepath"
 	"sort"
-	"strconv"
 	"strings"
+	"strconv"
 	"sync"
 
 	"github.com/golang/dep/uber"
@@ -160,14 +160,14 @@ func (cmd *ensureCommand) Run(ctx *dep.Ctx, args []string) error {
 		return nil
 	}
 
-	tags := uber.GetRepoTagFromRoot(ctx.WorkingDir)
-	tags["add"] = strconv.FormatBool(cmd.add)
-	tags["update"] = strconv.FormatBool(cmd.update)
-	tags["dryrun"] = strconv.FormatBool(cmd.dryRun)
-	tags["novendor"] = strconv.FormatBool(cmd.noVendor)
-	tags["vendoronly"] = strconv.FormatBool(cmd.vendorOnly)
-	tags["args"] = strconv.Itoa(len(args))
-	defer uber.Instrument(cmd.Name(), tags)()
+	flags := make(map[string]string)
+	flags["add"] = strconv.FormatBool(cmd.add)
+	flags["update"] = strconv.FormatBool(cmd.update)
+	flags["dryrun"] = strconv.FormatBool(cmd.dryRun)
+	flags["novendor"] = strconv.FormatBool(cmd.noVendor)
+	flags["vendoronly"] = strconv.FormatBool(cmd.vendorOnly)
+	flags["examples"] = strconv.FormatBool(cmd.examples)
+	defer uber.ReportMetrics(cmd.Name(), ctx.WorkingDir, flags)()
 
 	if err := cmd.validateFlags(); err != nil {
 		return err
@@ -200,7 +200,11 @@ func (cmd *ensureCommand) Run(ctx *dep.Ctx, args []string) error {
 	}
 
 	if cmd.vendorOnly {
-		return cmd.runVendorOnly(ctx, args, p, sm, params)
+		err = cmd.runVendorOnly(ctx, args, p, sm, params)
+		if err == nil {
+			uber.ReportSuccess()
+		}
+		return err
 	}
 
 	params.RootPackageTree, err = p.ParseRootPackageTree()
@@ -217,11 +221,23 @@ func (cmd *ensureCommand) Run(ctx *dep.Ctx, args []string) error {
 	}
 
 	if cmd.add {
-		return cmd.runAdd(ctx, args, p, sm, params)
+		err = cmd.runAdd(ctx, args, p, sm, params)
+		if err == nil {
+			uber.ReportSuccess()
+		}
+		return err
 	} else if cmd.update {
-		return cmd.runUpdate(ctx, args, p, sm, params)
+		err = cmd.runUpdate(ctx, args, p, sm, params)
+		if err == nil {
+			uber.ReportSuccess()
+		}
+		return err
 	}
-	return cmd.runDefault(ctx, args, p, sm, params)
+	err = cmd.runDefault(ctx, args, p, sm, params)
+	if err == nil {
+		uber.ReportSuccess()
+	}
+	return err
 }
 
 func (cmd *ensureCommand) validateFlags() error {

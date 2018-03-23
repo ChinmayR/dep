@@ -14,6 +14,7 @@ import (
 	"log"
 	"sort"
 	"sync"
+	"strconv"
 	"text/tabwriter"
 
 	"github.com/golang/dep/uber"
@@ -195,8 +196,15 @@ func (out *dotOutput) MissingFooter()                {}
 
 func (cmd *statusCommand) Run(ctx *dep.Ctx, args []string) error {
 
-	tags := uber.GetRepoTagFromRoot(ctx.WorkingDir)
-	defer uber.Instrument(cmd.Name(), tags)()
+	flags := make(map[string]string)
+	flags["detailed"] = strconv.FormatBool(cmd.detailed)
+	flags["dot"] = strconv.FormatBool(cmd.dot)
+	flags["json"] = strconv.FormatBool(cmd.json)
+	flags["missing"] = strconv.FormatBool(cmd.missing)
+	flags["modified"] = strconv.FormatBool(cmd.modified)
+	flags["old"] = strconv.FormatBool(cmd.old)
+	flags["unused"] = strconv.FormatBool(cmd.unused)
+	defer uber.ReportMetrics(cmd.Name(), ctx.WorkingDir, flags)()
 
 	p, err := ctx.LoadProject()
 	if err != nil {
@@ -277,7 +285,7 @@ func (cmd *statusCommand) Run(ctx *dep.Ctx, args []string) error {
 
 	// Print the status output
 	ctx.Out.Print(buf.String())
-
+	uber.ReportSuccess()
 	return nil
 }
 

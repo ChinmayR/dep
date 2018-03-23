@@ -109,9 +109,11 @@ func (cmd *initCommand) Run(ctx *dep.Ctx, args []string) error {
 		}
 	}
 
-	tags := uber.GetRepoTagFromRoot(root)
-	tags["skiptools"] = strconv.FormatBool(cmd.skipTools)
-	defer uber.Instrument(cmd.Name(), tags)()
+	flags := make(map[string]string)
+	flags["gopath"] = strconv.FormatBool(cmd.gopath)
+	flags["noexamples"] = strconv.FormatBool(cmd.noExamples)
+	flags["skiptools"] = strconv.FormatBool(cmd.skipTools)
+	defer uber.ReportMetrics(cmd.Name(), ctx.WorkingDir, flags)()
 
 	var err error
 	p := new(dep.Project)
@@ -251,10 +253,12 @@ restart:
 	if err := sw.Write(root, sm, !cmd.noExamples, logger); err != nil {
 		return errors.Wrap(err, "safe write of manifest and lock")
 	}
+
 	if err := glide.UpdateGlideArtifacts(sw.Manifest, root); err != nil {
 		return errors.Wrap(err, "writing dep maintained glide file")
 	}
 
+	uber.ReportSuccess()
 	return nil
 }
 

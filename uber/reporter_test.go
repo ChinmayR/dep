@@ -8,6 +8,6 @@ import (
 
 func TestUber_FiltersInvalidCharacters(t *testing.T) {
 	root := "/home/user/go/test+repo,name=with invalid:characters|all\nover"
-	tags := GetRepoTagFromRoot(root)
-	assert.Equal(t, "test-repo-name-with-invalid-characters-all-over", tags["repo"])
+	repo := getRepoTagFriendlyNameFromCWD(root)
+	assert.Equal(t, "test-repo-name-with-invalid-characters-all-over", repo)
 }
