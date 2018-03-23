@@ -14,6 +14,8 @@ import (
 	fb "github.com/golang/dep/internal/feedback"
 	"github.com/golang/dep/internal/gps"
 	"github.com/pkg/errors"
+	"regexp"
+	"strings"
 )
 
 // Importer provides a common implementation for importing from other
@@ -355,6 +357,9 @@ func (i *Importer) convertToConstraint(v gps.Version) gps.Constraint {
 }
 
 func (i *Importer) isDefaultSource(projectRoot gps.ProjectRoot, sourceURL string) (bool, error) {
+	//filter for gitolite URLs
+	sourceURL, projectRoot = NormalizeGitoliteURL(sourceURL, projectRoot)
+
 	// this condition is mainly for gopkg.in imports,
 	// as some importers specify the repository url as https://gopkg.in/...,
 	// but sm.SourceURLsForPath() returns https://github.com/... urls for gopkg.in
@@ -372,4 +377,39 @@ func (i *Importer) isDefaultSource(projectRoot gps.ProjectRoot, sourceURL string
 	}
 
 	return false, nil
+}
+
+
+func NormalizeGitoliteURL(sourceURL string, projectRoot gps.ProjectRoot) (string, gps.ProjectRoot) {
+	//Uber patch for sourceURLs cloned from gitolite repos
+
+	isGitoliteCloneUrl := regexp.MustCompile("^gitolite@code.uber.internal(\\:|/){1}([^\\:])*$")
+	prString := string(projectRoot)
+
+	//remove port, normalize suffix and url syntax
+	if isGitoliteCloneUrl.MatchString(sourceURL) {
+		sourceURL = removePort(sourceURL)
+
+		if !strings.HasSuffix(sourceURL, ".git") {
+			projectRoot = gps.ProjectRoot(strings.TrimSuffix(prString, ".git"))
+		} else if !strings.HasSuffix(prString, ".git"){
+			sourceURL = strings.TrimSuffix(sourceURL, ".git")
+		}
+
+		sourceURL = "ssh://" + sourceURL
+	}
+
+	return sourceURL, projectRoot
+}
+
+func removePort(sourceURL string) string {
+	findPort := regexp.MustCompile(":([[:digit:]]){0,5}(/)?")
+	ports := findPort.FindStringSubmatch(sourceURL)
+
+	if len(ports) > 0 {
+		port := string(ports[0])
+		sourceURL = strings.Replace(sourceURL, port, "/", -1)
+	}
+
+	return sourceURL
 }

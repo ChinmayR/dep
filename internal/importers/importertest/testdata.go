@@ -20,6 +20,15 @@ const (
 	// ProjectSrcInvalid is an alternate invalid source for the imported project.
 	ProjectSrcInvalid = "https://github.com/carolynvs/invalid/deptest-importers.git"
 
+	//GitoliteProject is the example path for the gitolite url filter
+	GitoliteProject = "code.uber.internal/personal/cwest1/depTest"
+
+	//GitoliteSrc is a gitolite url example which must be filtered
+	GitoliteSrc = "gitolite@code.uber.internal:personal/cwest1/depTest"
+
+	//ExpectedGitoliteUrl is a properly filtered gitolite url
+	FilteredGitoliteUrl = "ssh://gitolite@code.uber.internal/personal/cwest1/depTest"
+
 	// UntaggedRev is a revision without any tags.
 	UntaggedRev = "9b670d143bfb4a00f7461451d5c4a62f80e9d11d"
 

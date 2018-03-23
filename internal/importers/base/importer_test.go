@@ -556,10 +556,10 @@ func TestBaseImporter_ImportProjects(t *testing.T) {
 					IsOverride:     false,
 				},
 				{
-					Name:           importertest.Project,
-					LockHint:       "",
-					Source:         importertest.ProjectSrc,
-					IsOverride:     true,
+					Name:       importertest.Project,
+					LockHint:   "",
+					Source:     importertest.ProjectSrc,
+					IsOverride: true,
 				},
 			},
 		},
@@ -576,6 +576,106 @@ func TestBaseImporter_ImportProjects(t *testing.T) {
 			})
 			if err != nil {
 				t.Fatalf("%#v", err)
+			}
+		})
+	}
+}
+
+func TestBaseImporter_FilterGitoliteUrl(t *testing.T) {
+	testcases := map[string]struct {
+		gitoliteProject     gps.ProjectRoot
+		gitoliteURL         string
+		wantGitoliteProject gps.ProjectRoot
+		wantGitoliteURL     string
+	}{
+		"cloned gitolite urls are filtered": {
+			gitoliteProject:     importertest.GitoliteProject,
+			gitoliteURL:         importertest.GitoliteSrc,
+			wantGitoliteURL:     importertest.FilteredGitoliteUrl,
+			wantGitoliteProject: importertest.GitoliteProject,
+		},
+		"cloned gitolite urls with matching suffix are filtered": {
+			gitoliteProject:     importertest.GitoliteProject + ".git",
+			gitoliteURL:         importertest.GitoliteSrc + ".git",
+			wantGitoliteURL:     importertest.FilteredGitoliteUrl + ".git",
+			wantGitoliteProject: importertest.GitoliteProject + ".git",
+		},
+		"removes .git suffix from Project Root to match source": {
+			gitoliteProject:     importertest.GitoliteProject + ".git",
+			gitoliteURL:         importertest.GitoliteSrc,
+			wantGitoliteURL:     importertest.FilteredGitoliteUrl,
+			wantGitoliteProject: importertest.GitoliteProject,
+		},
+		"removes .git suffix from source to match project root": {
+			gitoliteProject:     importertest.GitoliteProject,
+			gitoliteURL:         importertest.GitoliteSrc + ".git",
+			wantGitoliteURL:     importertest.FilteredGitoliteUrl,
+			wantGitoliteProject: importertest.GitoliteProject,
+		},
+		"filters properly with port": {
+			gitoliteProject:     importertest.GitoliteProject,
+			gitoliteURL:         "gitolite@code.uber.internal:12345/personal/cwest1/depTest.git",
+			wantGitoliteURL:     importertest.FilteredGitoliteUrl,
+			wantGitoliteProject: importertest.GitoliteProject,
+		},
+		"handles unambiguously formed link": {
+			gitoliteProject:     importertest.GitoliteProject + ".git",
+			gitoliteURL:         "gitolite@" + importertest.GitoliteProject + ".git",
+			wantGitoliteURL:     importertest.FilteredGitoliteUrl + ".git",
+			wantGitoliteProject: importertest.GitoliteProject + ".git",
+		},
+		"returns code.uber.internal links without gitolite prefix unfiltered": {
+			gitoliteProject:     importertest.GitoliteProject,
+			gitoliteURL:         importertest.GitoliteProject,
+			wantGitoliteURL:     importertest.GitoliteProject,
+			wantGitoliteProject: importertest.GitoliteProject,
+		},
+		"returns non-gitolite links unfiltered": {
+			gitoliteProject:     importertest.GitoliteProject,
+			gitoliteURL:         importertest.ProjectSrc,
+			wantGitoliteURL:     importertest.ProjectSrc,
+			wantGitoliteProject: importertest.GitoliteProject,
+		},
+		"suffix characters that do not introduce ambiguity are filtered normally": {
+			gitoliteProject:     importertest.GitoliteProject,
+			gitoliteURL:         "gitolite@code.uber.internal:hello#at$gmail/s.git",
+			wantGitoliteURL:     "ssh://gitolite@code.uber.internal/hello#at$gmail/s",
+			wantGitoliteProject: importertest.GitoliteProject,
+		},
+		"urls with more than one : are not filtered": {
+			gitoliteProject:     importertest.GitoliteProject,
+			gitoliteURL:         "gitolite@code.uber.internal:hello#at$gmail:/s",
+			wantGitoliteURL:     "gitolite@code.uber.internal:hello#at$gmail:/s",
+			wantGitoliteProject: importertest.GitoliteProject,
+		},
+		"urls with shorter paths are filtered normally": {
+			gitoliteProject:     "code.uber.internal/foo.git",
+			gitoliteURL:         "gitolite@code.uber.internal/foo.git",
+			wantGitoliteURL:     "ssh://gitolite@code.uber.internal/foo.git",
+			wantGitoliteProject: "code.uber.internal/foo.git",
+		},
+		"urls with longer paths are filtered normally": {
+			gitoliteProject:     "code.uber.internal/foo/bar/baz/qux.git",
+			gitoliteURL:         "gitolite@code.uber.internal/foo/bar/baz/qux.git",
+			wantGitoliteURL:     "ssh://gitolite@code.uber.internal/foo/bar/baz/qux.git",
+			wantGitoliteProject: "code.uber.internal/foo/bar/baz/qux.git",
+		},
+	}
+
+	for name, tc := range testcases {
+		name := name
+		tc := tc
+
+		t.Run(name, func(t *testing.T) {
+			gotGitoliteURL, gotGitoliteProjectRoot := NormalizeGitoliteURL(tc.gitoliteURL, tc.gitoliteProject)
+			if gotGitoliteURL != tc.wantGitoliteURL {
+				t.Fatalf("unexpected gitolite url: \nt(GOT) %v\n\t(WNT) %v", gotGitoliteURL, tc.wantGitoliteURL)
+			}
+
+			if tc.wantGitoliteProject != "" {
+				if gotGitoliteProjectRoot != tc.wantGitoliteProject {
+					t.Fatalf("unexpected project root: \nt(GOT) %v\n\t(WNT) %v", gotGitoliteProjectRoot, tc.wantGitoliteProject)
+				}
 			}
 		})
 	}
