@@ -167,7 +167,7 @@ func (cmd *ensureCommand) Run(ctx *dep.Ctx, args []string) error {
 	flags["novendor"] = strconv.FormatBool(cmd.noVendor)
 	flags["vendoronly"] = strconv.FormatBool(cmd.vendorOnly)
 	flags["examples"] = strconv.FormatBool(cmd.examples)
-	defer uber.ReportMetrics(cmd.Name(), ctx.WorkingDir, flags)()
+	defer uber.ReportRepoMetrics(cmd.Name(), ctx.WorkingDir, flags)()
 
 	if err := cmd.validateFlags(); err != nil {
 		return err

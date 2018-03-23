@@ -64,7 +64,7 @@ func init() {
 	runId = xid.New().String()
 	errorTags = make(map[string]int64)
 	runStatus = FAILED_RUN
-	toolname := "dep_rewrite"
+	toolname := "uber_dep"
 	if flag.Lookup("test.v") != nil {
 		toolname = toolname + "-tests"
 	}
@@ -91,7 +91,7 @@ func getRepoTagFriendlyNameFromCWD(cwd string) string {
 //2. Failure - counter metric
 //3. Frequency - counter metric
 //4. Error(s) - counter metric
-func ReportMetrics(cmd string, repoName string, cmdFlags map[string]string) func() {
+func ReportRepoMetrics(cmd string, repoName string, cmdFlags map[string]string) func() {
 	defer catchErrors()
 	start := time.Now()
 	return func() {
@@ -108,9 +108,14 @@ func ReportMetrics(cmd string, repoName string, cmdFlags map[string]string) func
 	}
 }
 
+//dep reports clear cache counts via this metric
 func ReportClearCacheMetric() {
+	defer catchErrors()
 	tags := make(map[string]string)
 	scope.Tagged(tags).Counter(CC_METRIC).Inc(1)
+	if err := scopeCloser.Close(); err != nil {
+		UberLogger.Print(err.Error())
+	}
 }
 
 //Called to report an error from the const error list

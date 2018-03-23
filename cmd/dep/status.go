@@ -204,7 +204,7 @@ func (cmd *statusCommand) Run(ctx *dep.Ctx, args []string) error {
 	flags["modified"] = strconv.FormatBool(cmd.modified)
 	flags["old"] = strconv.FormatBool(cmd.old)
 	flags["unused"] = strconv.FormatBool(cmd.unused)
-	defer uber.ReportMetrics(cmd.Name(), ctx.WorkingDir, flags)()
+	defer uber.ReportRepoMetrics(cmd.Name(), ctx.WorkingDir, flags)()
 
 	p, err := ctx.LoadProject()
 	if err != nil {

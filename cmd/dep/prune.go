@@ -46,7 +46,7 @@ func (cmd *pruneCommand) Register(fs *flag.FlagSet) {
 func (cmd *pruneCommand) Run(ctx *dep.Ctx, args []string) error {
 
 	var flags map[string]string
-	defer uber.ReportMetrics(cmd.Name(), ctx.WorkingDir, flags)()
+	defer uber.ReportRepoMetrics(cmd.Name(), ctx.WorkingDir, flags)()
 
 	p, err := ctx.LoadProject()
 	if err != nil {

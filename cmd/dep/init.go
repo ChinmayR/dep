@@ -113,7 +113,7 @@ func (cmd *initCommand) Run(ctx *dep.Ctx, args []string) error {
 	flags["gopath"] = strconv.FormatBool(cmd.gopath)
 	flags["noexamples"] = strconv.FormatBool(cmd.noExamples)
 	flags["skiptools"] = strconv.FormatBool(cmd.skipTools)
-	defer uber.ReportMetrics(cmd.Name(), ctx.WorkingDir, flags)()
+	defer uber.ReportRepoMetrics(cmd.Name(), ctx.WorkingDir, flags)()
 
 	var err error
 	p := new(dep.Project)
