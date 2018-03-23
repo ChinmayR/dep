@@ -35,7 +35,7 @@ func init() {
 }
 
 func getCacheDir() string {
-	return filepath.Join(os.Getenv("HOME"), ".dep-cache", "pkg", "dep")
+	return filepath.Join(os.Getenv("HOME"), ".dep-cache", "pkg")
 }
 
 func (conRes ConResource) createSocketForGitolite() error {
