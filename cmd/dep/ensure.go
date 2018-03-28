@@ -200,10 +200,13 @@ func (cmd *ensureCommand) Run(ctx *dep.Ctx, args []string) error {
 	}
 
 	if cmd.vendorOnly {
-		err = cmd.runVendorOnly(ctx, args, p, sm, params)
-		if err == nil {
-			uber.ReportSuccess()
+		if err = cmd.runVendorOnly(ctx, args, p, sm, params); err != nil {
+			return err
 		}
+		if err = SyncManifest(p.AbsRoot); err != nil {
+			return errors.Wrapf(err, "failed to write glide manifest during ensure vendor only run")
+		}
+		uber.ReportSuccess()
 		return err
 	}
 
@@ -221,22 +224,31 @@ func (cmd *ensureCommand) Run(ctx *dep.Ctx, args []string) error {
 	}
 
 	if cmd.add {
-		err = cmd.runAdd(ctx, args, p, sm, params)
-		if err == nil {
-			uber.ReportSuccess()
+		if err = cmd.runAdd(ctx, args, p, sm, params); err != nil {
+			return err
 		}
+		if err = SyncManifest(p.AbsRoot); err != nil {
+			return errors.Wrapf(err, "failed to write glide manifest during ensure add run")
+		}
+		uber.ReportSuccess()
 		return err
 	} else if cmd.update {
-		err = cmd.runUpdate(ctx, args, p, sm, params)
-		if err == nil {
-			uber.ReportSuccess()
+		if err = cmd.runUpdate(ctx, args, p, sm, params); err != nil {
+			return err
 		}
+		if err = SyncManifest(p.AbsRoot); err != nil {
+			return errors.Wrapf(err, "failed to write glide manifest during ensure update run")
+		}
+		uber.ReportSuccess()
 		return err
 	}
-	err = cmd.runDefault(ctx, args, p, sm, params)
-	if err == nil {
-		uber.ReportSuccess()
+	if err = cmd.runDefault(ctx, args, p, sm, params); err != nil {
+		return err
 	}
+	if err = SyncManifest(p.AbsRoot); err != nil {
+		return errors.Wrapf(err, "failed to write glide manifest during ensure run")
+	}
+	uber.ReportSuccess()
 	return err
 }
 
@@ -739,11 +751,6 @@ func (cmd *ensureCommand) runAdd(ctx *dep.Ctx, args []string, p *dep.Project, sm
 	if _, err := f.Write(extra); err != nil {
 		f.Close()
 		return errors.Wrapf(err, "writing to %s failed", dep.ManifestName)
-	}
-
-	err = SyncManifest(p.AbsRoot)
-	if err != nil {
-		return errors.Wrapf(err, "Failed to write glide manifest")
 	}
 
 	switch len(reqlist) {
