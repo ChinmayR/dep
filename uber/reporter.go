@@ -10,6 +10,7 @@ import (
 	"code.uber.internal/devexp/proxy-reporter.git/reporter"
 	"github.com/uber-go/tally"
 	"strings"
+	"os"
 )
 
 var CustomRep tally.StatsReporter
@@ -43,6 +44,7 @@ const (
 	RUNID_TAG		= "runid"
 	STATUS_TAG		= "status"
 	ERROR_TAG		= "error"
+	SEMVER_TAG		= "semver"
 )
 
 //All dep's metric names
@@ -60,12 +62,15 @@ const (
 	FAILED_RUN 	= "failure"
 )
 
+//When major version changes, queries on Grafana's dashboard should change too
+const METRICS_STABLE_VERSION = "1.0.0"
+
 func init() {
 	runId = xid.New().String()
 	errorTags = make(map[string]int64)
 	runStatus = FAILED_RUN
 	toolname := "uber_dep"
-	if flag.Lookup("test.v") != nil {
+	if flag.Lookup("test.v") != nil || os.Getenv(RunningIntegrationTests) == "yes" {
 		toolname = toolname + "-tests"
 	}
 	var err error
@@ -83,7 +88,7 @@ func getRepoTagFriendlyNameFromCWD(cwd string) string {
 	// https://engdocs.uberinternal.com/m3_and_umonitor/intro/data_model.html#invalid-characters
 	r := regexp.MustCompile(`[\+,=\s\:\|]`)
 	repo = r.ReplaceAllString(repo, "-")
-	return repo
+	return strings.TrimSuffix(repo, ".git")
 }
 
 //dep reports four types of metrics:
@@ -108,10 +113,11 @@ func ReportRepoMetrics(cmd string, repoName string, cmdFlags map[string]string) 
 	}
 }
 
-//dep reports clear cache counts via this metric
+//dep reports clear cache counts via this metric.
+//Refer to getVersionedTagMap method more info about the semantic versioning associated tag
 func ReportClearCacheMetric() {
 	defer catchErrors()
-	tags := make(map[string]string)
+	tags := getVersionedTagMap()
 	scope.Tagged(tags).Counter(CC_METRIC).Inc(1)
 	if err := scopeCloser.Close(); err != nil {
 		UberLogger.Print(err.Error())
@@ -130,16 +136,10 @@ func ReportSuccess() {
 
 
 //Latency metric measures that time it takes to execute a single dep command. Associated tags are:
-//- repo: the name of the repository on which dep ran
-//- command: the command name
-//- runid: a unique ID for a single dep run. This ID is shared across all metrics reported per run
 //- status: can be either "success" or "failure" based on whether dep succeeded or failed to resolve dependencies
-
+//- Other common tags. Refer to getCommonTags method for the rest of associated tags
 func addLatencyMetric(cmd string, repo string, latency time.Duration, cmdFlags map[string]string) {
-	tags := make(map[string]string)
-	tags[RUNID_TAG] = runId
-	tags[REPO_TAG] = repo
-	tags[COMMAND_TAG] = cmd
+	tags := getCommonTags(repo, cmd)
 	for k,v := range cmdFlags {
 		tags[k] = v
 	}
@@ -149,17 +149,13 @@ func addLatencyMetric(cmd string, repo string, latency time.Duration, cmdFlags m
 
 
 //Failure metric is reported when dep fails to resolve dependencies for a repo with or without retries.
-// Associated tags are:
-//- repo: the name of the repository on which dep ran
-//- command: the command name
-//- runid: a unique ID for a single dep run. This ID is shared across all metrics reported per run
+//Associated tags are:
 //- error: the list of errors that caused the failure. The list is a string of concatenated one or more error types
 //separated by a "."
+//- Other common tags. Refer to getCommonTags method for the rest of associated tags
 func addFailureMetric(cmd string, repo string) {
 	if runStatus == FAILED_RUN {
-		tags := make(map[string]string)
-		tags[RUNID_TAG] = runId
-		tags[REPO_TAG] = repo
+		tags := getCommonTags(repo, cmd)
 		var errorElements []string
 		for k := range errorTags {
 			if errorTags[k] > 0 {
@@ -167,23 +163,17 @@ func addFailureMetric(cmd string, repo string) {
 			}
 		}
 		tags[ERROR_TAG] = strings.Join(errorElements, ".")
-		tags[COMMAND_TAG] = cmd
 		scope.Tagged(tags).Counter(FAILURE_METRIC).Inc(1)
 	}
 }
 
 
 //*Error metrics are all the error types that occurred during a single dep run. Each encountered error is reported
-//as a separate metric. That helps calculate the error count per error type in Grafana. Associated tags are:
-//- repo: the name of the repository on which dep ran
-//- command: the command name
-//- runid: a unique ID for a single dep run. This ID is shared across all metrics reported per run
+//as a separate metric. That helps calculate the error count per error type in Grafana.
+//Refer to getCommonTags method for the complete list of associated tags.
 //* the name of each metric is an error type from the const error list
 func addErrorMetrics(cmd string, repo string) {
-	tags := make(map[string]string)
-	tags[RUNID_TAG] = runId
-	tags[COMMAND_TAG] = cmd
-	tags[REPO_TAG] = repo
+	tags := getCommonTags(repo, cmd)
 	for errorName,errorCount := range errorTags {
 		if errorCount > 0 {
 			scope.Tagged(tags).Counter(errorName).Inc(errorCount)
@@ -192,16 +182,31 @@ func addErrorMetrics(cmd string, repo string) {
 }
 
 
-//Frequency metric is reported to calculate dep's adoption and per repo usage. Associated tags are:
+//Frequency metric is reported to calculate dep's adoption and per repo usage.
+//Refer to getCommonTags method for the complete list of associated tags.
+func addFrequencyMetric(repo string, cmd string) {
+	tags := getCommonTags(repo, cmd)
+	scope.Tagged(tags).Counter(FREQUENCY_METRIC).Inc(1)
+}
+
+//Creates a string map that contains the tag name/value pairs.
+//This is the common tag list used in repo metrics reporting. The map includes the following tags:
+//- runid: a unique ID for a single dep run. This ID is shared across all metrics reported per run
 //- repo: the name of the repository on which dep ran
 //- command: the command name
-//- runid: a unique ID for a single dep run. This ID is shared across all metrics reported per run
-func addFrequencyMetric(repo string, cmd string) {
-	tags := make(map[string]string)
+//- semver: the current stable metrics semantic version
+func getCommonTags(repo string, cmd string) map[string]string {
+	tags := getVersionedTagMap()
 	tags[RUNID_TAG] = runId
 	tags[REPO_TAG] = repo
 	tags[COMMAND_TAG] = cmd
-	scope.Tagged(tags).Counter(FREQUENCY_METRIC).Inc(1)
+	return tags
+}
+
+func getVersionedTagMap() map[string]string {
+	tags := make(map[string]string)
+	tags[SEMVER_TAG] = METRICS_STABLE_VERSION
+	return tags
 }
 
 func catchErrors() {
