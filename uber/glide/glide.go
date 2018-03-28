@@ -40,13 +40,18 @@ type glidePackage struct {
 func UpdateGlideArtifacts(depManifest gps.Manifest, dir string) error {
 
 	glideManifestPath := filepath.Join(dir, GlideYamlName)
+	glideManifestOldPath := filepath.Join(dir, GlideYamlName+modifiedPrefix)
 	if _, err := os.Stat(glideManifestPath); err == nil {
-		errInternal := os.Rename(glideManifestPath, glideManifestPath+modifiedPrefix)
-		if errInternal != nil {
-			UberLogger.Println("Found glide manifest but failed to modify the file name")
-			return errInternal
+		if _, errInt := os.Stat(glideManifestOldPath); errInt == nil {
+			UberLogger.Println("Found glide manifest but old glide manifest exists, so not overwriting")
+		} else {
+			errInternal := os.Rename(glideManifestPath, glideManifestPath+modifiedPrefix)
+			if errInternal != nil {
+				UberLogger.Println("Found glide manifest but failed to modify the file name")
+				return errInternal
+			}
+			UberLogger.Printf("Found glide manifest and modified it to %s\n", glideManifestPath+modifiedPrefix)
 		}
-		UberLogger.Printf("Found glide manifest and modified it to %s\n", glideManifestPath+modifiedPrefix)
 	} else if os.IsNotExist(err) {
 		UberLogger.Println("Could not find glide manifest")
 	} else {
@@ -54,13 +59,18 @@ func UpdateGlideArtifacts(depManifest gps.Manifest, dir string) error {
 	}
 
 	glideLockPath := filepath.Join(dir, GlideLockName)
+	glideLockOldPath := filepath.Join(dir, GlideLockName+modifiedPrefix)
 	if _, err := os.Stat(glideLockPath); err == nil {
-		errInternal := os.Rename(glideLockPath, glideLockPath+modifiedPrefix)
-		if errInternal != nil {
-			UberLogger.Println("Found glide lock but failed to modify the file name")
-			return errInternal
+		if _, errInt := os.Stat(glideLockOldPath); errInt == nil {
+			UberLogger.Println("Found glide lock but old glide lock exists, so not overwriting")
+		} else {
+			errInternal := os.Rename(glideLockPath, glideLockPath+modifiedPrefix)
+			if errInternal != nil {
+				UberLogger.Println("Found glide lock but failed to modify the file name")
+				return errInternal
+			}
+			UberLogger.Printf("Found glide lock and modified it to %s\n", glideLockPath+modifiedPrefix)
 		}
-		UberLogger.Printf("Found glide lock and modified it to %s\n", glideLockPath+modifiedPrefix)
 	} else if os.IsNotExist(err) {
 		UberLogger.Println("Could not find glide lock")
 	} else {
@@ -73,7 +83,7 @@ func UpdateGlideArtifacts(depManifest gps.Manifest, dir string) error {
 		return err
 	}
 
-	err = WriteNewGlideManifest(dir, false, glideManifest)
+	err = WriteNewGlideManifest(dir, true, glideManifest)
 	if err != nil {
 		UberLogger.Println(err)
 		return err
