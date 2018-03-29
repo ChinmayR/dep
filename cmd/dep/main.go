@@ -135,7 +135,6 @@ func (c *Config) Run() (exitCode int) {
 	_, _, err := new(uber.CommandExecutor).ExecCommand("git", time.Duration(1*time.Minute),
 		false, nil, "config", "--global", "--unset", "url.ssh://git@github.com/uber/.insteadof", "https://github.com/uber/")
 	if err != nil {
-		uber.UberLogger.Println("Unable to unset git config ssh://git@github.com/uber/ to https://github.com/uber/, maybe it was already unset")
 		uber.UberLogger.Println("If dep hangs, run \"ssh-add\" and try again")
 	} else {
 		defer func() {

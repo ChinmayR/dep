@@ -108,6 +108,9 @@ func (r *gitRepo) get(ctx context.Context) error {
 }
 
 func (r *gitRepo) fetch(ctx context.Context) error {
+	conRes := uber.GetThreadFromPool()
+	defer conRes.Release()
+
 	cmd := commandContext(
 		ctx,
 		"git",
@@ -125,6 +128,8 @@ func (r *gitRepo) fetch(ctx context.Context) error {
 }
 
 func (r *gitRepo) updateVersion(ctx context.Context, v string) error {
+	conRes := uber.GetThreadFromPool()
+
 	cmd := commandContext(ctx, "git", "checkout", v)
 	cmd.SetDir(r.LocalPath())
 	if out, err := cmd.CombinedOutput(); err != nil {
@@ -132,12 +137,17 @@ func (r *gitRepo) updateVersion(ctx context.Context, v string) error {
 			"unable to update checked out version")
 	}
 
+	conRes.Release()
+
 	return r.defendAgainstSubmodules(ctx)
 }
 
 // defendAgainstSubmodules tries to keep repo state sane in the event of
 // submodules. Or nested submodules. What a great idea, submodules.
 func (r *gitRepo) defendAgainstSubmodules(ctx context.Context) error {
+	conRes := uber.GetThreadFromPool()
+	defer conRes.Release()
+
 	// First, update them to whatever they should be, if there should happen to be any.
 	{
 		cmd := commandContext(

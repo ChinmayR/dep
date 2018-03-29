@@ -15,7 +15,7 @@ const (
 )
 
 const (
-	numThreadsAllowed = 25
+	numThreadsAllowed = 20
 )
 var threadSema = make(chan ConResource, numThreadsAllowed)
 

@@ -117,7 +117,6 @@ func GetGitoliteRoot(path string) string {
 		UberLogger.Printf("Found ambigious path, taking %s for %s\n", assumedPath, path)
 		return assumedPath
 	}
-	UberLogger.Printf("Found unambigious path, assuming .git for %s\n", path)
 	return path
 }
 
