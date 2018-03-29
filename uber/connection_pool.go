@@ -7,6 +7,7 @@ import (
 	"path/filepath"
 	"strings"
 	"time"
+
 	"github.com/pkg/errors"
 )
 
@@ -17,6 +18,7 @@ const (
 const (
 	numThreadsAllowed = 20
 )
+
 var threadSema = make(chan ConResource, numThreadsAllowed)
 
 type ConResource int
@@ -26,7 +28,11 @@ func init() {
 		go func(localIter int) {
 			conRes := ConResource(localIter)
 			threadSema <- conRes
-			err := conRes.createSocketForGitolite()
+			err := conRes.deleteSocketForGitolite()
+			if err != nil {
+				UberLogger.Printf("Warning: Unable to remove socket %d : %s", localIter, err)
+			}
+			err = conRes.createSocketForGitolite()
 			if err != nil {
 				UberLogger.Printf("Warning: Unable to initialize thread %d : %s", localIter, err)
 			}
@@ -39,7 +45,7 @@ func getCacheDir() string {
 }
 
 func (conRes ConResource) createSocketForGitolite() error {
-	socketFile := filepath.Join(getCacheDir() + "/" +fmt.Sprintf("%d-gitolite@code.uber.internal:2222", conRes))
+	socketFile := filepath.Join(getCacheDir(), fmt.Sprintf("%d-gitolite@code.uber.internal:2222", conRes))
 	if _, err := os.Stat(socketFile); os.IsNotExist(err) {
 		// Make a dummy ls-remote call to gitolite to create the socket and cache the connection
 		command := exec.Command("git", "ls-remote", "ssh://gitolite@code.uber.internal/devexp/dep", "HEAD")
@@ -48,7 +54,7 @@ func (conRes ConResource) createSocketForGitolite() error {
 
 		// Retry every 1 second and check if the socket file exists, if yes then return
 		retries := 5
-		var timeout <- chan time.Time
+		var timeout <-chan time.Time
 		for retries > 0 {
 			timeout = time.After(1 * time.Second)
 			select {
@@ -60,6 +66,17 @@ func (conRes ConResource) createSocketForGitolite() error {
 			retries--
 		}
 		return errors.Wrapf(err, "unable to create socket file %s", socketFile)
+	}
+	return nil
+}
+
+func (conRes ConResource) deleteSocketForGitolite() error {
+	socketFile := filepath.Join(getCacheDir(), fmt.Sprintf("%d-gitolite@code.uber.internal:2222", conRes))
+	if _, err := os.Stat(socketFile); err == nil {
+		err := os.Remove(socketFile)
+		if err != nil {
+			return errors.Wrapf(err, "unable to delete socket file %s", socketFile)
+		}
 	}
 	return nil
 }

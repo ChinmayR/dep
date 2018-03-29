@@ -14,8 +14,8 @@ import (
 	"os"
 	"path/filepath"
 	"sort"
-	"strings"
 	"strconv"
+	"strings"
 	"sync"
 
 	"github.com/golang/dep/uber"
