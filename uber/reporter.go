@@ -63,7 +63,7 @@ const (
 )
 
 //When major version changes, queries on Grafana's dashboard should change too
-const METRICS_STABLE_VERSION = "1.0.0"
+const METRICS_STABLE_VERSION = "1.0.1"
 
 func init() {
 	runId = xid.New().String()
@@ -115,9 +115,9 @@ func ReportRepoMetrics(cmd string, repoName string, cmdFlags map[string]string) 
 
 //dep reports clear cache counts via this metric.
 //Refer to getVersionedTagMap method more info about the semantic versioning associated tag
-func ReportClearCacheMetric() {
+func ReportClearCacheMetric(cmd string) {
 	defer catchErrors()
-	tags := getVersionedTagMap()
+	tags := getCommonTags(cmd)
 	scope.Tagged(tags).Counter(CC_METRIC).Inc(1)
 	if err := scopeCloser.Close(); err != nil {
 		UberLogger.Print(err.Error())
@@ -139,7 +139,7 @@ func ReportSuccess() {
 //- status: can be either "success" or "failure" based on whether dep succeeded or failed to resolve dependencies
 //- Other common tags. Refer to getCommonTags method for the rest of associated tags
 func addLatencyMetric(cmd string, repo string, latency time.Duration, cmdFlags map[string]string) {
-	tags := getCommonTags(repo, cmd)
+	tags := getCommonTagsWithRepo(repo, cmd)
 	for k,v := range cmdFlags {
 		tags[k] = v
 	}
@@ -155,7 +155,7 @@ func addLatencyMetric(cmd string, repo string, latency time.Duration, cmdFlags m
 //- Other common tags. Refer to getCommonTags method for the rest of associated tags
 func addFailureMetric(cmd string, repo string) {
 	if runStatus == FAILED_RUN {
-		tags := getCommonTags(repo, cmd)
+		tags := getCommonTagsWithRepo(repo, cmd)
 		var errorElements []string
 		for k := range errorTags {
 			if errorTags[k] > 0 {
@@ -173,7 +173,7 @@ func addFailureMetric(cmd string, repo string) {
 //Refer to getCommonTags method for the complete list of associated tags.
 //* the name of each metric is an error type from the const error list
 func addErrorMetrics(cmd string, repo string) {
-	tags := getCommonTags(repo, cmd)
+	tags := getCommonTagsWithRepo(repo, cmd)
 	for errorName,errorCount := range errorTags {
 		if errorCount > 0 {
 			scope.Tagged(tags).Counter(errorName).Inc(errorCount)
@@ -185,7 +185,7 @@ func addErrorMetrics(cmd string, repo string) {
 //Frequency metric is reported to calculate dep's adoption and per repo usage.
 //Refer to getCommonTags method for the complete list of associated tags.
 func addFrequencyMetric(repo string, cmd string) {
-	tags := getCommonTags(repo, cmd)
+	tags := getCommonTagsWithRepo(repo, cmd)
 	scope.Tagged(tags).Counter(FREQUENCY_METRIC).Inc(1)
 }
 
@@ -195,16 +195,21 @@ func addFrequencyMetric(repo string, cmd string) {
 //- repo: the name of the repository on which dep ran
 //- command: the command name
 //- semver: the current stable metrics semantic version
-func getCommonTags(repo string, cmd string) map[string]string {
-	tags := getVersionedTagMap()
-	tags[RUNID_TAG] = runId
+func getCommonTagsWithRepo(repo string, cmd string) map[string]string {
+	tags := getCommonTags(cmd)
 	tags[REPO_TAG] = repo
-	tags[COMMAND_TAG] = cmd
 	return tags
 }
 
-func getVersionedTagMap() map[string]string {
+//Creates a string map that contains the tag name/value pairs.
+//This is the common tag list used in repo metrics reporting. The map includes the following tags:
+//- runid: a unique ID for a single dep run. This ID is shared across all metrics reported per run
+//- command: the command name
+//- semver: the current stable metrics semantic version
+func getCommonTags(cmd string) map[string]string {
 	tags := make(map[string]string)
+	tags[RUNID_TAG] = runId
+	tags[COMMAND_TAG] = cmd
 	tags[SEMVER_TAG] = METRICS_STABLE_VERSION
 	return tags
 }
