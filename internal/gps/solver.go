@@ -868,7 +868,7 @@ func (s *solver) createVersionQueue(bmi bimodalIdentifier) (*versionQueue, error
 	return q, s.findValidVersion(q, bmi.pl, bmi)
 }
 
-func (s *solver) getCurrProjectConstraint(bmi bimodalIdentifier) (Constraint) {
+func (s *solver) getCurrProjectConstraint(bmi bimodalIdentifier) Constraint {
 	constraints := s.rd.rm.DependencyConstraints()
 	projectRoot := ProjectRoot(bmi.id.ProjectRoot)
 	if currConst, ok := constraints[projectRoot]; !ok {
