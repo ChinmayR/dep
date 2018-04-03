@@ -30,8 +30,8 @@ type glideYaml struct {
 
 type glidePackage struct {
 	Name       string `yaml:"package"`
-	Reference  string `yaml:"version"` // could contain a semver, tag or branch
-	Repository string `yaml:"repo"`
+	Reference  string `yaml:"version,omitempty"` // could contain a semver, tag or branch
+	Repository string `yaml:"repo,omitempty"`
 }
 
 // If the glide manifest/lock exists then we delete them and write a
