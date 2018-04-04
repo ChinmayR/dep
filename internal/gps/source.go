@@ -14,6 +14,7 @@ import (
 
 	"flag"
 
+	"github.com/golang/dep/internal/fs"
 	"github.com/golang/dep/internal/gps/pkgtree"
 	"github.com/pkg/errors"
 )
@@ -347,9 +348,20 @@ func (sg *sourceGateway) exportVersionTo(ctx context.Context, v Version, to stri
 		return err
 	}
 
-	err = sg.suprvsr.do(ctx, sg.src.upstreamURL(), ctExportTree, func(ctx context.Context) error {
+	exportTreeFunc := func(ctx context.Context) error {
 		return sg.src.exportRevisionTo(ctx, r, to)
-	})
+	}
+
+	if err = sg.suprvsr.do(ctx, sg.src.upstreamURL(), ctExportTree, exportTreeFunc); err != nil {
+		if _, ok := err.(fs.IndexNotFoundError); ok {
+			sg.srcState = 0
+			_, err = sg.require(ctx, sourceExistsLocally)
+			if err != nil {
+				return err
+			}
+			err = sg.suprvsr.do(ctx, sg.src.upstreamURL(), ctExportTree, exportTreeFunc)
+		}
+	}
 
 	// It's possible (in git) that we may have tried this against a version that
 	// doesn't exist in the repository cache, even though we know it exists in

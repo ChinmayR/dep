@@ -21,35 +21,34 @@ const (
 
 var threadSema = make(chan ConResource, numThreadsAllowed)
 
-type ConResource int
+type ConResource struct {
+	threadNum    int
+	cacheEnabled bool
+}
 
 func init() {
 	for i := 1; i <= numThreadsAllowed; i++ {
 		go func(localIter int) {
-			conRes := ConResource(localIter)
+			conRes := ConResource{threadNum: localIter, cacheEnabled: false}
+			// attempting to cache the ssh connection is best effort and so we continue in case of failure
+			conRes.deleteSocketForGitolite()
+			err := conRes.createSocketForGitolite()
+			conRes.cacheEnabled = err == nil
 			threadSema <- conRes
-			err := conRes.deleteSocketForGitolite()
-			if err != nil {
-				UberLogger.Printf("Warning: Unable to remove socket %d : %s", localIter, err)
-			}
-			err = conRes.createSocketForGitolite()
-			if err != nil {
-				UberLogger.Printf("Warning: Unable to initialize thread %d : %s", localIter, err)
-			}
 		}(i)
 	}
 }
 
-func getCacheDir() string {
+func GetCacheDir() string {
 	return filepath.Join(os.Getenv("HOME"), ".dep-cache", "pkg")
 }
 
 func (conRes ConResource) createSocketForGitolite() error {
-	socketFile := filepath.Join(getCacheDir(), fmt.Sprintf("%d-gitolite@code.uber.internal:2222", conRes))
+	socketFile := filepath.Join(GetCacheDir(), fmt.Sprintf("%d-gitolite@code.uber.internal:2222", conRes.threadNum))
 	if _, err := os.Stat(socketFile); os.IsNotExist(err) {
 		// Make a dummy ls-remote call to gitolite to create the socket and cache the connection
 		command := exec.Command("git", "ls-remote", "ssh://gitolite@code.uber.internal/devexp/dep", "HEAD")
-		command.Env = append([]string{fmt.Sprintf(FILE_PATTERN, getCacheDir(), conRes)}, os.Environ()...)
+		command.Env = append([]string{fmt.Sprintf(FILE_PATTERN, GetCacheDir(), conRes.threadNum)}, os.Environ()...)
 		command.Start()
 
 		// Retry every 1 second and check if the socket file exists, if yes then return
@@ -71,7 +70,7 @@ func (conRes ConResource) createSocketForGitolite() error {
 }
 
 func (conRes ConResource) deleteSocketForGitolite() error {
-	socketFile := filepath.Join(getCacheDir(), fmt.Sprintf("%d-gitolite@code.uber.internal:2222", conRes))
+	socketFile := filepath.Join(GetCacheDir(), fmt.Sprintf("%d-gitolite@code.uber.internal:2222", conRes.threadNum))
 	if _, err := os.Stat(socketFile); err == nil {
 		err := os.Remove(socketFile)
 		if err != nil {
@@ -86,13 +85,14 @@ func (conRes ConResource) deleteSocketForGitolite() error {
 // exists in the cache and is warmed up before returning.
 func (conRes ConResource) GetEnvironmentForCommand(remote string) []string {
 	var retStr string
-	if strings.Contains(remote, "code.uber.internal") {
+	if conRes.cacheEnabled && strings.Contains(remote, "code.uber.internal") {
 		// make sure the socket file exists first in the cache before making the call
 		err := conRes.createSocketForGitolite()
 		if err != nil {
+			conRes.cacheEnabled = false
 			return []string{}
 		}
-		retStr = fmt.Sprintf(FILE_PATTERN, getCacheDir(), conRes)
+		retStr = fmt.Sprintf(FILE_PATTERN, GetCacheDir(), conRes.threadNum)
 	}
 	return []string{retStr}
 }

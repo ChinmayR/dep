@@ -5,6 +5,7 @@
 package fs
 
 import (
+	"fmt"
 	"io"
 	"io/ioutil"
 	"os"
@@ -153,13 +154,21 @@ func EquivalentPaths(p1, p2 string) (bool, error) {
 	return true, nil
 }
 
+type IndexNotFoundError struct {
+	Src string
+}
+
+func (i IndexNotFoundError) Error() string {
+	return fmt.Sprintf("cannot stat %s", i.Src)
+}
+
 // RenameWithFallback attempts to rename a file or directory, but falls back to
 // copying in the event of a cross-device link error. If the fallback copy
 // succeeds, src is still removed, emulating normal rename behavior.
 func RenameWithFallback(src, dst string) error {
 	_, err := os.Stat(src)
 	if err != nil {
-		return errors.Wrapf(err, "cannot stat %s", src)
+		return IndexNotFoundError{Src: src}
 	}
 
 	err = os.Rename(src, dst)

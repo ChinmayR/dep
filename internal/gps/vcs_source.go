@@ -31,7 +31,15 @@ func (bs *baseVCSSource) sourceType() string {
 }
 
 func (bs *baseVCSSource) existsLocally(ctx context.Context) bool {
-	return bs.repo.CheckLocal()
+	// there are cases where the .git/index does not exist if the git command
+	// is killed midway. For this reason, we check for this to exist before
+	// declaring the repo exists locally in the cache
+	gitIndexExistsLocally := false
+	if _, err := os.Stat(bs.repo.LocalPath() + "/.git/index"); err == nil {
+		gitIndexExistsLocally = true
+	}
+
+	return bs.repo.CheckLocal() && gitIndexExistsLocally
 }
 
 // TODO reimpl for git
@@ -76,6 +84,18 @@ func (bs *baseVCSSource) revisionPresentIn(r Revision) (bool, error) {
 // initLocal clones/checks out the upstream repository to disk for the first
 // time.
 func (bs *baseVCSSource) initLocal(ctx context.Context) error {
+	// there are cases where the .git does not exist if the git command
+	// is killed midway, but the partially cloned folder exists.
+	// We only get here if the cache folder is not fully cloned, and so
+	// we delete the existing corrupt cache folder before recloning it
+	isInCache := strings.EqualFold(filepath.Join(uber.GetCacheDir(), "dep", "sources"), filepath.Dir(bs.repo.LocalPath()))
+	if _, err := os.Stat(bs.repo.LocalPath()); err == nil && isInCache {
+		err = os.RemoveAll(bs.repo.LocalPath())
+		if err != nil {
+			uber.UberLogger.Printf("failed to remove localpath %s", bs.repo.LocalPath())
+			return err
+		}
+	}
 	err := bs.repo.get(ctx)
 
 	if err != nil {
