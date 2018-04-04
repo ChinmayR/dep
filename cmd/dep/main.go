@@ -132,6 +132,8 @@ func (c *Config) Run() (exitCode int) {
 		return
 	}
 
+	uber.UberLogger.Println("DEP VERSION: " + uber.DEP_VERSION)
+
 	_, _, err := new(uber.CommandExecutor).ExecCommand("git", time.Duration(1*time.Minute),
 		false, nil, "config", "--global", "--unset", "url.ssh://git@github.com/uber/.insteadof", "https://github.com/uber/")
 	if err != nil {
