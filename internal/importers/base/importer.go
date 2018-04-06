@@ -10,12 +10,13 @@ import (
 
 	"sync"
 
+	"regexp"
+	"strings"
+
 	"github.com/golang/dep"
 	fb "github.com/golang/dep/internal/feedback"
 	"github.com/golang/dep/internal/gps"
 	"github.com/pkg/errors"
-	"regexp"
-	"strings"
 )
 
 // Importer provides a common implementation for importing from other
@@ -214,7 +215,7 @@ func (i *Importer) ImportPackages(packages []ImportedPackage, defaultConstraintF
 		<-threadSema
 		go func(prj *importedProject, wg *sync.WaitGroup, ch chan<- string) {
 			defer wg.Done()
-			source := prj.Source
+			source := filterApacheThriftSource(prj.Source)
 			if len(source) > 0 {
 				isDefault, err := i.isDefaultSource(prj.Root, source)
 				if err != nil {
@@ -317,6 +318,15 @@ func (i *Importer) ImportPackages(packages []ImportedPackage, defaultConstraintF
 	return nil
 }
 
+// git.apache.org/thrift no longer exists, so this avoids importing this
+// repo source from 3rd party manifest/lock files.
+func filterApacheThriftSource(source string) string {
+	if strings.EqualFold(source, "git://git.apache.org/thrift.git") {
+		return ""
+	}
+	return source
+}
+
 // isConstraintPinned returns if a constraint is pinned to a specific revision.
 func (i *Importer) isConstraintPinned(c gps.Constraint) bool {
 	if version, isVersion := c.(gps.Version); isVersion {
@@ -379,7 +389,6 @@ func (i *Importer) isDefaultSource(projectRoot gps.ProjectRoot, sourceURL string
 	return false, nil
 }
 
-
 func NormalizeGitoliteURL(sourceURL string, projectRoot gps.ProjectRoot) (string, gps.ProjectRoot) {
 	//Uber patch for sourceURLs cloned from gitolite repos
 
@@ -392,7 +401,7 @@ func NormalizeGitoliteURL(sourceURL string, projectRoot gps.ProjectRoot) (string
 
 		if !strings.HasSuffix(sourceURL, ".git") {
 			projectRoot = gps.ProjectRoot(strings.TrimSuffix(prString, ".git"))
-		} else if !strings.HasSuffix(prString, ".git"){
+		} else if !strings.HasSuffix(prString, ".git") {
 			sourceURL = strings.TrimSuffix(sourceURL, ".git")
 		}
 

@@ -41,7 +41,7 @@ const UBER_PREFIX = "[UBER]  "
 
 var UberLogger = log.New(os.Stdout, UBER_PREFIX, 0)
 
-const DEP_VERSION = "v0.1.0-UBER"
+const DEP_VERSION = "v0.2.0-UBER"
 
 type rewriteFn func([]string, ExecutorInterface) (*url.URL, string, string, *url.URL, error)
 

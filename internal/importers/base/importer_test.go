@@ -563,6 +563,18 @@ func TestBaseImporter_ImportProjects(t *testing.T) {
 				},
 			},
 		},
+		"apache thrift sources should be ignored": {
+			importertest.TestCase{
+				WantConstraint: "*",
+				WantSourceRepo: "",
+			},
+			[]ImportedPackage{
+				{
+					Name:   importertest.Project,
+					Source: "git://git.apache.org/thrift.git",
+				},
+			},
+		},
 	}
 
 	for name, tc := range testcases {
@@ -576,6 +588,37 @@ func TestBaseImporter_ImportProjects(t *testing.T) {
 			})
 			if err != nil {
 				t.Fatalf("%#v", err)
+			}
+		})
+	}
+}
+
+func TestFilteringApacheThrift(t *testing.T) {
+	testcases := map[string]struct {
+		source         string
+		expectedSource string
+	}{
+		"apache thrift source is ignored": {
+			source:         "git://git.apache.org/thrift.git",
+			expectedSource: "",
+		},
+		"apache thriftrw source is not ignored": {
+			source:         "git://git.apache.org/thriftrw.git",
+			expectedSource: "git://git.apache.org/thriftrw.git",
+		},
+		"apache thriftrw mirror source is not ignored": {
+			source:         "ssh://gitolite@code.uber.internal/github/apache/thrift.git",
+			expectedSource: "ssh://gitolite@code.uber.internal/github/apache/thrift.git",
+		},
+	}
+	for name, tc := range testcases {
+		name := name
+		tc := tc
+
+		t.Run(name, func(t *testing.T) {
+			gotSource := filterApacheThriftSource(tc.source)
+			if gotSource != tc.expectedSource {
+				t.Fatal("expected source did not meet source received")
 			}
 		})
 	}

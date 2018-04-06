@@ -132,9 +132,17 @@ func (r *gitRepo) updateVersion(ctx context.Context, v string) error {
 
 	cmd := commandContext(ctx, "git", "checkout", v)
 	cmd.SetDir(r.LocalPath())
-	if out, err := cmd.CombinedOutput(); err != nil {
-		return newVcsLocalErrorOr(err, cmd.Args(), string(out),
-			"unable to update checked out version")
+	if _, err := cmd.CombinedOutput(); err != nil {
+		// there can be cases where the checked out repo in the cache has
+		// untracked/unstaged/staged files, which causes git checkout to fail.
+		// run git reset and try running git checkout again before erroring
+		cmdReset := commandContext(ctx, "git", "reset", "--hard")
+		cmdReset.SetDir(r.LocalPath())
+		cmdReset.CombinedOutput()
+		if out, err := cmd.CombinedOutput(); err != nil {
+			return newVcsLocalErrorOr(err, cmd.Args(), string(out),
+				"unable to update checked out version")
+		}
 	}
 
 	conRes.Release()

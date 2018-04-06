@@ -181,7 +181,6 @@ func (b *backend) postHTTP(values url.Values) {
 		}
 
 		if rsp.StatusCode < http.StatusBadRequest {
-			fmt.Fprintf(os.Stderr, "Success posting request with values %s\n", values)
 			return
 		}
 
