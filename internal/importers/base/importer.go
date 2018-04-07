@@ -321,7 +321,8 @@ func (i *Importer) ImportPackages(packages []ImportedPackage, defaultConstraintF
 // git.apache.org/thrift no longer exists, so this avoids importing this
 // repo source from 3rd party manifest/lock files.
 func filterApacheThriftSource(source string) string {
-	if strings.EqualFold(source, "git://git.apache.org/thrift.git") {
+	if strings.EqualFold(source, "git://git.apache.org/thrift.git") ||
+		strings.EqualFold(source, "https://git-wip-us.apache.org/repos/asf/thrift.git") {
 		return ""
 	}
 	return source

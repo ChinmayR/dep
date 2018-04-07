@@ -575,6 +575,18 @@ func TestBaseImporter_ImportProjects(t *testing.T) {
 				},
 			},
 		},
+		"git wip us apache thrift sources should be ignored": {
+			importertest.TestCase{
+				WantConstraint: "*",
+				WantSourceRepo: "",
+			},
+			[]ImportedPackage{
+				{
+					Name:   importertest.Project,
+					Source: "https://git-wip-us.apache.org/repos/asf/thrift.git",
+				},
+			},
+		},
 	}
 
 	for name, tc := range testcases {
@@ -600,6 +612,10 @@ func TestFilteringApacheThrift(t *testing.T) {
 	}{
 		"apache thrift source is ignored": {
 			source:         "git://git.apache.org/thrift.git",
+			expectedSource: "",
+		},
+		"git wip us apache thrift source is ignored": {
+			source:         "https://git-wip-us.apache.org/repos/asf/thrift.git",
 			expectedSource: "",
 		},
 		"apache thriftrw source is not ignored": {
