@@ -14,6 +14,7 @@ import (
 	"syscall"
 	"time"
 
+	"github.com/golang/dep/uber"
 	"github.com/pkg/errors"
 )
 
@@ -43,6 +44,8 @@ func commandContext(ctx context.Context, name string, arg ...string) cmd {
 // terminates subprocesses gently (via os.Interrupt), but resorts to Kill if
 // the subprocess fails to exit after 1 minute.
 func (c cmd) CombinedOutput() ([]byte, error) {
+	uber.DebugLogger.Printf("executing command %v at %v", c.Cmd.Args, c.Cmd.Dir)
+
 	// Adapted from (*os/exec.Cmd).CombinedOutput
 	if c.Cmd.Stdout != nil {
 		return nil, errors.New("exec: Stdout already set")
@@ -69,6 +72,7 @@ func (c cmd) CombinedOutput() ([]byte, error) {
 				_ = c.Cmd.Process.Kill()
 			} else {
 				defer time.AfterFunc(time.Minute, func() {
+					uber.DebugLogger.Printf("timed out command %v at %v", c.Cmd.Args, c.Cmd.Dir)
 					_ = c.Cmd.Process.Kill()
 				}).Stop()
 				<-waitDone
@@ -78,7 +82,9 @@ func (c cmd) CombinedOutput() ([]byte, error) {
 	}()
 
 	if err := c.Cmd.Wait(); err != nil {
+		uber.DebugLogger.Printf("error executing command %v at %v, err:%v", c.Cmd.Args, c.Cmd.Dir, err)
 		return nil, err
 	}
+	uber.DebugLogger.Printf("successful command %v at %v", c.Cmd.Args, c.Cmd.Dir)
 	return b.Bytes(), nil
 }

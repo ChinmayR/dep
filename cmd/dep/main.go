@@ -13,6 +13,7 @@ import (
 	"log"
 	"os"
 	"path/filepath"
+	"runtime/debug"
 	"strings"
 	"text/tabwriter"
 	"time"
@@ -98,8 +99,8 @@ func (c *Config) Run() (exitCode int) {
 		},
 	}
 
-	outLogger := log.New(c.Stdout, "", 0)
-	errLogger := log.New(c.Stderr, "", 0)
+	outLogger := log.New(io.MultiWriter(c.Stdout, uber.LogFile), uber.DEP_PREFIX, 0)
+	errLogger := log.New(io.MultiWriter(c.Stderr, uber.LogFile), uber.DEP_PREFIX, 0)
 
 	usage := func() {
 		errLogger.Println("dep is a tool for managing dependencies for Go projects")
@@ -133,6 +134,8 @@ func (c *Config) Run() (exitCode int) {
 	}
 
 	uber.UberLogger.Println("DEP VERSION: " + uber.DEP_VERSION)
+	uber.UberLogger.Println("RUN ID: " + uber.RunId)
+	uber.UberLogger.Println("Log stored at: " + uber.LogPath)
 
 	_, _, err := new(uber.CommandExecutor).ExecCommand("git", time.Duration(1*time.Minute),
 		false, nil, "config", "--global", "--unset", "url.ssh://git@github.com/uber/.insteadof", "https://github.com/uber/")
@@ -145,12 +148,22 @@ func (c *Config) Run() (exitCode int) {
 		}()
 	}
 
+	defer func() {
+		if r := recover(); r != nil {
+			errLogger.Printf("PANIC: EMAIL dep-support-group@uber.com WITH THE LOG FROM %s\n", uber.LogPath)
+			errLogger.Printf("[PANIC] %s\n\n", r)
+			errLogger.Printf("%s\n", debug.Stack())
+			exitCode = 1
+			return
+		}
+	}()
+
 	for _, cmd := range commands {
 		if cmd.Name() == cmdName {
 			// Build flag set with global flags in there.
 			fs := flag.NewFlagSet(cmdName, flag.ContinueOnError)
 			fs.SetOutput(c.Stderr)
-			verbose := fs.Bool("v", false, "enable verbose logging")
+			verbose := fs.Bool("v", true, "enable verbose logging")
 
 			// Register the subcommand flags in there, too.
 			cmd.Register(fs)

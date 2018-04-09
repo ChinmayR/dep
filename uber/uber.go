@@ -3,7 +3,6 @@ package uber
 import (
 	"bytes"
 	"fmt"
-	"log"
 	"net/url"
 	"os"
 	"os/exec"
@@ -37,11 +36,7 @@ const (
 	RunningIntegrationTests = "RUNNING_INTEGRATION_TESTS"
 )
 
-const UBER_PREFIX = "[UBER]  "
-
-var UberLogger = log.New(os.Stdout, UBER_PREFIX, 0)
-
-const DEP_VERSION = "v0.2.0-UBER"
+const DEP_VERSION = "v0.3.0-UBER"
 
 type rewriteFn func([]string, ExecutorInterface) (*url.URL, string, string, *url.URL, error)
 
@@ -261,6 +256,8 @@ func (c *CommandExecutor) ExecCommand(name string, cmdTimeout time.Duration, run
 	command := exec.Command(name, arg...)
 	command.Env = append(environment, os.Environ()...)
 
+	DebugLogger.Printf("executing command: %v %v, timeout: %s, environment: %v, background: %t", name, arg, cmdTimeout, environment, runInBackground)
+
 	// Start a timer
 	timeout := time.After(cmdTimeout)
 	// Force subprocesses into their own process group, rather than being in the
@@ -286,12 +283,14 @@ func (c *CommandExecutor) ExecCommand(name string, cmdTimeout time.Duration, run
 		select {
 		case <-timeout:
 			command.Process.Kill()
-			fmt.Printf("Command %s with args %s timed out\n", name, arg)
+			DebugLogger.Printf("timed out command: %v %v, timeout: %s, environment: %v, background: %t", name, arg, cmdTimeout, environment, runInBackground)
 			return "", "", errors.New("Command timed out")
 		case err := <-done:
+			DebugLogger.Printf("successful command: %v %v, timeout: %s, environment: %v, background: %t, err: %v", name, arg, cmdTimeout, environment, runInBackground, err)
 			return stdoutbytes.String(), stderrbytes.String(), err
 		}
 	}
 
+	DebugLogger.Printf("successful command: %v %v, timeout: %s, environment: %v, background: %t", name, arg, cmdTimeout, environment, runInBackground)
 	return "", "", nil
 }

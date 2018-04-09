@@ -1,16 +1,18 @@
 package base
 
 import (
-	"io/ioutil"
-	"path/filepath"
-	"os"
 	"bytes"
 	"fmt"
+	"io/ioutil"
 	"log"
+	"os"
+	"path/filepath"
 	"strings"
 
-	"github.com/pkg/errors"
+	"github.com/golang/dep/uber"
+
 	"github.com/BurntSushi/toml"
+	"github.com/pkg/errors"
 )
 
 const (
@@ -47,17 +49,17 @@ type overridePackage struct {
 func ReadCustomConfig(dir string) ([]ImportedPackage, []string, error) {
 	t := filepath.Join(dir, CustomConfigName)
 	if _, err := os.Stat(t); err != nil {
-		fmt.Printf("Did not detect custom configuration files at %s\n", dir)
+		uber.UberLogger.Printf("Did not detect custom configuration files at %s\n", dir)
 		return nil, nil, nil
 	}
 
-	fmt.Println("Detected custom configuration files...")
-	fmt.Printf("Loading %s\n", t)
+	uber.UberLogger.Println("Detected custom configuration files...")
+	uber.UberLogger.Printf("Loading %s\n", t)
 	yb, err := ioutil.ReadFile(t)
 	if err != nil {
 		return nil, nil, errors.Wrapf(err, "unable to read %s", t)
 	}
-	fmt.Println(string(yb))
+	uber.UberLogger.Println(string(yb))
 	customConfig := CustomConfig{}
 	err = toml.Unmarshal(yb, &customConfig)
 	if err != nil {
@@ -179,7 +181,7 @@ func AppendBasicOverrides(impPkgs []ImportedPackage, pkgSeen map[string]bool) ([
 					// overwrite reference if not empty otherwise return error (don't clobber)
 					if pkg.Reference != "" {
 						if subPkg.ConstraintHint != "" && pkg.Reference != subPkg.ConstraintHint {
-							return nil, ReferenceOverrideAlreadyExistsForBasic{subPkg:subPkg.Name}
+							return nil, ReferenceOverrideAlreadyExistsForBasic{subPkg: subPkg.Name}
 						} else {
 							subPkg.ConstraintHint = pkg.Reference
 						}
@@ -187,7 +189,7 @@ func AppendBasicOverrides(impPkgs []ImportedPackage, pkgSeen map[string]bool) ([
 					// overwrite source if not empty otherwise return error (don't clobber)
 					if pkg.Source != "" {
 						if subPkg.Source != "" && pkg.Source != subPkg.Source {
-							return nil, SourceOverrideAlreadyExistsForBasic{subPkg:subPkg.Name}
+							return nil, SourceOverrideAlreadyExistsForBasic{subPkg: subPkg.Name}
 						} else {
 							subPkg.Source = pkg.Source
 						}
