@@ -72,7 +72,7 @@ func (c cmd) CombinedOutput() ([]byte, error) {
 				_ = c.Cmd.Process.Kill()
 			} else {
 				defer time.AfterFunc(time.Minute, func() {
-					uber.DebugLogger.Printf("timed out command %v at %v", c.Cmd.Args, c.Cmd.Dir)
+					uber.DebugLogger.Printf("timed out command %v at %v, out: %v", c.Cmd.Args, c.Cmd.Dir, b.Bytes())
 					_ = c.Cmd.Process.Kill()
 				}).Stop()
 				<-waitDone
@@ -82,7 +82,7 @@ func (c cmd) CombinedOutput() ([]byte, error) {
 	}()
 
 	if err := c.Cmd.Wait(); err != nil {
-		uber.DebugLogger.Printf("error executing command %v at %v, err:%v", c.Cmd.Args, c.Cmd.Dir, err)
+		uber.DebugLogger.Printf("error executing command %v at %v, err:%v, out: %v", c.Cmd.Args, c.Cmd.Dir, err, b.Bytes())
 		return nil, err
 	}
 	uber.DebugLogger.Printf("successful command %v at %v", c.Cmd.Args, c.Cmd.Dir)
