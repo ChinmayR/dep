@@ -283,10 +283,10 @@ func (c *CommandExecutor) ExecCommand(name string, cmdTimeout time.Duration, run
 		select {
 		case <-timeout:
 			command.Process.Kill()
-			DebugLogger.Printf("timed out command: %v %v, timeout: %s, environment: %v, background: %t", name, arg, cmdTimeout, environment, runInBackground)
+			DebugLogger.Printf("timed out command: %v %v, timeout: %s, environment: %v, background: %t, err: %v, out: %v", name, arg, cmdTimeout, environment, runInBackground, string(stderrbytes.Bytes()), string(stdoutbytes.Bytes()))
 			return "", "", errors.New("Command timed out")
 		case err := <-done:
-			DebugLogger.Printf("successful command: %v %v, timeout: %s, environment: %v, background: %t, err: %v", name, arg, cmdTimeout, environment, runInBackground, err)
+			DebugLogger.Printf("successful command: %v %v, timeout: %s, environment: %v, background: %t, err: %v, out: %v", name, arg, cmdTimeout, environment, runInBackground, err, string(stdoutbytes.Bytes()))
 			return stdoutbytes.String(), stderrbytes.String(), err
 		}
 	}
