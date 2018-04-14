@@ -16,6 +16,7 @@ import (
 	"github.com/golang/dep"
 	fb "github.com/golang/dep/internal/feedback"
 	"github.com/golang/dep/internal/gps"
+	"github.com/golang/dep/uber"
 	"github.com/pkg/errors"
 )
 
@@ -215,6 +216,7 @@ func (i *Importer) ImportPackages(packages []ImportedPackage, defaultConstraintF
 		<-threadSema
 		go func(prj *importedProject, wg *sync.WaitGroup, ch chan<- string) {
 			defer wg.Done()
+			defer uber.LogIfPanic()
 			source := filterApacheThriftSource(prj.Source)
 			if len(source) > 0 {
 				isDefault, err := i.isDefaultSource(prj.Root, source)

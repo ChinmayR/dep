@@ -6,8 +6,10 @@ import (
 	"log"
 	"os"
 	"path/filepath"
+	"runtime/debug"
 	"time"
 
+	"github.com/golang/dep/uber"
 	"github.com/rs/xid"
 )
 
@@ -42,4 +44,13 @@ func init() {
 func getLogStoragePath(runId string) string {
 	logFileName := fmt.Sprintf("%s-%s.log", time.Now().Format("2006/01/02/log-150405"), runId)
 	return filepath.Join(GetCacheDir(), "logs", logFileName)
+}
+
+func LogIfPanic() {
+	if r := recover(); r != nil {
+		DebugLogger.Printf("PANIC: EMAIL dep-support-group@uber.com WITH THE LOG FROM %s\n", uber.LogPath)
+		DebugLogger.Printf("[PANIC] %s\n\n", r)
+		DebugLogger.Printf("%s\n", debug.Stack())
+		panic(r)
+	}
 }

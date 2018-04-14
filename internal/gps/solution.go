@@ -12,6 +12,7 @@ import (
 	"path/filepath"
 	"sync"
 
+	"github.com/golang/dep/uber"
 	"github.com/pkg/errors"
 	"golang.org/x/sync/errgroup"
 )
@@ -80,6 +81,7 @@ func WriteDepTree(basedir string, l Lock, sm SourceManager, sv bool, logger *log
 		p := lps[i] // per-iteration copy
 
 		g.Go(func() error {
+			defer uber.LogIfPanic()
 			err := func() error {
 				select {
 				case sem <- struct{}{}:

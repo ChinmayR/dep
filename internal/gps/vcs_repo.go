@@ -11,6 +11,7 @@ import (
 	"path/filepath"
 	"runtime"
 	"strings"
+	"sync"
 	"time"
 
 	"github.com/Masterminds/vcs"
@@ -46,7 +47,7 @@ func getVCSRepo(s vcs.Type, ustr, path string) (r ctxRepo, err error) {
 	case vcs.Git:
 		var repo *vcs.GitRepo
 		repo, err = vcs.NewGitRepo(ustr, path)
-		r = &gitRepo{repo}
+		r = &gitRepo{sync.Mutex{}, repo}
 	case vcs.Bzr:
 		var repo *vcs.BzrRepo
 		repo, err = vcs.NewBzrRepo(ustr, path)
@@ -68,6 +69,7 @@ func getVCSRepo(s vcs.Type, ustr, path string) (r ctxRepo, err error) {
 // https://github.com/Masterminds/vcs
 
 type gitRepo struct {
+	sync.Mutex
 	*vcs.GitRepo
 }
 
@@ -86,6 +88,8 @@ func newVcsLocalErrorOr(err error, args []string, out, msg string) error {
 }
 
 func (r *gitRepo) get(ctx context.Context) error {
+	r.Lock()
+	defer func() { r.Unlock() }()
 	conRes := uber.GetThreadFromPool()
 	defer conRes.Release()
 
@@ -108,6 +112,8 @@ func (r *gitRepo) get(ctx context.Context) error {
 }
 
 func (r *gitRepo) fetch(ctx context.Context) error {
+	r.Lock()
+	defer func() { r.Unlock() }()
 	conRes := uber.GetThreadFromPool()
 	defer conRes.Release()
 
@@ -128,6 +134,8 @@ func (r *gitRepo) fetch(ctx context.Context) error {
 }
 
 func (r *gitRepo) updateVersion(ctx context.Context, v string) error {
+	r.Lock()
+	defer func() { r.Unlock() }()
 	conRes := uber.GetThreadFromPool()
 
 	cmd := commandContext(ctx, "git", "checkout", v)

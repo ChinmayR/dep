@@ -20,6 +20,7 @@ import (
 	"time"
 
 	"github.com/golang/dep/internal/gps/pkgtree"
+	"github.com/golang/dep/uber"
 	"github.com/nightlyone/lockfile"
 	"github.com/pkg/errors"
 	"github.com/sdboyer/constext"
@@ -294,7 +295,12 @@ func NewSourceManager(c SourceManagerConfig) (*SourceMgr, error) {
 
 // ClearCache is used to remove the cache directory managed by this source manager
 func (sm *SourceMgr) ClearCacheDir() error {
-	return os.RemoveAll(sm.cachedir)
+	_, _, err := new(uber.CommandExecutor).ExecCommand("rm", time.Duration(1*time.Minute),
+		false, nil, "-rf", sm.cachedir)
+	if err != nil {
+		uber.UberLogger.Printf("failed to remove cache dir at %s, try to remove it manually", sm.cachedir)
+	}
+	return err
 }
 
 // UseDefaultSignalHandling sets up typical os.Interrupt signal handling for a
