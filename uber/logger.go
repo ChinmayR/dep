@@ -9,7 +9,6 @@ import (
 	"runtime/debug"
 	"time"
 
-	"github.com/golang/dep/uber"
 	"github.com/rs/xid"
 )
 
@@ -48,7 +47,7 @@ func getLogStoragePath(runId string) string {
 
 func LogIfPanic() {
 	if r := recover(); r != nil {
-		DebugLogger.Printf("PANIC: EMAIL dep-support-group@uber.com WITH THE LOG FROM %s\n", uber.LogPath)
+		DebugLogger.Printf("PANIC: EMAIL dep-support-group@uber.com WITH THE LOG FROM %s\n", LogPath)
 		DebugLogger.Printf("[PANIC] %s\n\n", r)
 		DebugLogger.Printf("%s\n", debug.Stack())
 		panic(r)
