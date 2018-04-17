@@ -16,8 +16,9 @@ import (
 	"sync"
 	"testing"
 
-	"github.com/golang/dep/internal/test"
 	"bytes"
+
+	"github.com/golang/dep/internal/test"
 )
 
 // Parent test that executes all the slow vcs interaction tests in parallel.
@@ -759,28 +760,55 @@ func Test_hgSource_exportRevisionTo_removeVcsFiles(t *testing.T) {
 
 func TestFilterGitoliteLsRemoteOutput(t *testing.T) {
 	lsRemoteOutput1 := "# Using gitolite-code secondary gitolite06-sjc1\n" +
-						"0bdc17e10b933ff96c3cf147a9f9a9a1a36ac209	HEAD\n" +
-						"82c4eaa194cb8b1eca22016f577fadce94b84b67	refs/heads/CleopatraSendSMSResponse\n" +
-						"32f4b5e48c9f8cf1e736cc1ba9a49a0868d77a1e	refs/tags/43221"
+		"0bdc17e10b933ff96c3cf147a9f9a9a1a36ac209	HEAD\n" +
+		"82c4eaa194cb8b1eca22016f577fadce94b84b67	refs/heads/CleopatraSendSMSResponse\n" +
+		"32f4b5e48c9f8cf1e736cc1ba9a49a0868d77a1e	refs/tags/43221"
 	assertEqualLsRemoteOutputLines(t, lsRemoteOutput1, 3)
 
 	lsRemoteOutput2 := "# Using gitolite-code secondary gitolite06-sjc1\n" +
-						"Killed by signal 1. \n" +
-						"82c4eaa194cb8b1eca22016f577fadce94b84b67	refs/heads/CleopatraSendSMSResponse\n" +
-						"32f4b5e48c9f8cf1e736cc1ba9a49a0868d77a1e	refs/tags/43221"
+		"Killed by signal 1. \n" +
+		"82c4eaa194cb8b1eca22016f577fadce94b84b67	refs/heads/CleopatraSendSMSResponse\n" +
+		"32f4b5e48c9f8cf1e736cc1ba9a49a0868d77a1e	refs/tags/43221"
 	assertEqualLsRemoteOutputLines(t, lsRemoteOutput2, 2)
 
 	lsRemoteOutput3 := "0bdc17e10b933ff96c3cf147a9f9a9a1a36ac209	HEAD\n" +
-						"82c4eaa194cb8b1eca22016f577fadce94b84b67	refs/heads/CleopatraSendSMSResponse\n" +
-						"32f4b5e48c9f8cf1e736cc1ba9a49a0868d77a1e	refs/tags/43221"
+		"82c4eaa194cb8b1eca22016f577fadce94b84b67	refs/heads/CleopatraSendSMSResponse\n" +
+		"32f4b5e48c9f8cf1e736cc1ba9a49a0868d77a1e	refs/tags/43221"
 	assertEqualLsRemoteOutputLines(t, lsRemoteOutput3, 3)
 
 	lsRemoteOutput4 := "82c4eaa194cb8b1eca22016f577fadce94b84b67	refs/heads/CleopatraSendSMSResponse\n" +
-						"32f4b5e48c9f8cf1e736cc1ba9a49a0868d77a1e	refs/tags/43221"
+		"32f4b5e48c9f8cf1e736cc1ba9a49a0868d77a1e	refs/tags/43221"
 	assertEqualLsRemoteOutputLines(t, lsRemoteOutput4, 2)
 
 	lsRemoteOutput5 := ""
 	assertEqualLsRemoteOutputLines(t, lsRemoteOutput5, 0)
+}
+
+func TestShouldFilterRevisionPair(t *testing.T) {
+	testcases := []struct {
+		inputPair []byte
+		expected  bool
+	}{
+		{
+			inputPair: []byte("0bdc17e10b933ff96c3cf147a9f9a9a1a36ac209	HEAD"),
+			expected: true,
+		},
+		{
+			inputPair: []byte("0bdc17e10b933ff96c3c"),
+			expected:  false,
+		},
+		{
+			inputPair: []byte("82c4eaa194cb8b1eca22016f577fadce94b84b67	refs/heads/CleopatraSendSMSResponse"),
+			expected: true,
+		},
+	}
+
+	for _, tc := range testcases {
+		got := shouldFilterRevisionPair(tc.inputPair)
+		if got != tc.expected {
+			t.Fatalf("expected %v for %v, but got %v", tc.expected, tc.inputPair, got)
+		}
+	}
 }
 
 func assertEqualLsRemoteOutputLines(t *testing.T, lsRemoteOutput string, expected int) {

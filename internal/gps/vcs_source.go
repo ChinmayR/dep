@@ -207,6 +207,12 @@ func filterGitoliteLsRemoteOutput(output [][]byte) [][]byte {
 	return output[linesToRemove:]
 }
 
+// shouldFilterRevisionPair defines the logic to ignore invalid pairs returned from
+// git ls-remote lines that can cause panics
+func shouldFilterRevisionPair(pair []byte) bool {
+	return len(pair) < 41
+}
+
 func (s *gitSource) listVersions(ctx context.Context) (vlist []PairedVersion, err error) {
 	conRes := uber.GetThreadFromPool()
 	defer conRes.Release()
@@ -266,6 +272,12 @@ func (s *gitSource) listVersions(ctx context.Context) (vlist []PairedVersion, er
 	vlist = make([]PairedVersion, len(all))
 	for _, pair := range all {
 		var v PairedVersion
+		// place a safe guard for when git commands return partial line data
+		// this will ignore the lines that cause panic for accessing slice out of bounds
+		if shouldFilterRevisionPair(pair) {
+			uber.DebugLogger.Printf("Error parsing git ls-remote output for %v, found invalid pair \"%v\"", s.repo.Remote(), string(pair))
+			continue
+		}
 		if string(pair[41:]) == "HEAD" {
 			// If HEAD is present, it's always first
 			headrev = Revision(pair[:40])
