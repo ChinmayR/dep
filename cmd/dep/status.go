@@ -13,8 +13,8 @@ import (
 	"io/ioutil"
 	"log"
 	"sort"
-	"sync"
 	"strconv"
+	"sync"
 	"text/tabwriter"
 
 	"github.com/golang/dep/uber"
@@ -205,6 +205,10 @@ func (cmd *statusCommand) Run(ctx *dep.Ctx, args []string) error {
 	flags["old"] = strconv.FormatBool(cmd.old)
 	flags["unused"] = strconv.FormatBool(cmd.unused)
 	defer uber.ReportRepoMetrics(cmd.Name(), ctx.WorkingDir, flags)()
+	// there are no cases currently where status is a failure, the undesirable
+	// cases for status are mostly errors notifying the user how to correct it
+	// so we report success early
+	uber.ReportSuccess()
 
 	p, err := ctx.LoadProject()
 	if err != nil {
@@ -285,7 +289,6 @@ func (cmd *statusCommand) Run(ctx *dep.Ctx, args []string) error {
 
 	// Print the status output
 	ctx.Out.Print(buf.String())
-	uber.ReportSuccess()
 	return nil
 }
 

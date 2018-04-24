@@ -38,12 +38,13 @@ const (
 
 //All tag names used in dep's metrics
 const (
-	REPO_TAG    = "repo"
-	COMMAND_TAG = "command"
-	RUNID_TAG   = "runid"
-	STATUS_TAG  = "status"
-	ERROR_TAG   = "error"
-	SEMVER_TAG  = "semver"
+	REPO_TAG        = "repo"
+	COMMAND_TAG     = "command"
+	RUNID_TAG       = "runid"
+	STATUS_TAG      = "status"
+	ERROR_TAG       = "error"
+	SEMVER_TAG      = "semver"
+	DEP_VERSION_TAG = "depversion"
 )
 
 //All dep's metric names
@@ -205,6 +206,7 @@ func getCommonTags(cmd string) map[string]string {
 	tags[RUNID_TAG] = RunId
 	tags[COMMAND_TAG] = cmd
 	tags[SEMVER_TAG] = METRICS_STABLE_VERSION
+	tags[DEP_VERSION_TAG] = DEP_VERSION
 	return tags
 }
 

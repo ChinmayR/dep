@@ -36,7 +36,7 @@ const (
 	RunningIntegrationTests = "RUNNING_INTEGRATION_TESTS"
 )
 
-const DEP_VERSION = "v0.5.0-UBER"
+const DEP_VERSION = "v0.6.0-UBER"
 
 type rewriteFn func([]string, ExecutorInterface) (*url.URL, string, string, *url.URL, error)
 

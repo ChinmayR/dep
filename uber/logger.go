@@ -48,6 +48,7 @@ func getLogStoragePath(runId string) string {
 func LogIfPanic() {
 	if r := recover(); r != nil {
 		DebugLogger.Printf("PANIC: EMAIL dep-support-group@uber.com WITH THE LOG FROM %s\n", LogPath)
+		DebugLogger.Printf("Message in uChat channel \"Build Platform Support\" and take a look at PR/FAQ linked from there.\n")
 		DebugLogger.Printf("[PANIC] %s\n\n", r)
 		DebugLogger.Printf("%s\n", debug.Stack())
 		panic(r)

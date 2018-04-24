@@ -137,7 +137,22 @@ func (c *Config) Run() (exitCode int) {
 	uber.UberLogger.Println("RUN ID: " + uber.RunId)
 	uber.UberLogger.Println("Log stored at: " + uber.LogPath)
 
-	_, _, err := new(uber.CommandExecutor).ExecCommand("git", time.Duration(1*time.Minute),
+	versionInfo, err := uber.IsLatestVersion(uber.DEP_VERSION)
+	if err != nil {
+		uber.DebugLogger.Printf("Error checking if current version is latest: %v", err)
+	}
+	if versionInfo.IsLatest {
+		uber.UberLogger.Printf("Your dep version %v is latest", uber.DEP_VERSION)
+	} else {
+		uber.UberLogger.Println("*******************")
+		uber.UberLogger.Printf("Your dep version is %v but there is a newer version %v available\n", uber.DEP_VERSION, versionInfo.LatestVersion)
+		uber.UberLogger.Println("Please update Dep by updating to latest go-build (make update-gobuild)...")
+		uber.UberLogger.Println("*******************")
+		// sleep for 5 seconds to allow the user to read the above message and also as an incentive to update
+		time.Sleep(5 * time.Second)
+	}
+
+	_, _, err = new(uber.CommandExecutor).ExecCommand("git", time.Duration(1*time.Minute),
 		false, nil, "config", "--global", "--unset", "url.ssh://git@github.com/uber/.insteadof", "https://github.com/uber/")
 	if err != nil {
 		uber.UberLogger.Println("If dep hangs, run \"ssh-add\" and try again")
