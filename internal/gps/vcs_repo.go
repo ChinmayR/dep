@@ -138,7 +138,7 @@ func (r *gitRepo) updateVersion(ctx context.Context, v string) error {
 	defer func() { r.Unlock() }()
 	conRes := uber.GetThreadFromPool()
 
-	cmd := commandContext(ctx, "git", "checkout", v)
+	cmd := commandContext(ctx, "git", "checkout", "--force", v)
 	cmd.SetDir(r.LocalPath())
 	if _, err := cmd.CombinedOutput(); err != nil {
 		// there can be cases where the checked out repo in the cache has

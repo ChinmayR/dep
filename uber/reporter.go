@@ -4,6 +4,7 @@ import (
 	"flag"
 	"io"
 	"os"
+	"os/user"
 	"path/filepath"
 	"regexp"
 	"strings"
@@ -40,6 +41,7 @@ const (
 const (
 	REPO_TAG        = "repo"
 	COMMAND_TAG     = "command"
+	USER_TAG        = "user"
 	RUNID_TAG       = "runid"
 	STATUS_TAG      = "status"
 	ERROR_TAG       = "error"
@@ -99,6 +101,10 @@ func ReportRepoMetrics(cmd string, repoName string, cmdFlags map[string]string) 
 	defer catchErrors()
 	start := time.Now()
 	return func() {
+		if os.Getenv(TurnOffMetricsReporting) != "" {
+			DebugLogger.Println("Metrics reporting is turned off, so skipping reporting any metrics for this run.")
+			return
+		}
 		defer catchErrors()
 		latency := time.Since(start)
 		repo := getRepoTagFriendlyNameFromCWD(repoName)
@@ -203,6 +209,10 @@ func getCommonTagsWithRepo(repo string, cmd string) map[string]string {
 //- semver: the current stable metrics semantic version
 func getCommonTags(cmd string) map[string]string {
 	tags := make(map[string]string)
+	curUser, err := user.Current()
+	if err == nil {
+		tags[USER_TAG] = curUser.Username
+	}
 	tags[RUNID_TAG] = RunId
 	tags[COMMAND_TAG] = cmd
 	tags[SEMVER_TAG] = METRICS_STABLE_VERSION

@@ -34,9 +34,14 @@ const (
 	// this flag is used as a feature flag to control UBER specific features to
 	// avoid modifying the existing integration tests from upstream
 	RunningIntegrationTests = "RUNNING_INTEGRATION_TESTS"
+
+	// this flag is used to turn off metrics reporting when dep is run via
+	// automated scripts to onboard customers. We do not want to inflate adoption
+	// or usage in these cases.
+	TurnOffMetricsReporting = "TURN_OFF_METRICS_REPORTING"
 )
 
-const DEP_VERSION = "v0.6.0-UBER"
+const DEP_VERSION = "v0.7.0-UBER"
 
 type rewriteFn func([]string, ExecutorInterface) (*url.URL, string, string, *url.URL, error)
 
