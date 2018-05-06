@@ -791,22 +791,22 @@ func TestShouldFilterRevisionPair(t *testing.T) {
 	}{
 		{
 			inputPair: []byte("0bdc17e10b933ff96c3cf147a9f9a9a1a36ac209	HEAD"),
-			expected: true,
+			expected: false,
 		},
 		{
 			inputPair: []byte("0bdc17e10b933ff96c3c"),
-			expected:  false,
+			expected:  true,
 		},
 		{
 			inputPair: []byte("82c4eaa194cb8b1eca22016f577fadce94b84b67	refs/heads/CleopatraSendSMSResponse"),
-			expected: true,
+			expected: false,
 		},
 	}
 
 	for _, tc := range testcases {
 		got := shouldFilterRevisionPair(tc.inputPair)
 		if got != tc.expected {
-			t.Fatalf("expected %v for %v, but got %v", tc.expected, tc.inputPair, got)
+			t.Fatalf("expected %v for %v, but got %v", tc.expected, string(tc.inputPair), got)
 		}
 	}
 }

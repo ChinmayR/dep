@@ -11,6 +11,7 @@ import (
 	"os"
 	"path"
 	"path/filepath"
+	"strings"
 
 	"github.com/go-yaml/yaml"
 	"github.com/golang/dep"
@@ -18,7 +19,6 @@ import (
 	"github.com/golang/dep/internal/gps"
 	"github.com/golang/dep/internal/importers/base"
 	"github.com/pkg/errors"
-	"strings"
 )
 
 const glideYamlName = "glide.yaml"

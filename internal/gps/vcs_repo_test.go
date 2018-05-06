@@ -13,6 +13,7 @@ import (
 	"io/ioutil"
 	"os"
 	"path/filepath"
+	"sync"
 	"testing"
 	"time"
 
@@ -297,7 +298,7 @@ func testGitRepo(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	repo := &gitRepo{rep}
+	repo := &gitRepo{sync.Mutex{}, rep}
 
 	// Do an initial clone.
 	err = repo.get(ctx)

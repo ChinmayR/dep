@@ -195,6 +195,15 @@ func (cmd *ensureCommand) Run(ctx *dep.Ctx, args []string) error {
 	}
 
 	params := p.MakeParams()
+
+	ctx.Out.Println("Getting direct dependencies...")
+	pkgT, directDeps, err := getDirectDependencies(sm, p)
+	if err != nil {
+		return err
+	}
+
+	params.RootPackageTree = pkgT
+	params.ProjectAnalyzer = newRootAnalyzer(false, ctx, directDeps, sm)
 	if ctx.Verbose {
 		params.TraceLogger = ctx.Err
 	}
@@ -207,11 +216,6 @@ func (cmd *ensureCommand) Run(ctx *dep.Ctx, args []string) error {
 			return errors.Wrapf(err, "failed to write glide manifest during ensure vendor only run")
 		}
 		uber.ReportSuccess()
-		return err
-	}
-
-	params.RootPackageTree, err = p.ParseRootPackageTree()
-	if err != nil {
 		return err
 	}
 

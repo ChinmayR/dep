@@ -1,0 +1,6 @@
+{
+  "commands": [
+    ["ensure", "-update", "-v", "github.com/ChinmayR/deptestglideC"]
+  ],
+  "error-expected": "No versions of github.com/ChinmayR/deptestglideB met constraints"
+}

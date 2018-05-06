@@ -41,7 +41,7 @@ func (c *multiCache) getManifestAndLock(r Revision, ai ProjectAnalyzerInfo) (Man
 		return m, l, true
 	}
 
-	uber.CacheLogger.Printf("miss multi setManifestAndLock, rev:%v, manifest:%v, lock:%v", r, m, l)
+	uber.CacheLogger.Printf("miss multi getManifestAndLock, rev:%v, manifest:%v, lock:%v", r, m, l)
 	return nil, nil, false
 }
 

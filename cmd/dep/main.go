@@ -134,6 +134,7 @@ func (c *Config) Run() (exitCode int) {
 	}
 
 	uber.UberLogger.Println("DEP VERSION: " + uber.DEP_VERSION)
+	uber.UberLogger.Printf("RUNNING COMMAND: %v\n", c.Args)
 	uber.UberLogger.Println("RUN ID: " + uber.RunId)
 	uber.UberLogger.Println("Log stored at: " + uber.LogPath)
 
