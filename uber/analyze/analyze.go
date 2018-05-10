@@ -1,18 +1,14 @@
 package analyze
 
-import (
-	"errors"
-)
-
 // ResolverTree is a struct for holding trees created for projects as versions are explored for fit.
-
+// NodeList contains pointers to each node in the tree for efficient lookup of TreeNodes
 type ResolverTree struct {
+	NodeList    map[string]*TreeNode
 	VersionTree *TreeNode
 }
 
-// TreeNode is struct which holds the current project's name and a map with
-// a string (major version) for the key and a slice containing gps.Version
-// as values.
+// TreeNode is struct which holds the current project's name, a list of Versions tried,
+// the selected version, and the project's dependencies.
 type TreeNode struct {
 	Name     string
 	Versions []string
@@ -20,36 +16,42 @@ type TreeNode struct {
 	Deps     []*TreeNode
 }
 
-// MakeTree creates resolver tree root and returns it.
-func NewResolverTree(rootName string) *ResolverTree {
-	rootNode := newTreeNode(rootName)
-	resolverTree := &ResolverTree{
-		VersionTree: rootNode,
-	}
+var resTree *ResolverTree
 
-	return resolverTree
+func InitializeResTree(rootName string) *ResolverTree {
+	if resTree == nil {
+		rootNode := newTreeNode(rootName)
+		resTree = &ResolverTree{
+			map[string]*TreeNode{rootName: rootNode},
+			rootNode,
+		}
+	}
+	return resTree
 }
 
 // Adds a dependency node to a pre-existing project
-func (tn *TreeNode) AddDep(depName string) {
-	node := newTreeNode(depName)
-	tn.Deps = append(tn.Deps, node)
-}
-
-func (tn *TreeNode) RemoveVersion(version string) error {
-	err := errors.New("visualization removal error: version not found")
-	for i, removeVersion := range tn.Versions {
-		if removeVersion == version {
-			tn.Versions = append(tn.Versions[:i], tn.Versions[i+1:]...)
-			return nil
-		}
+func AddDep(depender string, depName string) {
+	dependerNode := resTree.NodeList[depender]
+	var dep *TreeNode
+	if resTree.NodeList[depName] == nil {
+		dep = newTreeNode(depName)
+		resTree.NodeList[dep.Name] = dep
+	} else {
+		dep = resTree.NodeList[depName]
 	}
 
-	return err
+	dependerNode.Deps = append(dependerNode.Deps, dep)
 }
 
-func ReachedFailure() {
-	//TODO: encode and return graph
+func AddVersion(nodeName string, version string) {
+	node := resTree.NodeList[nodeName]
+	node.Versions = append(node.Versions, version)
+}
+
+func SelectVersion(nodeName string, version string) {
+	node := resTree.NodeList[nodeName]
+	node.Deps = make([]*TreeNode, 0)
+	node.Selected = version
 }
 
 func newTreeNode(projectName string) *TreeNode {
@@ -60,4 +62,14 @@ func newTreeNode(projectName string) *TreeNode {
 	}
 
 	return node
+}
+
+// For testing only
+func GetResTree() *ResolverTree {
+	return resTree
+}
+
+// For testing only
+func ClearTree() {
+	resTree = nil
 }

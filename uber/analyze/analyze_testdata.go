@@ -2,6 +2,9 @@ package analyze
 
 var (
 	ResolverTreeRoot = &ResolverTree{
+		NodeList: map[string]*TreeNode{
+			RootNode.Name: RootNode,
+		},
 		VersionTree: RootNode,
 	}
 
@@ -25,6 +28,8 @@ var (
 		Selected: "v2.0.3",
 		Deps:     []*TreeNode{},
 	}
+
+	Deps = []*TreeNode{RootNode, DependerNode, NodeWithVersAndSel}
 )
 
 const (

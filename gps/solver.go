@@ -17,6 +17,7 @@ import (
 	"github.com/armon/go-radix"
 	"github.com/golang/dep/gps/paths"
 	"github.com/golang/dep/gps/pkgtree"
+	"github.com/golang/dep/uber/analyze"
 	"github.com/pkg/errors"
 )
 
@@ -625,6 +626,10 @@ func (s *solver) selectRoot() error {
 	awp := s.rd.rootAtom()
 	s.sel.pushSelection(awp, false)
 
+	// Because this is our first entry point into the solver, initialize solver tree.
+	rootName := string(s.rd.rootAtom().a.id.ProjectRoot)
+	analyze.InitializeResTree(rootName)
+
 	// If we're looking for root's deps, get it from opts and local root
 	// analysis, rather than having the sm do it.
 	deps, err := s.intersectConstraintsWithImports(s.rd.combineConstraints(), s.rd.externalImportList(s.stdLibFn))
@@ -647,6 +652,7 @@ func (s *solver) selectRoot() error {
 		s.sel.pushDep(dependency{depender: awp.a, dep: dep})
 		// Add all to unselected queue
 		heap.Push(s.unsel, bimodalIdentifier{id: dep.Ident, pl: dep.pl, fromRoot: true})
+		analyze.AddDep(rootName, dep.Ident.String())
 	}
 
 	s.traceSelectRoot(s.rd.rpt, deps)
@@ -940,6 +946,7 @@ func (s *solver) findValidVersion(q *versionQueue, pl []string, bmi bimodalIdent
 	faillen := len(q.fails)
 
 	for {
+		analyze.AddVersion(q.id.String(), q.current().String())
 		cur := q.current()
 		s.traceInfo("try %s@%s", q.id, cur)
 		err := s.check(atomWithPackages{
@@ -1259,6 +1266,7 @@ func (s *solver) fail(id ProjectIdentifier) {
 //
 // Behavior is slightly diffferent if pkgonly is true.
 func (s *solver) selectAtom(a atomWithPackages, pkgonly bool) error {
+	analyze.SelectVersion(a.a.id.String(), a.a.v.String())
 	s.mtr.push("select-atom")
 	s.unsel.remove(bimodalIdentifier{
 		id: a.a.id,
@@ -1295,6 +1303,7 @@ func (s *solver) selectAtom(a atomWithPackages, pkgonly bool) error {
 	}
 
 	for _, dep := range deps {
+		analyze.AddDep(a.a.id.String(), dep.Ident.String())
 		// Root can come back up here if there's a project-level cycle.
 		// Satisfiability checks have already ensured invariants are maintained,
 		// so we know we can just skip it here.
