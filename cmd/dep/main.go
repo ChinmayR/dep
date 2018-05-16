@@ -184,18 +184,6 @@ func (c *Config) Run() int {
 		time.Sleep(5 * time.Second)
 	}
 
-	if cmdName != "cc" {
-		doesCacheNeedToBeCleared, cacheClearedVersion, err := uber.DoesCacheNeedToBeCleared(uber.LATEST_CACHE_ALLOWED_VERSION)
-		if err != nil {
-			uber.DebugLogger.Printf("Error checking if cache needs to be cleared: %v", err)
-		}
-		if doesCacheNeedToBeCleared {
-			uber.UberLogger.Printf("Your dep cache is written by a version %v which is less than the minimum allowed version of %v\n", cacheClearedVersion, uber.LATEST_CACHE_ALLOWED_VERSION)
-			uber.UberLogger.Printf("Please clear your cache by running \"dep cc\" before continuing\n")
-			return successExitCode
-		}
-	}
-
 	_, _, err = new(uber.CommandExecutor).ExecCommand("git", time.Duration(1*time.Minute),
 		false, nil, "config", "--global", "--unset", "url.ssh://git@github.com/uber/.insteadof", "https://github.com/uber/")
 	if err != nil {
@@ -298,6 +286,21 @@ func (c *Config) Run() int {
 
 			GOPATHS := filepath.SplitList(getEnv(c.Env, "GOPATH"))
 			ctx.SetPaths(c.WorkingDir, GOPATHS...)
+
+			if cmdName != "cc" {
+				doesCacheNeedToBeCleared, cacheClearedVersion, err := uber.DoesCacheNeedToBeCleared(uber.LATEST_CACHE_ALLOWED_VERSION)
+				if err != nil {
+					uber.DebugLogger.Printf("Error checking if cache needs to be cleared: %v", err)
+				}
+				if doesCacheNeedToBeCleared {
+					uber.UberLogger.Printf("Your dep cache is written by a version %v which is less than the minimum allowed version of %v\n", cacheClearedVersion, uber.LATEST_CACHE_ALLOWED_VERSION)
+					uber.UberLogger.Printf("Clearing your cache by running \"dep cc\" before continuing\n")
+					if err := (&cacheClearCommand{}).Run(ctx, flags.Args()); err != nil {
+						errLogger.Printf("%v\n", err)
+						return errorExitCode
+					}
+				}
+			}
 
 			// Run the command with the post-flag-processing args.
 			if err := cmd.Run(ctx, flags.Args()); err != nil {
