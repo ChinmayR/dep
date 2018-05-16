@@ -8,8 +8,8 @@ import (
 	"testing"
 
 	"github.com/golang/dep"
-	"github.com/golang/dep/internal/gps"
-	"github.com/golang/dep/internal/gps/pkgtree"
+	"github.com/golang/dep/gps"
+	"github.com/golang/dep/gps/pkgtree"
 	"github.com/pkg/errors"
 	"github.com/stretchr/testify/assert"
 )
@@ -152,8 +152,7 @@ func TestMergeMetadata(t *testing.T) {
 			nil,
 		},
 		{"Source manifest is empty, keep target constraint.",
-			map[gps.ProjectRoot]gps.ProjectProperties{
-			},
+			map[gps.ProjectRoot]gps.ProjectProperties{},
 			[]gps.LockedProject{
 				gps.NewLockedProject(gps.ProjectIdentifier{ProjectRoot: "github.com/user/bar"}, gps.NewVersion("1.1"), []string{"tools"}),
 			},
@@ -178,8 +177,7 @@ func TestMergeMetadata(t *testing.T) {
 			[]gps.LockedProject{
 				gps.NewLockedProject(gps.ProjectIdentifier{ProjectRoot: "github.com/user/bar"}, gps.NewVersion("1.0"), []string{"tools"}),
 			},
-			map[gps.ProjectRoot]gps.ProjectProperties{
-			},
+			map[gps.ProjectRoot]gps.ProjectProperties{},
 			[]gps.LockedProject{
 				gps.NewLockedProject(gps.ProjectIdentifier{ProjectRoot: "github.com/user/bar"}, gps.NewVersion("1.0"), []string{"common"}),
 			},
@@ -192,18 +190,15 @@ func TestMergeMetadata(t *testing.T) {
 			nil,
 		},
 		{"Both manifests have no constraints.",
-			map[gps.ProjectRoot]gps.ProjectProperties{
-			},
+			map[gps.ProjectRoot]gps.ProjectProperties{},
 			[]gps.LockedProject{
 				gps.NewLockedProject(gps.ProjectIdentifier{ProjectRoot: "github.com/user/bar"}, gps.NewVersion("1.0"), []string{"tools"}),
 			},
-			map[gps.ProjectRoot]gps.ProjectProperties{
-			},
+			map[gps.ProjectRoot]gps.ProjectProperties{},
 			[]gps.LockedProject{
 				gps.NewLockedProject(gps.ProjectIdentifier{ProjectRoot: "github.com/user/bar"}, gps.NewVersion("1.0"), []string{"common"}),
 			},
-			map[gps.ProjectRoot]gps.ProjectProperties{
-			},
+			map[gps.ProjectRoot]gps.ProjectProperties{},
 			[]gps.LockedProject{
 				gps.NewLockedProject(gps.ProjectIdentifier{ProjectRoot: "github.com/user/bar"}, gps.NewVersion("1.0"), []string{"common", "tools"}),
 			},

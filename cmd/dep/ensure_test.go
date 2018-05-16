@@ -14,8 +14,8 @@ import (
 	"testing"
 
 	"github.com/golang/dep"
-	"github.com/golang/dep/internal/gps"
-	"github.com/golang/dep/internal/gps/pkgtree"
+	"github.com/golang/dep/gps"
+	"github.com/golang/dep/gps/pkgtree"
 	"github.com/golang/dep/internal/test"
 )
 
@@ -193,6 +193,15 @@ func TestValidateUpdateArgs(t *testing.T) {
 			},
 			lockedProjects: []string{"github.com/golang/dep"},
 		},
+		{
+			name:      "flags after spec",
+			args:      []string{"github.com/golang/dep@master", "-v"},
+			wantError: errUpdateArgsValidation,
+			wantWarn: []string{
+				"could not infer project root from dependency path",
+			},
+			lockedProjects: []string{"github.com/golang/dep"},
+		},
 	}
 
 	h := test.NewHelper(t)
@@ -222,7 +231,7 @@ func TestValidateUpdateArgs(t *testing.T) {
 			stderrOutput.Reset()
 
 			// Fill up the locked projects
-			lockedProjects := []gps.LockedProject{}
+			lockedProjects := make([]gps.LockedProject, 0, len(c.lockedProjects))
 			for _, lp := range c.lockedProjects {
 				pi := gps.ProjectIdentifier{ProjectRoot: gps.ProjectRoot(lp)}
 				lockedProjects = append(lockedProjects, gps.NewLockedProject(pi, gps.NewVersion("v1.0.0"), []string{}))

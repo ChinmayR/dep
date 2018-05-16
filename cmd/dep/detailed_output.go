@@ -4,9 +4,10 @@ import (
 	"encoding/json"
 	"io"
 
-	"github.com/golang/dep/internal/gps"
+	"github.com/golang/dep/gps"
 )
 
+// TODO: This status was removed during the merge from upstream, its interface methods need to be updated
 type DetailedOutput struct {
 	w       io.Writer
 	basic   []*StripBasicStatus

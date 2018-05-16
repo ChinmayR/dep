@@ -2,6 +2,7 @@ package main
 
 import (
 	"bytes"
+	"context"
 	"flag"
 	"fmt"
 	"io/ioutil"
@@ -11,9 +12,9 @@ import (
 	"strings"
 
 	"github.com/golang/dep"
-	"github.com/golang/dep/internal/gps"
-	"github.com/golang/dep/internal/gps/paths"
-	"github.com/golang/dep/internal/gps/pkgtree"
+	"github.com/golang/dep/gps"
+	"github.com/golang/dep/gps/paths"
+	"github.com/golang/dep/gps/pkgtree"
 	"github.com/pkg/errors"
 )
 
@@ -131,7 +132,7 @@ func verifyConsistency(ctx *dep.Ctx, sm *gps.SourceMgr) error {
 		return errors.Wrap(err, "initProject")
 	}
 
-	pkgT, _, err := getDirectDependencies(sm, proj)
+	pkgT, _, err := proj.GetDirectDependencyNames(sm)
 	if err != nil {
 		return errors.Wrap(err, "getDirectDependencies")
 	}
@@ -207,7 +208,7 @@ func (cmd *monorepoCommand) resolveDependencies(ctx *dep.Ctx, sm *gps.SourceMgr,
 		ctx.Out.Println("Getting direct dependencies...")
 	}
 
-	pkgT, directDeps, err := getDirectDependencies(sm, proj)
+	pkgT, directDeps, err := proj.GetDirectDependencyNames(sm)
 	if err != nil {
 		return errors.Wrap(err, "getDirectDependencies")
 	}
@@ -261,7 +262,7 @@ func (cmd *monorepoCommand) resolveDependencies(ctx *dep.Ctx, sm *gps.SourceMgr,
 		ctx.Out.Println("Solver ready, starting dependency resolution.")
 	}
 
-	soln, err := s.Solve()
+	soln, err := s.Solve(context.TODO())
 	if err != nil {
 		handleAllTheFailuresOfTheWorld(err)
 		return err
@@ -277,7 +278,7 @@ func (cmd *monorepoCommand) resolveDependencies(ctx *dep.Ctx, sm *gps.SourceMgr,
 	deleteFromRootLockAndManifest(rootProj, proj)
 
 	if !cmd.dryRun {
-		sw, err := dep.NewSafeWriter(rootProj.Manifest, nil, rootProj.Lock, dep.VendorAlways)
+		sw, err := dep.NewSafeWriter(rootProj.Manifest, nil, rootProj.Lock, dep.VendorAlways, rootProj.Manifest.PruneOptions)
 		if err != nil {
 			return err
 		}
@@ -414,7 +415,7 @@ func mergeMetadata(source *dep.Project, target *dep.Project, ctx *dep.Ctx) error
 			ctx.Err.Printf("%v with source lock [%v] didn't match [%v] in the target lock with [%v] manifest constraint.",
 				pkg, details.sourceLock, details.targetLock, details.targetManifest)
 		}
-		return errors.New("failed to merge metadata.", )
+		return errors.New("failed to merge metadata.")
 	}
 	return nil
 }

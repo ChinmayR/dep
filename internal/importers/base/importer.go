@@ -7,15 +7,13 @@ package base
 import (
 	"flag"
 	"log"
-
-	"sync"
-
 	"regexp"
 	"strings"
+	"sync"
 
 	"github.com/golang/dep"
+	"github.com/golang/dep/gps"
 	fb "github.com/golang/dep/internal/feedback"
-	"github.com/golang/dep/internal/gps"
 	"github.com/golang/dep/uber"
 	"github.com/pkg/errors"
 )
@@ -23,29 +21,28 @@ import (
 // Importer provides a common implementation for importing from other
 // dependency managers.
 type Importer struct {
-	sm gps.SourceManager
-
-	mu       sync.Mutex
-	Logger   *log.Logger
-	Verbose  bool
-	Manifest *dep.Manifest
-	Lock     *dep.Lock
+	SourceManager gps.SourceManager
+	mu            sync.Mutex
+	Logger        *log.Logger
+	Verbose       bool
+	Manifest      *dep.Manifest
+	Lock          *dep.Lock
 }
 
 // NewImporter creates a new Importer for embedding in an importer.
 func NewImporter(logger *log.Logger, verbose bool, sm gps.SourceManager) *Importer {
 	return &Importer{
-		Logger:   logger,
-		Verbose:  verbose,
-		Manifest: dep.NewManifest(),
-		Lock:     &dep.Lock{},
-		sm:       sm,
+		Logger:        logger,
+		Verbose:       verbose,
+		Manifest:      dep.NewManifest(),
+		Lock:          &dep.Lock{},
+		SourceManager: sm,
 	}
 }
 
 // isTag determines if the specified value is a tag (plain or semver).
 func (i *Importer) isTag(pi gps.ProjectIdentifier, value string) (bool, gps.Version, error) {
-	versions, err := i.sm.ListVersions(pi)
+	versions, err := i.SourceManager.ListVersions(pi)
 	if err != nil {
 		return false, nil, errors.Wrapf(err, "unable to list versions for %s(%s)", pi.ProjectRoot, pi.Source)
 	}
@@ -69,14 +66,14 @@ func (i *Importer) isTag(pi gps.ProjectIdentifier, value string) (bool, gps.Vers
 // manifest, then finally the revision.
 func (i *Importer) lookupVersionForLockedProject(pi gps.ProjectIdentifier, c gps.Constraint, rev gps.Revision) (gps.Version, error) {
 	// Find the version that goes with this revision, if any
-	versions, err := i.sm.ListVersions(pi)
+	versions, err := i.SourceManager.ListVersions(pi)
 	if err != nil {
 		return rev, errors.Wrapf(err, "Unable to lookup the version represented by %s in %s(%s). Falling back to locking the revision only.", rev, pi.ProjectRoot, pi.Source)
 	}
 
 	var branchConstraint gps.PairedVersion
 	gps.SortPairedForUpgrade(versions) // Sort versions in asc order
-	matches := []gps.Version{}
+	var matches []gps.Version
 	for _, v := range versions {
 		if v.Revision() == rev {
 			matches = append(matches, v)
@@ -134,16 +131,20 @@ type importedProject struct {
 }
 
 // loadPackages consolidates all package references into a set of project roots.
-func (i *Importer) loadPackages(packages []ImportedPackage) ([]importedProject, error) {
+func (i *Importer) loadPackages(packages []ImportedPackage) []importedProject {
 	// preserve the original order of the packages so that messages that
 	// are printed as they are processed are in a consistent order.
 	orderedProjects := make([]importedProject, 0, len(packages))
 
 	projects := make(map[gps.ProjectRoot]*importedProject, len(packages))
 	for _, pkg := range packages {
-		pr, err := i.sm.DeduceProjectRoot(pkg.Name)
+		pr, err := i.SourceManager.DeduceProjectRoot(pkg.Name)
 		if err != nil {
-			return nil, errors.Wrapf(err, "Cannot determine the project root for %s", pkg.Name)
+			i.Logger.Printf(
+				"  Warning: Skipping project. Cannot determine the project root for %s: %s\n",
+				pkg.Name, err,
+			)
+			continue
 		}
 		pkg.Name = string(pr)
 
@@ -174,7 +175,7 @@ func (i *Importer) loadPackages(packages []ImportedPackage) ([]importedProject, 
 		}
 	}
 
-	return orderedProjects, nil
+	return orderedProjects
 }
 
 // ImportPackages loads imported packages into the manifest and lock.
@@ -188,11 +189,8 @@ func (i *Importer) loadPackages(packages []ImportedPackage) ([]importedProject, 
 // * Revision constraints are ignored.
 // * Versions that don't satisfy the constraint, drop the constraint.
 // * Untagged revisions ignore non-branch constraint hints.
-func (i *Importer) ImportPackages(packages []ImportedPackage, defaultConstraintFromLock bool) (err error) {
-	projects, err := i.loadPackages(packages)
-	if err != nil {
-		return err
-	}
+func (i *Importer) ImportPackages(packages []ImportedPackage, defaultConstraintFromLock bool) {
+	projects := i.loadPackages(packages)
 
 	numThreadsAllowed := 25
 	// we want to use a single thread for tests since they have a golden.txt
@@ -214,8 +212,8 @@ func (i *Importer) ImportPackages(packages []ImportedPackage, defaultConstraintF
 	for _, proj := range projects {
 		localProj := proj
 		<-threadSema
-		go func(prj *importedProject, wg *sync.WaitGroup, ch chan<- string) {
-			defer wg.Done()
+		go func(prj *importedProject, wg2 *sync.WaitGroup, ch chan<- string) {
+			defer wg2.Done()
 			defer uber.LogIfPanic()
 			source := filterApacheThriftSource(prj.Source)
 			if len(source) > 0 {
@@ -224,6 +222,9 @@ func (i *Importer) ImportPackages(packages []ImportedPackage, defaultConstraintF
 					i.Logger.Printf("  Ignoring imported source %s for %s: %s", source, prj.Root, err.Error())
 					source = ""
 				} else if isDefault {
+					source = ""
+				} else if strings.Contains(source, "/vendor/") {
+					i.Logger.Printf("  Ignoring imported source %s for %s because vendored sources aren't supported", source, prj.Root)
 					source = ""
 				}
 			}
@@ -235,7 +236,8 @@ func (i *Importer) ImportPackages(packages []ImportedPackage, defaultConstraintF
 				},
 			}
 
-			pc.Constraint, err = i.sm.InferConstraint(prj.ConstraintHint, pc.Ident)
+			var err error
+			pc.Constraint, err = i.SourceManager.InferConstraint(prj.ConstraintHint, pc.Ident)
 			if err != nil {
 				pc.Constraint = gps.Any()
 			}
@@ -246,8 +248,10 @@ func (i *Importer) ImportPackages(packages []ImportedPackage, defaultConstraintF
 				// Determine if the lock hint is a revision or tag
 				isTag, version, err = i.isTag(pc.Ident, prj.LockHint)
 				if err != nil {
-					//return err
-					i.Logger.Fatal(err)
+					i.Logger.Printf(
+						"  Warning: Skipping project. Unable to import lock %q for %v: %s\n",
+						prj.LockHint, pc.Ident, err)
+					return
 				}
 
 				// If the hint is a revision, check if it is tagged
@@ -293,11 +297,14 @@ func (i *Importer) ImportPackages(packages []ImportedPackage, defaultConstraintF
 			// project so the logging is also inside this same mutex block.
 			i.mu.Lock()
 			if prj.IsOverride == false {
-				i.Manifest.Constraints[pc.Ident.ProjectRoot] = gps.ProjectProperties{
-					Source:     pc.Ident.Source,
-					Constraint: pc.Constraint,
+				// Add constraint to manifest that is not empty (has a branch, version or source)
+				if !gps.IsAny(pc.Constraint) || pc.Ident.Source != "" {
+					i.Manifest.Constraints[pc.Ident.ProjectRoot] = gps.ProjectProperties{
+						Source:     pc.Ident.Source,
+						Constraint: pc.Constraint,
+					}
+					fb.NewConstraintFeedback(pc, fb.DepTypeImported).LogFeedback(i.Logger)
 				}
-				fb.NewConstraintFeedback(pc, fb.DepTypeImported).LogFeedback(i.Logger)
 
 				if version != nil {
 					lp := gps.NewLockedProject(pc.Ident, version, nil)
@@ -317,7 +324,7 @@ func (i *Importer) ImportPackages(packages []ImportedPackage, defaultConstraintF
 	}
 	wg.Wait()
 
-	return nil
+	//return nil
 }
 
 // git.apache.org/thrift no longer exists, so this avoids importing this
@@ -375,12 +382,12 @@ func (i *Importer) isDefaultSource(projectRoot gps.ProjectRoot, sourceURL string
 
 	// this condition is mainly for gopkg.in imports,
 	// as some importers specify the repository url as https://gopkg.in/...,
-	// but sm.SourceURLsForPath() returns https://github.com/... urls for gopkg.in
+	// but SourceManager.SourceURLsForPath() returns https://github.com/... urls for gopkg.in
 	if sourceURL == "https://"+string(projectRoot) {
 		return true, nil
 	}
 
-	sourceURLs, err := i.sm.SourceURLsForPath(string(projectRoot))
+	sourceURLs, err := i.SourceManager.SourceURLsForPath(string(projectRoot))
 	if err != nil {
 		return false, err
 	}

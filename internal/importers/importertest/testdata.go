@@ -76,4 +76,7 @@ const (
 
 	// MultiTaggedPlainTag is a non-semver tag on MultiTaggedRev.
 	MultiTaggedPlainTag = "stable"
+
+	// NonexistentPrj is a dummy project which does not exist on Github.
+	NonexistentPrj = "github.com/nonexistent/project"
 )

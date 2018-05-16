@@ -7,10 +7,13 @@ package main
 import (
 	"fmt"
 	"io"
+	"io/ioutil"
 	"os"
 	"os/exec"
 	"path/filepath"
+	"runtime"
 	"strings"
+	"sync"
 	"testing"
 
 	"github.com/golang/dep"
@@ -24,38 +27,139 @@ func TestIntegration(t *testing.T) {
 	defer uber.SetAndUnsetEnvVar(uber.RunningIntegrationTests, "yes")()
 	defer uber.SetAndUnsetEnvVar(uber.TurnOffMetricsReporting, "yes")()
 	//Parallel testing
-	t.Run("group", func(t *testing.T) {
+	//t.Run("group", func(t *testing.T) {
 
-		test.NeedsExternalNetwork(t)
-		test.NeedsGit(t)
+	test.NeedsExternalNetwork(t)
+	test.NeedsGit(t)
 
-		wd, err := os.Getwd()
+	wd, err := os.Getwd()
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	numThreadsAllowed := 1
+	threadSema := make(chan string, numThreadsAllowed)
+	for i := 0; i < numThreadsAllowed; i++ {
+		threadSema <- "free"
+	}
+	var wg sync.WaitGroup
+
+	relPath := filepath.Join("testdata", "harness_tests")
+	filepath.Walk(relPath, func(path string, info os.FileInfo, err error) error {
+		wg.Add(1)
+		<-threadSema
+		defer wg.Done()
 		if err != nil {
-			t.Fatal(err)
+			t.Fatal("error walking filepath")
 		}
 
-		relPath := filepath.Join("testdata", "harness_tests")
-		filepath.Walk(relPath, func(path string, info os.FileInfo, err error) error {
-			if err != nil {
-				t.Fatal("error walking filepath")
-			}
-
-			if filepath.Base(path) != "testcase.json" {
-				return nil
-			}
-
-			parse := strings.Split(path, string(filepath.Separator))
-			testName := strings.Join(parse[2:len(parse)-1], "/")
-			t.Run(testName, func(t *testing.T) {
-				t.Parallel()
-
-				t.Run("external", testIntegration(testName, relPath, wd, execCmd))
-				t.Run("internal", testIntegration(testName, relPath, wd, runMain))
-			})
-
+		if filepath.Base(path) != "testcase.json" {
+			threadSema <- "free"
 			return nil
+		}
+
+		parse := strings.Split(path, string(filepath.Separator))
+		testName := strings.Join(parse[2:len(parse)-1], "/")
+		t.Run(testName, func(t *testing.T) {
+			//t.Parallel()
+
+			//t.Run("external", testIntegration(testName, relPath, wd, execCmd))
+			t.Run("internal", testIntegration(testName, relPath, wd, runMain))
 		})
+
+		threadSema <- "free"
+		return nil
 	})
+	wg.Wait()
+	//})
+}
+
+func TestDepCachedir(t *testing.T) {
+	if runtime.GOOS == "windows" {
+		// This test is unreliable on Windows and fails at random which makes it very
+		// difficult to debug. It might have something to do with parallel execution.
+		// Since the test doesn't test any specific behavior of Windows, it should be okay
+		// to skip.
+		t.Skip("skipping on windows")
+	}
+	t.Parallel()
+
+	test.NeedsExternalNetwork(t)
+	test.NeedsGit(t)
+
+	wd, err := os.Getwd()
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	initPath := filepath.Join("testdata", "cachedir")
+
+	t.Run("env-cachedir", func(t *testing.T) {
+		t.Parallel()
+		testProj := integration.NewTestProject(t, initPath, wd, runMain)
+		defer testProj.Cleanup()
+
+		testProj.TempDir("cachedir")
+		cachedir := testProj.Path("cachedir")
+		testProj.Setenv("DEPCACHEDIR", cachedir)
+
+		// Running `dep ensure` will pull in the dependency into cachedir.
+		err = testProj.DoRun([]string{"ensure"})
+		if err != nil {
+			// Log the error output from running `dep ensure`, could be useful.
+			t.Logf("`dep ensure` error output: \n%s", testProj.GetStderr())
+			t.Errorf("got an unexpected error: %s", err)
+		}
+
+		// Check that the cache was created in the cachedir. Our fixture has the dependency
+		// `github.com/sdboyer/deptest`
+		_, err = os.Stat(testProj.Path("cachedir", "sources", "https---github.com-sdboyer-deptest"))
+		if err != nil {
+			if os.IsNotExist(err) {
+				t.Error("expected cachedir to have been populated but none was found")
+			} else {
+				t.Errorf("got an unexpected error: %s", err)
+			}
+		}
+	})
+	t.Run("env-invalid-cachedir", func(t *testing.T) {
+		t.Parallel()
+		testProj := integration.NewTestProject(t, initPath, wd, runMain)
+		defer testProj.Cleanup()
+
+		var d []byte
+		tmpFp := testProj.Path("tmp-file")
+		ioutil.WriteFile(tmpFp, d, 0644)
+		cases := []string{
+			// invalid path
+			"\000",
+			// parent directory does not exist
+			testProj.Path("non-existent-fldr", "cachedir"),
+			// path is a regular file
+			tmpFp,
+			// invalid path, tmp-file is a regular file
+			testProj.Path("tmp-file", "cachedir"),
+		}
+
+		wantErr := "dep: $DEPCACHEDIR set to an invalid or inaccessible path"
+		for _, c := range cases {
+			testProj.Setenv("DEPCACHEDIR", c)
+
+			err = testProj.DoRun([]string{"ensure"})
+
+			if err == nil {
+				// Log the output from running `dep ensure`, could be useful.
+				t.Logf("test run output: \n%s\n%s", testProj.GetStdout(), testProj.GetStderr())
+				t.Error("unexpected result: \n\t(GOT) nil\n\t(WNT) exit status 1")
+			} else if stderr := testProj.GetStderr(); !strings.Contains(stderr, wantErr) {
+				t.Errorf(
+					"unexpected error output: \n\t(GOT) %s\n\t(WNT) %s",
+					strings.TrimSpace(stderr), wantErr,
+				)
+			}
+		}
+	})
+
 }
 
 // execCmd is a test.RunFunc which runs the program in another process.
@@ -98,8 +202,21 @@ func testIntegration(name, relPath, wd string, run integration.RunFunc) func(t *
 	return func(t *testing.T) {
 		t.Parallel()
 
-		// Set up environment
 		testCase := integration.NewTestCase(t, filepath.Join(wd, relPath), name)
+
+		// Skip tests for disabled features
+		if testCase.RequiredFeatureFlag != "" {
+			featureEnabled, err := readFeatureFlag(testCase.RequiredFeatureFlag)
+			if err != nil {
+				t.Fatal(err)
+			}
+
+			if !featureEnabled {
+				t.Skipf("skipping %s, %s feature flag not enabled", name, testCase.RequiredFeatureFlag)
+			}
+		}
+
+		// Set up environment
 		testProj := integration.NewTestProject(t, testCase.InitialPath(), wd, run)
 		defer testProj.Cleanup()
 

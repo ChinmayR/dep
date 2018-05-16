@@ -13,7 +13,7 @@ import (
 	"testing"
 
 	"github.com/golang/dep"
-	"github.com/golang/dep/internal/gps"
+	"github.com/golang/dep/gps"
 	"github.com/golang/dep/internal/test"
 	"github.com/pkg/errors"
 )
@@ -22,13 +22,13 @@ import (
 // of an importer converting from an external config format to dep's.
 type TestCase struct {
 	DefaultConstraintFromLock bool
-	WantConvertErr            bool
 	WantSourceRepo            string
 	WantConstraint            string
 	WantOverride              string
 	WantRevision              gps.Revision
 	WantVersion               string
 	WantIgnored               []string
+	WantRequired              []string
 	WantWarning               string
 }
 
@@ -46,7 +46,7 @@ func NewTestContext(h *test.Helper) *dep.Ctx {
 }
 
 // Execute and validate the test case.
-func (tc TestCase) Execute(t *testing.T, convert func(logger *log.Logger, sm gps.SourceManager) (*dep.Manifest, *dep.Lock, error)) error {
+func (tc TestCase) Execute(t *testing.T, convert func(logger *log.Logger, sm gps.SourceManager) (*dep.Manifest, *dep.Lock)) error {
 	h := test.NewHelper(t)
 	defer h.Cleanup()
 	// Disable parallel tests until we can resolve this error on the Windows builds:
@@ -62,26 +62,20 @@ func (tc TestCase) Execute(t *testing.T, convert func(logger *log.Logger, sm gps
 	output := &bytes.Buffer{}
 	ctx.Err = log.New(output, "", 0)
 
-	manifest, lock, convertErr := convert(ctx.Err, sm)
-	return tc.validate(manifest, lock, convertErr, output)
+	manifest, lock := convert(ctx.Err, sm)
+	return tc.validate(manifest, lock, output)
 }
 
 // validate returns an error if any of the testcase validations failed.
-func (tc TestCase) validate(manifest *dep.Manifest, lock *dep.Lock, convertErr error, output *bytes.Buffer) error {
-	if tc.WantConvertErr {
-		if convertErr == nil {
-			return errors.New("Expected the conversion to fail, but it did not return an error")
-		}
-		return nil
-	}
-
-	if convertErr != nil {
-		return errors.Wrap(convertErr, "Expected the conversion to pass, but it returned an error")
-	}
-
+func (tc TestCase) validate(manifest *dep.Manifest, lock *dep.Lock, output *bytes.Buffer) error {
 	if !equalSlice(manifest.Ignored, tc.WantIgnored) {
-		return errors.Errorf("unexpected set of ignored projects: \n\t(GOT) %v \n\t(WNT) %v",
+		return errors.Errorf("unexpected set of ignored projects: \n\t(GOT) %#v \n\t(WNT) %#v",
 			manifest.Ignored, tc.WantIgnored)
+	}
+
+	if !equalSlice(manifest.Required, tc.WantRequired) {
+		return errors.Errorf("unexpected set of required projects: \n\t(GOT) %#v \n\t(WNT) %#v",
+			manifest.Required, tc.WantRequired)
 	}
 
 	wantConstraintCount := 0
@@ -168,8 +162,9 @@ func (tc TestCase) validate(manifest *dep.Manifest, lock *dep.Lock, convertErr e
 	}
 
 	if tc.WantWarning != "" {
-		if !strings.Contains(output.String(), tc.WantWarning) {
-			return errors.Errorf("Expected the output to include the warning '%s'", tc.WantWarning)
+		gotWarning := output.String()
+		if !strings.Contains(gotWarning, tc.WantWarning) {
+			return errors.Errorf("Expected the output to include the warning '%s' but got '%s'\n", tc.WantWarning, gotWarning)
 		}
 	}
 

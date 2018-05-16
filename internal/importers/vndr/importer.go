@@ -12,7 +12,7 @@ import (
 	"strings"
 
 	"github.com/golang/dep"
-	"github.com/golang/dep/internal/gps"
+	"github.com/golang/dep/gps"
 	"github.com/golang/dep/internal/importers/base"
 	"github.com/pkg/errors"
 )
@@ -51,16 +51,17 @@ func (v *Importer) Import(dir string, pr gps.ProjectRoot, importCustomConfig boo
 	}
 
 	// TODO import custom config when and if we support migrating from vndr to dep
-
-	return v.convert(pr)
+	m, l := v.convert(pr)
+	return m, l, nil
 }
 
 func (v *Importer) loadVndrFile(dir string) error {
 	v.Logger.Printf("Converting from vendor.conf...")
 
-	f, err := os.Open(vndrFile(dir))
+	path := vndrFile(dir)
+	f, err := os.Open(path)
 	if err != nil {
-		return errors.Wrapf(err, "unable to open %s", vndrFile(dir))
+		return errors.Wrapf(err, "unable to open %s", path)
 	}
 	defer f.Close()
 
@@ -68,7 +69,8 @@ func (v *Importer) loadVndrFile(dir string) error {
 	for scanner.Scan() {
 		pkg, err := parseVndrLine(scanner.Text())
 		if err != nil {
-			return errors.Wrapf(err, "unable to parse line")
+			v.Logger.Printf("  Warning: Skipping line. Unable to parse: %s\n", err)
+			continue
 		}
 		if pkg == nil {
 			// Could be an empty line or one which is just a comment
@@ -77,25 +79,29 @@ func (v *Importer) loadVndrFile(dir string) error {
 		v.packages = append(v.packages, *pkg)
 	}
 
-	if scanner.Err() != nil {
-		return errors.Wrapf(err, "unable to read %s", vndrFile(dir))
+	if err := scanner.Err(); err != nil {
+		v.Logger.Printf("  Warning: Ignoring errors found while parsing %s: %s\n", path, err)
 	}
 
 	return nil
 }
 
-func (v *Importer) convert(pr gps.ProjectRoot) (*dep.Manifest, *dep.Lock, error) {
+func (v *Importer) convert(pr gps.ProjectRoot) (*dep.Manifest, *dep.Lock) {
 	packages := make([]base.ImportedPackage, 0, len(v.packages))
 	for _, pkg := range v.packages {
 		// Validate
 		if pkg.importPath == "" {
-			err := errors.New("invalid vndr configuration: import path is required")
-			return nil, nil, err
+			v.Logger.Println(
+				"  Warning: Skipping project. Invalid vndr configuration, import path is required",
+			)
+			continue
 		}
 
 		if pkg.reference == "" {
-			err := errors.New("invalid vndr configuration: revision is required")
-			return nil, nil, err
+			v.Logger.Printf(
+				"  Warning: Invalid vndr configuration, reference not found for import path %q\n",
+				pkg.importPath,
+			)
 		}
 
 		ip := base.ImportedPackage{
@@ -105,12 +111,8 @@ func (v *Importer) convert(pr gps.ProjectRoot) (*dep.Manifest, *dep.Lock, error)
 		}
 		packages = append(packages, ip)
 	}
-	err := v.ImportPackages(packages, true)
-	if err != nil {
-		return nil, nil, err
-	}
-
-	return v.Manifest, v.Lock, nil
+	v.ImportPackages(packages, true)
+	return v.Manifest, v.Lock
 }
 
 type vndrPackage struct {
