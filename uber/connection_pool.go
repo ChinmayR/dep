@@ -102,11 +102,9 @@ func (conRes ConResource) GetEnvironmentForGitoliteCommand() []string {
 }
 
 func (conRes ConResource) Release() {
-	UberLogger.Printf("Length of connection pool: %v\n", len(threadSema))
 	threadSema <- conRes
 }
 
 func GetThreadFromPool() ConResource {
-	UberLogger.Printf("Length of connection pool: %v\n", len(threadSema))
 	return <-threadSema
 }

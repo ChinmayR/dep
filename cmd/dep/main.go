@@ -125,7 +125,7 @@ func (c *Config) Run() int {
 		},
 		{
 			"dep cc",
-			"clear the dep cache at $HOME/.dep_cache/pkg/dep",
+			"clear the dep cache at $HOME/.dep-cache/pkg/dep",
 		},
 	}
 
@@ -182,6 +182,18 @@ func (c *Config) Run() int {
 		uber.UberLogger.Println("*******************")
 		// sleep for 5 seconds to allow the user to read the above message and also as an incentive to update
 		time.Sleep(5 * time.Second)
+	}
+
+	if cmdName != "cc" {
+		doesCacheNeedToBeCleared, cacheClearedVersion, err := uber.DoesCacheNeedToBeCleared(uber.LATEST_CACHE_ALLOWED_VERSION)
+		if err != nil {
+			uber.DebugLogger.Printf("Error checking if cache needs to be cleared: %v", err)
+		}
+		if doesCacheNeedToBeCleared {
+			uber.UberLogger.Printf("Your dep cache is written by a version %v which is less than the minimum allowed version of %v\n", cacheClearedVersion, uber.LATEST_CACHE_ALLOWED_VERSION)
+			uber.UberLogger.Printf("Please clear your cache by running \"dep cc\" before continuing\n")
+			return successExitCode
+		}
 	}
 
 	_, _, err = new(uber.CommandExecutor).ExecCommand("git", time.Duration(1*time.Minute),

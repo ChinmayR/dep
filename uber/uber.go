@@ -42,6 +42,7 @@ const (
 )
 
 const DEP_VERSION = "v0.8.0-UBER"
+const LATEST_CACHE_ALLOWED_VERSION = "v0.8.0-UBER"
 
 type rewriteFn func([]string, ExecutorInterface) (*url.URL, string, string, *url.URL, error)
 

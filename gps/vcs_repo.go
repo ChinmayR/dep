@@ -190,6 +190,10 @@ func (r *gitRepo) defendAgainstSubmodules(ctx context.Context) error {
 }
 
 func (r *gitRepo) ensureClean(ctx context.Context) error {
+
+	//assume the repo is clean since we will clean it later if found curropt
+	return nil
+
 	cmd := commandContext(
 		ctx,
 		"git",

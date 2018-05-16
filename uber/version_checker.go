@@ -2,7 +2,9 @@ package uber
 
 import (
 	"fmt"
+	"io/ioutil"
 	"os"
+	"path/filepath"
 	"strings"
 	"time"
 
@@ -11,7 +13,8 @@ import (
 )
 
 const (
-	REMOTE_URL = "ssh://gitolite@code.uber.internal/devexp/dep"
+	REMOTE_URL            = "ssh://gitolite@code.uber.internal/devexp/dep"
+	CACHE_CLEAR_FILE_NAME = "cache_clear"
 )
 
 var CmdExecutor ExecutorInterface
@@ -82,4 +85,44 @@ func getLatestVersion() (*semver.Version, error) {
 	}
 
 	return latestVersionSoFar, nil
+}
+
+// DoesCacheNeedToBeCleared reads from the CACHE_CLEAR_FILE_NAME file from pkg/dep cache
+// and if it is older than the minVersionAllowed then the cache is backwards incompatible
+// and needs to be cleared
+func DoesCacheNeedToBeCleared(minVersionAllowed string) (bool, string, error) {
+	cacheDir := filepath.Join(os.Getenv("HOME"), ".dep-cache", "pkg", "dep")
+	clearCachePath := filepath.Join(cacheDir, CACHE_CLEAR_FILE_NAME)
+	clearCacheFileContent, err := ioutil.ReadFile(clearCachePath)
+	if err != nil {
+		return true, "", errors.Wrap(err, "failed to read clear cache file")
+	}
+	clearCacheFileContentString := strings.Split(string(clearCacheFileContent), "\n")[0]
+	cacheClearedVersion, err := semver.NewVersion(clearCacheFileContentString)
+	if err != nil {
+		return true, "", errors.Wrap(err, "failed to parse clear cache file contents")
+	}
+	minVersionAllowedSemver, err := semver.NewVersion(minVersionAllowed)
+	if err != nil {
+		return true, cacheClearedVersion.String(), errors.Wrap(err, "failed to parse input min version allowed")
+	}
+	return cacheClearedVersion.Compare(minVersionAllowedSemver) < 0, cacheClearedVersion.String(), nil
+}
+
+func WriteCacheClearedVersion(version string, cacheDir string) error {
+	// Create the default cachedir if it does not exist.
+	if err := os.MkdirAll(cacheDir, 0777); err != nil {
+		return errors.Wrap(err, "failed to create default cache directory")
+	}
+
+	clearCachePath := filepath.Join(cacheDir, CACHE_CLEAR_FILE_NAME)
+
+	clearCacheFile, err := os.OpenFile(clearCachePath, os.O_WRONLY|os.O_CREATE, 0777)
+	if err != nil {
+		errors.Wrap(err, "failed to open new clear cache file")
+	}
+	defer clearCacheFile.Close()
+	clearCacheFile.WriteString(version)
+
+	return nil
 }

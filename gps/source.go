@@ -213,9 +213,6 @@ func (sc *sourceCoordinator) getSourceGatewayFor(ctx context.Context, id Project
 	}
 	sc.srcmut.RUnlock()
 
-	sc.srcmut.Lock()
-	defer sc.srcmut.Unlock()
-
 	// Get or create a sourceGateway.
 	var srcGate *sourceGateway
 	var url, unfoldedURL string
@@ -228,15 +225,19 @@ func (sc *sourceCoordinator) getSourceGatewayFor(ctx context.Context, id Project
 			unfoldedURL = url
 			url = toFold(url)
 		}
+		sc.srcmut.RLock()
 		if sg, has := sc.srcs[url]; has {
 			srcGate = sg
 			break
 		}
+		sc.srcmut.RUnlock()
 		src, err := m.try(ctx, sc.cachedir)
 		if err == nil {
 			srcGate, err = newSourceGateway(ctx, src, sc.supervisor, sc.cachedir, sc.diskCache, id)
 			if err == nil {
+				sc.srcmut.Lock()
 				sc.srcs[url] = srcGate
+				sc.srcmut.Unlock()
 				break
 			}
 		}
@@ -246,6 +247,9 @@ func (sc *sourceCoordinator) getSourceGatewayFor(ctx context.Context, id Project
 		doReturn(nil, errs)
 		return nil, errs
 	}
+
+	sc.srcmut.Lock()
+	defer sc.srcmut.Unlock()
 
 	// Record the name -> URL mapping, making sure that we also get the
 	// self-mapping.
