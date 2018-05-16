@@ -228,6 +228,7 @@ func (sc *sourceCoordinator) getSourceGatewayFor(ctx context.Context, id Project
 		sc.srcmut.RLock()
 		if sg, has := sc.srcs[url]; has {
 			srcGate = sg
+			sc.srcmut.RUnlock()
 			break
 		}
 		sc.srcmut.RUnlock()
