@@ -26,16 +26,6 @@ type Metrics struct {
 // CaptureMetrics wraps the given hnd, executes it with the given w and r, and
 // returns the metrics it captured from it.
 func CaptureMetrics(hnd http.Handler, w http.ResponseWriter, r *http.Request) Metrics {
-	return CaptureMetricsFn(w, func(ww http.ResponseWriter) {
-		hnd.ServeHTTP(ww, r)
-	})
-}
-
-// CaptureMetricsFn wraps w and calls fn with the wrapped w and returns the
-// resulting metrics. This is very similar to CaptureMetrics (which is just
-// sugar on top of this func), but is a more usable interface if your
-// application doesn't use the Go http.Handler interface.
-func CaptureMetricsFn(w http.ResponseWriter, fn func(http.ResponseWriter)) Metrics {
 	var (
 		start         = time.Now()
 		m             = Metrics{Code: http.StatusOK}
@@ -78,7 +68,7 @@ func CaptureMetricsFn(w http.ResponseWriter, fn func(http.ResponseWriter)) Metri
 		}
 	)
 
-	fn(Wrap(w, hooks))
+	hnd.ServeHTTP(Wrap(w, hooks), r)
 	m.Duration = time.Since(start)
 	return m
 }

@@ -6,7 +6,6 @@ import (
 	"context"
 	"crypto/ecdsa"
 	"encoding/json"
-	"net"
 	"net/http"
 	"time"
 
@@ -63,10 +62,6 @@ func (h hoseHandler) ServeHTTP(ctx context.Context, w http.ResponseWriter, r *ht
 	defer stopWatch.Stop()
 	w.Header().Set("X-Wonkamaster", h.host)
 
-	host, _, _ := net.SplitHostPort(r.RemoteAddr)
-	h.log = h.log.With(zap.String("remote_address", host),
-		jaegerzap.Trace(ctx))
-
 	var req wonka.TheHoseRequest
 	decoder := json.NewDecoder(r.Body)
 	if err := decoder.Decode(&req); err == nil {
@@ -80,6 +75,8 @@ func (h hoseHandler) ServeHTTP(ctx context.Context, w http.ResponseWriter, r *ht
 		Derelicts:     h.derelicts,
 		CheckInterval: h.checkInterval,
 	}
+
+	h.log = h.log.With(jaegerzap.Trace(ctx))
 
 	toSign, err := json.Marshal(reply)
 	if err != nil {

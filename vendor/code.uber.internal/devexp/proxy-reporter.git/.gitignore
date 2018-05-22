@@ -1,0 +1,13 @@
+*.out
+*.test
+*.xml
+*.swp
+.idea/
+*.iml
+*.cov
+*.html
+.tmp/
+.gen/
+/vendor
+/proxy-reporter
+/run-me-once.sh

@@ -1,9 +1,0 @@
-package: code.uber.internal/go/envfx.git
-import:
-- package: go.uber.org/fx
-  version: ^1
-testImport:
-- package: github.com/stretchr/testify
-  version: ^1.1.4
-  subpackages:
-  - assert

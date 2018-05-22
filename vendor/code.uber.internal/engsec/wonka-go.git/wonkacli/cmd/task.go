@@ -11,7 +11,6 @@ import (
 	"io/ioutil"
 
 	wonka "code.uber.internal/engsec/wonka-go.git"
-	"golang.org/x/crypto/ssh"
 
 	"github.com/sirupsen/logrus"
 	"github.com/urfave/cli"
@@ -47,12 +46,12 @@ func readCertAndKey(certPath, keyPath string) (*wonka.Certificate, *ecdsa.Privat
 }
 
 func doSign(c CLIContext, launchReq string) error {
-	certPath := c.String("certificate")
+	certPath := c.StringOrFirstArg("certificate")
 	if certPath == "" {
 		return errors.New("no signing certificate specified")
 	}
 
-	keyPath := c.String("key")
+	keyPath := c.StringOrFirstArg("key")
 	if keyPath == "" {
 		return errors.New("no signing key specified")
 	}
@@ -76,80 +75,6 @@ func doSign(c CLIContext, launchReq string) error {
 	return nil
 }
 
-// doCertGrantingCert turns this launch request into a cert-granting certificate.
-func doCertGrantingCert(c CLIContext, toCGC string) error {
-	cgcBytes, err := base64.StdEncoding.DecodeString(toCGC)
-	if err != nil {
-		return fmt.Errorf("error base64 decoding request: %v", err)
-	}
-
-	var cgcReq wonka.CertificateSignature
-	if err := json.Unmarshal(cgcBytes, &cgcReq); err != nil {
-		return fmt.Errorf("error unmarshalling signature: %v", err)
-	}
-
-	var lr wonka.LaunchRequest
-	if err := json.Unmarshal(cgcReq.Data, &lr); err != nil {
-		return fmt.Errorf("error parsing launch request: %v", err)
-	}
-
-	taskID := lr.TaskID
-	if taskID == "" {
-		taskID = lr.InstID
-	}
-	if taskID == "" {
-		taskID = "no task id for this service"
-	}
-
-	sshAgent, hostName, err := usshHostAgent()
-	if err != nil {
-		return fmt.Errorf("error getting host ussh cert: %v", err)
-	}
-
-	keys, err := sshAgent.List()
-	if err != nil {
-		return fmt.Errorf("error listing keys task agent: %v", err)
-	}
-
-	if len(keys) != 1 {
-		return fmt.Errorf("task ssh agent should only have one key, got %d", len(keys))
-	}
-
-	pubKey, err := ssh.ParsePublicKey(keys[0].Blob)
-	if err != nil {
-		return fmt.Errorf("error parsing key: %v", err)
-	}
-	usshCert := ssh.MarshalAuthorizedKey(pubKey)
-
-	cert, privKey, err := wonka.NewCertificate(
-		wonka.CertLaunchRequestTag(toCGC),
-		wonka.CertEntityName(lr.SvcID),
-		wonka.CertHostname(hostName),
-		wonka.CertTaskIDTag(taskID),
-		wonka.CertUSSHCertTag(string(usshCert)))
-
-	if err != nil {
-		return fmt.Errorf("error generating key and cert: %v", err)
-	}
-
-	certToSign, err := wonka.MarshalCertificate(*cert)
-	if err != nil {
-		return fmt.Errorf("error marshalling cert to sign: %v", err)
-	}
-
-	sshSig, err := sshAgent.Sign(pubKey, certToSign)
-	if err != nil {
-		return fmt.Errorf("error signing cert with ssh host key: %v", err)
-	}
-	cert.Signature = ssh.Marshal(sshSig)
-
-	if err := writeCertificate(cert, c.String("certificate")); err != nil {
-		return err
-	}
-
-	return writePrivateKey(privKey, c.String("key"))
-}
-
 func doVerify(c CLIContext, toVerify string) error {
 	toVerifyBytes, err := base64.StdEncoding.DecodeString(toVerify)
 	if err != nil {
@@ -166,8 +91,8 @@ func doVerify(c CLIContext, toVerify string) error {
 	}
 
 	logrus.Info("signature verifies, generating new certificate")
-	certPath := c.String("certificate")
-	keyPath := c.String("key")
+	certPath := c.StringOrFirstArg("certificate")
+	keyPath := c.StringOrFirstArg("key")
 	if certPath == "" || keyPath == "" {
 		logrus.Info("no cert and/or key requested, exiting")
 		return nil
@@ -223,30 +148,17 @@ func doVerify(c CLIContext, toVerify string) error {
 }
 
 func doTask(c CLIContext) error {
-	toSign := c.String("sign")
-	toVerify := c.String("verify")
-	toCGC := c.String("cgc")
-
-	args := 0
-	for _, a := range []string{toSign, toVerify, toCGC} {
-		if a != "" {
-			args++
-		}
-	}
-
-	if args != 1 {
-		return errors.New("only one of sign, verify or cgc can be set")
+	toSign := c.StringOrFirstArg("sign")
+	toVerify := c.StringOrFirstArg("verify")
+	if toSign != "" && toVerify != "" {
+		return fmt.Errorf("cannot specify both -sign and -verify")
 	}
 
 	if toSign != "" {
 		return doSign(c, toSign)
-	} else if toVerify != "" {
-		return doVerify(c, toVerify)
-	} else if toCGC != "" {
-		return doCertGrantingCert(c, toCGC)
 	}
 
-	return errors.New("wut")
+	return doVerify(c, toVerify)
 }
 
 // Task implements the subcommands for signing/verifying task launch requests.

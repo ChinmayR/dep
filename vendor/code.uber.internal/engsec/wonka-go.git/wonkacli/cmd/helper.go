@@ -4,11 +4,10 @@ import (
 	"bufio"
 	"context"
 	"crypto"
-	"crypto/ecdsa"
 	"crypto/rand"
 	"crypto/rsa"
 	"crypto/x509"
-	"encoding/base64"
+	"encoding/pem"
 	"errors"
 	"fmt"
 	"io"
@@ -196,24 +195,34 @@ func (c cliWrapper) NewWonkaClient(t WonkaClientType) (wonka.Wonka, error) {
 func generateKeys() ([]byte, []byte, error) {
 	k, err := rsa.GenerateKey(rand.Reader, 4096)
 	if err != nil {
-		return nil, nil, cli.NewExitError(fmt.Sprintf("error generating keys: %v", err), 1)
+		return nil, nil, cli.NewExitError("error generating keys", 1)
 	}
 
-	privPem := keyhelper.PrivatePemFromKey(k)
+	privBlock := &pem.Block{
+		Type:  "RSA PRIVATE KEY",
+		Bytes: x509.MarshalPKCS1PrivateKey(k),
+	}
+	privPem := pem.EncodeToMemory(privBlock)
 
 	zap.L().Info("writing wonka_private")
 	if err := ioutil.WriteFile("wonka_private", privPem, 0444); err != nil {
-		return nil, nil, cli.NewExitError(fmt.Sprintf("error writing wonka_private: %v", err), 1)
+		return nil, nil, cli.NewExitError(err.Error(), 1)
 	}
 
-	pubPem, err := keyhelper.PublicPemFromKey(&k.PublicKey)
+	pubBytes, err := x509.MarshalPKIXPublicKey(&k.PublicKey)
 	if err != nil {
-		return nil, nil, cli.NewExitError(fmt.Sprintf("error encoding public key to pem: %v", err), 1)
+		return nil, nil, cli.NewExitError(err.Error(), 1)
 	}
+
+	pubBlock := &pem.Block{
+		Type:  "PUBLIC KEY",
+		Bytes: pubBytes,
+	}
+	pubPem := pem.EncodeToMemory(pubBlock)
 
 	zap.L().Info("writing wonka_public")
 	if err := ioutil.WriteFile("wonka_public", pubPem, 0444); err != nil {
-		return nil, nil, cli.NewExitError(fmt.Sprintf("error writing wonka_public: %v", err), 1)
+		return nil, nil, cli.NewExitError(err.Error(), 1)
 	}
 
 	return privPem, pubPem, nil
@@ -296,7 +305,7 @@ func certFromPath(path string) (*ssh.Certificate, error) {
 	return c, nil
 }
 
-func privKeyFromPath(c *ssh.Certificate, privKeyPaths []string) (crypto.PrivateKey, error) {
+func privKeyFromPath(c *ssh.Certificate, privKeys []string) (crypto.PrivateKey, error) {
 	keyType := ""
 
 	switch c.Key.Type() {
@@ -304,16 +313,16 @@ func privKeyFromPath(c *ssh.Certificate, privKeyPaths []string) (crypto.PrivateK
 		keyType = "rsa"
 	case ssh.KeyAlgoDSA:
 		keyType = "dsa"
-	case ssh.KeyAlgoECDSA256:
-		keyType = "ecdsa"
 	case ssh.KeyAlgoED25519:
 		keyType = "ed25519"
+	case ssh.KeyAlgoECDSA256:
+		keyType = "ecdsa"
 	default:
 		return nil, errors.New("invalid key type")
 	}
 
 	keyLoc := ""
-	for _, pk := range privKeyPaths {
+	for _, pk := range privKeys {
 		if strings.HasSuffix(pk, fmt.Sprintf("ssh_host_%s_key", keyType)) {
 			keyLoc = pk
 			break
@@ -331,39 +340,4 @@ func privKeyFromPath(c *ssh.Certificate, privKeyPaths []string) (crypto.PrivateK
 	}
 
 	return k, nil
-}
-
-func writeCertificate(cert *wonka.Certificate, certPath string) error {
-	if certPath == "" {
-		return errors.New("no cert path")
-	}
-
-	certBytes, err := wonka.MarshalCertificate(*cert)
-	if err != nil {
-		return fmt.Errorf("error marshalling cert: %v", err)
-	}
-
-	if err := ioutil.WriteFile(certPath, certBytes, 0644); err != nil {
-		return fmt.Errorf("error writing certificate: %v", err)
-	}
-
-	return nil
-}
-
-func writePrivateKey(key *ecdsa.PrivateKey, keyPath string) error {
-	if keyPath == "" {
-		return errors.New("no keypat")
-	}
-
-	keyBytes, err := x509.MarshalECPrivateKey(key)
-	if err != nil {
-		return fmt.Errorf("error marshalling key: %v", err)
-	}
-
-	key64 := base64.StdEncoding.EncodeToString(keyBytes)
-	if err := ioutil.WriteFile(keyPath, []byte(key64), 0600); err != nil {
-		return fmt.Errorf("error writing key: %v", err)
-	}
-
-	return nil
 }

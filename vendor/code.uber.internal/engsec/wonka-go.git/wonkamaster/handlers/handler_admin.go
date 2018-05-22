@@ -1,6 +1,7 @@
 package handlers
 
 import (
+	"bytes"
 	"context"
 	"encoding/base64"
 	"encoding/json"
@@ -10,13 +11,12 @@ import (
 	"strings"
 	"time"
 
-	"code.uber.internal/engsec/wonka-go.git"
-	"code.uber.internal/engsec/wonka-go.git/internal/rpc"
+	wonka "code.uber.internal/engsec/wonka-go.git"
 	"code.uber.internal/engsec/wonka-go.git/internal/timehelper"
 	"code.uber.internal/engsec/wonka-go.git/internal/xhttp"
 	"code.uber.internal/engsec/wonka-go.git/wonkamaster/common"
+	"code.uber.internal/engsec/wonka-go.git/wonkamaster/rpc"
 	"code.uber.internal/engsec/wonka-go.git/wonkamaster/wonkadb"
-	"code.uber.internal/engsec/wonka-go.git/wonkamaster/wonkassh"
 
 	"github.com/uber-go/tally"
 	jaegerzap "github.com/uber/jaeger-client-go/log/zap"
@@ -61,6 +61,17 @@ func newAdminHandler(cfg common.HandlerConfig) xhttp.Handler {
 }
 
 func (h adminHandler) usshUserVerify(req wonka.AdminRequest, name string) error {
+	certChecker := ssh.CertChecker{
+		IsUserAuthority: func(k ssh.PublicKey) bool {
+			for _, ca := range h.usshCAKeys {
+				if bytes.Equal(k.Marshal(), ca.Marshal()) {
+					return true
+				}
+			}
+			return false
+		},
+	}
+
 	pubKey, _, _, _, err := ssh.ParseAuthorizedKey([]byte(req.Ussh))
 	if err != nil {
 		return fmt.Errorf("error parsing ssh key: %v", err)
@@ -76,8 +87,8 @@ func (h adminHandler) usshUserVerify(req wonka.AdminRequest, name string) error 
 		return errors.New("invalid requestor name")
 	}
 
-	if err := wonkassh.CheckUserCert(certName[0], cert, h.usshCAKeys); err != nil {
-		return err
+	if err := certChecker.CheckCert(certName[0], cert); err != nil {
+		return fmt.Errorf("certificate validation failed: %v", err)
 	}
 
 	sigBytes, err := base64.StdEncoding.DecodeString(req.Signature)
@@ -138,12 +149,7 @@ func (h adminHandler) ServeHTTP(ctx context.Context, w http.ResponseWriter, r *h
 		return
 	}
 
-	ok, err := h.pulloClient.IsMemberOf(ctx, req.EntityName, adminGroup)
-	if err != nil {
-		writeResponse(w, h, fmt.Errorf("failed to get ldap groups for %v: %v", req.EntityName, err), wonka.GatewayError, http.StatusBadGateway)
-		return
-	}
-	if !ok {
+	if !h.pulloClient.IsMemberOf(req.EntityName, adminGroup) {
 		writeResponse(w, h, errors.New("admin user not permitted"), wonka.AdminAccessDenied,
 			http.StatusForbidden)
 		return

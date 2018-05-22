@@ -18,7 +18,6 @@ import (
 	wonka "code.uber.internal/engsec/wonka-go.git"
 	"github.com/uber-go/tally"
 	"golang.org/x/net/publicsuffix"
-	"math"
 )
 
 type metric struct {
@@ -43,7 +42,7 @@ type backend struct {
 
 const (
 	// Number of retries for posting data.
-	_retryCount = 5
+	_retryCount = 2
 )
 
 // New returns a new reporter.
@@ -167,12 +166,7 @@ func (b *backend) postHTTP(values url.Values) {
 	for i := 0; i < _retryCount; i++ {
 		rsp, err := b.client.PostForm(b.addr, values)
 		if err != nil {
-			if i < _retryCount-1 {
-				delay := int(math.Pow(float64(i), 2))
-				time.Sleep(time.Duration(delay) * time.Second)
-			} else {
-				fmt.Fprintf(os.Stderr, "Error posting request: (%v), no retries remain\n", err)
-			}
+			fmt.Fprintf(os.Stderr, "Error posting request: %v\n", err)
 			continue
 		}
 

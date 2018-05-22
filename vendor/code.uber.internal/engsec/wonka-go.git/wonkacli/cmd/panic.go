@@ -6,14 +6,12 @@ import (
 	"crypto/x509"
 	"encoding/base64"
 	"encoding/json"
-	"errors"
 	"fmt"
 	"time"
 
 	"code.uber.internal/engsec/wonka-go.git"
 	"code.uber.internal/engsec/wonka-go.git/internal/keyhelper"
 	"code.uber.internal/engsec/wonka-go.git/internal/url"
-	"code.uber.internal/engsec/wonka-go.git/redswitch"
 	"code.uber.internal/engsec/wonka-go.git/wonkacrypter"
 
 	"github.com/sirupsen/logrus"
@@ -22,10 +20,7 @@ import (
 
 func performSignDisableMessage(c CLIContext) error {
 	exp := c.Duration("expiration")
-	if exp <= 0 {
-		return cli.NewExitError(errors.New("expiration duration must be greater than 0"), 1)
-	}
-	msg := redswitch.DisableMessage{
+	msg := wonka.DisableMessage{
 		Ctime:      time.Now().Unix(),
 		Etime:      time.Now().Add(exp).Unix(),
 		IsDisabled: true,

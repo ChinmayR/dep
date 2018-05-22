@@ -14,6 +14,7 @@ import (
 	"fmt"
 	"io/ioutil"
 	"net"
+	"net/http"
 	"os"
 	"path/filepath"
 	"strings"
@@ -21,17 +22,16 @@ import (
 	"time"
 
 	"code.uber.internal/engsec/wonka-go.git/internal"
-	"code.uber.internal/engsec/wonka-go.git/redswitch"
+	"code.uber.internal/engsec/wonka-go.git/internal/xhttp"
 	"code.uber.internal/engsec/wonka-go.git/wonkacrypter"
 
 	opentracing "github.com/opentracing/opentracing-go"
 	"github.com/uber-go/tally"
+	"go.uber.org/atomic"
 	"go.uber.org/zap"
 	"golang.org/x/crypto/ssh"
 	"gopkg.in/yaml.v2"
 )
-
-const _defaultPrivateKeyPath = "./config/secrets.yaml"
 
 // Wonka interface, useful for mocking out wonka.
 type Wonka interface {
@@ -61,21 +61,17 @@ type Wonka interface {
 
 	// Sign signs data with the entities derived ecc private key. The Data
 	// is hashed with sha256.
-	// Deprecated. use wonkacrypter.Sign instead.
 	Sign(data []byte) ([]byte, error)
 
 	// Verify verifies that data was signed by private ecc key held
 	// by the named entity. If needed, it will contact wonkamaster to get the
 	// publickey for the named entity and cache the result.
-	// Deprecated. use wonkacrypter.Verify instead.
 	Verify(ctx context.Context, data, sig []byte, entity string) bool
 
 	// Encrypt encrypts data for entity.
-	// Deprecated. use wonkacrypter.Encrypt instead.
 	Encrypt(ctx context.Context, plainText []byte, entity string) ([]byte, error)
 
 	// Decrypt decrypts data encrypted by entity.
-	// Deprecated. use wonkacrypter.Decrypt() instead.
 	Decrypt(ctx context.Context, cipherText []byte, entity string) ([]byte, error)
 
 	// Enroll enrolls an entity with the with wonka master
@@ -149,6 +145,9 @@ var (
 	ErrNoKey = errors.New("no rsa key found")
 	// ErrBadClaim is returned when the claim is malformed.
 	ErrBadClaim = errors.New("bad claim")
+
+	// keySize is the size of the rsa key in bits.
+	keySize = 2048
 )
 
 var _ Crypter = (*uberWonka)(nil)
@@ -200,8 +199,6 @@ func Init(cfg Config) (Wonka, error) {
 	return InitWithContext(context.Background(), cfg)
 }
 
-var _globalCertificateRegistry = newCertificateRegistry()
-
 // InitWithContext returns a new wonka object and uses the provided context to
 // for health checks to determine how to contact wonkamaster.  If you are
 // creating lots of wonka objects, you should either be passing in a cancelable
@@ -220,78 +217,49 @@ func InitWithContext(ctx context.Context, cfg Config) (Wonka, error) {
 	}
 
 	w := &uberWonka{
-		entityName:             cfg.EntityName,
-		cachedKeys:             make(map[string]entityKey, 0),
-		cachedKeysMu:           sync.RWMutex{},
-		clientKeysMu:           sync.RWMutex{},
-		sshAgent:               cfg.Agent,
-		implicitClaims:         cfg.ImplicitClaims,
-		derelicts:              make(map[string]time.Time),
-		derelictsLock:          sync.RWMutex{},
-		derelictsRefreshPeriod: internal.DerelictsCheckPeriod,
-		derelictsTimer:         time.NewTimer(internal.DerelictsCheckPeriod),
-		wonkaURLRequested:      cfg.WonkaMasterURL,
-		certRepository:         _globalCertificateRegistry,
-		globalDisableRecovery:  make(chan time.Time, 1),
+		entityName:         cfg.EntityName,
+		cachedKeys:         make(map[string]entityKey, 0),
+		cachedKeysMu:       &sync.RWMutex{},
+		clientKeysMu:       &sync.RWMutex{},
+		sshAgent:           cfg.Agent,
+		implicitClaims:     cfg.ImplicitClaims,
+		isGloballyDisabled: atomic.NewBool(false),
+		derelicts:          make(map[string]time.Time),
+		derelictsLock:      &sync.RWMutex{},
 	}
 
-	w.initLogAndMetrics(cfg)
-	w.initTracer(cfg)
+	ctx, w.cancel = context.WithCancel(ctx)
 
-	if len(cfg.WonkaMasterPublicKeys) > 0 {
-		WonkaMasterPublicKeys = cfg.WonkaMasterPublicKeys
-		WonkaMasterPublicKey = WonkaMasterPublicKeys[0]
-	}
-
-	if err := w.initRedswitchReader(); err != nil {
+	if err := w.initLogAndMetrics(cfg); err != nil {
 		return nil, err
 	}
+	w.initTracerAndHTTPClient(cfg)
 
-	// After this point we may need to contact wonkamaster, so we need
-	// to know if we are in a globally disabled state or not.
-	lookupCtx, lookupCancel := context.WithTimeout(ctx, time.Second)
-	defer lookupCancel()
-	disabled := w.globalDisableReader.ForceCheckIsDisabled(lookupCtx)
-	if disabled {
-		w.log.Warn("wonka is currently disabled")
-
-		// Setup recovery
-		go func() {
-			<-w.globalDisableRecovery
-			w.performGlobalDisableRecovery(context.Background())
-		}()
-	}
-
-	w.httpRequester = newHTTPRequester(w.tracer, w.log)
-	if err := w.httpRequester.SetURL(ctx, w.wonkaURLRequested); err != nil {
-		if !disabled {
-			return nil, fmt.Errorf("error setting wonkamaster url: %v", err)
-		}
-		w.log.Warn("failed to set wonkamaster URL but ignoring due to global disable",
-			zap.Error(err))
-	}
-
-	err := w.loadKeyAndUpgrade(ctx, cfg)
+	keyType, err := w.loadKey(ctx, cfg)
 	if err != nil {
 		return nil, err
 	}
+	w.log.Debug("found a key", zap.Any("keytype", keyNameFromType(keyType)))
 
 	for idx, k := range WonkaMasterPublicKeys {
 		w.log.Debug("server ecc key",
-			zap.Int("key number", idx),
-			zap.String("compressed", KeyToCompressed(k.X, k.Y)))
+			zap.Any("key number", idx),
+			zap.Any("compressed", KeyToCompressed(k.X, k.Y)))
 	}
 
+	w.destRequires = []string{w.entityName}
+	if cfg.DestinationRequires != nil {
+		w.destRequires = cfg.DestinationRequires
+	}
+
+	w.setWonkaURL(ctx, cfg.WonkaMasterURL)
 	w.log.Debug("wonka client initialized",
-		zap.String("url", w.httpRequester.URL()),
-		zap.String("version", Version),
+		zap.Any("url", w.wonkaURL),
+		zap.Any("version", Version),
 	)
 
-	go func() {
-		if err := w.updateDerelicts(ctx); err != nil {
-			w.log.With(zap.Error(err)).Warn("failed to update derelicts")
-		}
-	}()
+	go w.checkGlobalDisableStatus(ctx, WonkaMasterPublicKeys)
+	go w.checkDerelicts(ctx, internal.DerelictsCheckPeriod)
 
 	w.metrics.Tagged(map[string]string{
 		"stage": "initialized",
@@ -305,9 +273,7 @@ func (w *uberWonka) Close() error {
 	if w.cancel != nil {
 		w.cancel()
 	}
-
-	err := w.certRepository.Unregister(w.certRegHandle)
-	return err
+	return nil
 }
 
 // Close terminates all of the background goroutines.
@@ -319,26 +285,14 @@ func Close(w Wonka) error {
 	return closer.Close()
 }
 
-func (w *uberWonka) loadCertAndKeyFromConfig(ctx context.Context, cfg Config) error {
-	clientCert := cfg.WonkaClientCertPath
-	clientKey := cfg.WonkaClientKeyPath
-	if clientKey == "" || clientCert == "" {
-		return errors.New("Client cert and/or client key are not set in wonka.Config")
-	}
-	return w.loadCertAndKeyFromFiles(ctx, clientCert, clientKey)
-}
-
-func (w *uberWonka) loadCertAndKeyFromEnv(ctx context.Context) error {
+// todo(pmoody): consider removing the key and cert from disk.
+func (w *uberWonka) loadKeysFromEnv() error {
 	clientCert := os.Getenv("WONKA_CLIENT_CERT")
 	clientKey := os.Getenv("WONKA_CLIENT_KEY")
 	if clientKey == "" || clientCert == "" {
 		return errors.New("WONKA_CLIENT_CERT and/or WONKA_CLIENT_KEY not set")
 	}
-	return w.loadCertAndKeyFromFiles(ctx, clientCert, clientKey)
-}
 
-// todo(pmoody): consider removing the key and cert from disk.
-func (w *uberWonka) loadCertAndKeyFromFiles(ctx context.Context, clientCert, clientKey string) error {
 	certBytes, err := ioutil.ReadFile(clientCert)
 	if err != nil {
 		return fmt.Errorf("error reading certfile: %v", err)
@@ -365,14 +319,6 @@ func (w *uberWonka) loadCertAndKeyFromFiles(ctx context.Context, clientCert, cli
 	}
 
 	w.writeCertAndKey(cert, key)
-
-	// if we're enabled and this is a cert granting cert, we try to upgrade right now.
-	if !w.IsGloballyDisabled() && IsCertGrantingCert(cert) {
-		ctx, cancel := context.WithTimeout(ctx, 5*time.Second)
-		defer cancel()
-		return w.upgradeCGCert(ctx)
-	}
-
 	return nil
 }
 
@@ -423,7 +369,7 @@ func (w *uberWonka) askWonkadForKeys() error {
 
 	var repl WonkadReply
 	if err := json.Unmarshal(b, &repl); err != nil {
-		return fmt.Errorf("error unmarshalling reply from wonkad: %s", b)
+		return fmt.Errorf("error unmarshalling reply from wonkad: %v", err)
 	}
 
 	cert, err := UnmarshalCertificate(repl.Certificate)
@@ -436,132 +382,53 @@ func (w *uberWonka) askWonkadForKeys() error {
 		return fmt.Errorf("error parsing ec private key: %v", err)
 	}
 
-	w.writeCertAndKey(cert, key)
+	w.clientKeysMu.Lock()
+	w.certificate = cert
+	w.clientECC = key
+	w.clientKeysMu.Unlock()
 
 	return nil
 }
 
-// loadKeyAndUpgrade searches for clientECC in a variety of ways and upgrades to
-// a wonka certificate if needed. Also ensures the wonka cert will be refreshed.
-func (w *uberWonka) loadKeyAndUpgrade(ctx context.Context, cfg Config) error {
-	keyType, entityType, err := w.loadKey(ctx, cfg)
-	if err != nil {
-		return err
-	}
-
-	disabled := w.IsGloballyDisabled()
-	if keyType != CertificateKey {
-		err = w.upgradeToWonkaCert(ctx, entityType)
-		if err != nil {
-			log := w.log.With(zap.Error(err))
-			if disabled {
-				log.Warn("error upgrading to certificate but ignoring due to global disabled")
-				return nil
-			}
-			log.Error("error upgrading to certificate")
-			return err
-		}
-	}
-
-	w.log.Info("registering the wonka certificate for periodic update")
-	certRegEntry := certificateRegistrationRequest{
-		cert:      w.certificate,
-		key:       w.clientECC,
-		requester: w.httpRequester,
-		log:       w.log,
-	}
-
-	handle, err := w.certRepository.Register(certRegEntry)
-	if err != nil {
-		return fmt.Errorf("failed to register certificate: %v", err)
-	}
-
-	w.certRegHandle = handle
-	return nil
-}
-
-// loadKey searches for clientECC in a variety of ways.
-func (w *uberWonka) loadKey(ctx context.Context, cfg Config) (KeyType, EntityType, error) {
-	// first check to see if we have a configured cert and key
-	if cfg.WonkaClientCert != nil && cfg.WonkaClientKey != nil {
-		w.log.Info("successfully loaded private key",
-			zap.String("type", "certificate"), zap.String("source", "config"))
-
-		w.writeCertAndKey(cfg.WonkaClientCert, cfg.WonkaClientKey)
-
-		return CertificateKey, EntityTypeService, nil
-	}
-
-	// next check to see if we have a key and cert in config
-	cfgErr := w.loadCertAndKeyFromConfig(ctx, cfg)
-	if cfgErr == nil {
-		w.log.Info("successfully loaded private key",
-			zap.String("type", "certificate"),
-			zap.String("source", "config_path"),
-		)
-
-		return CertificateKey, EntityTypeService, nil
-	}
-	w.log.Info("unable to load ecc private key from config paths, trying to load from env.", zap.Error(cfgErr))
-
-	// next check to see if we have a key and cert in environment
-	envErr := w.loadCertAndKeyFromEnv(ctx)
+func (w *uberWonka) loadKey(ctx context.Context, cfg Config) (KeyType, error) {
+	// first check to see if we have a key in the environment
+	envErr := w.loadKeysFromEnv()
 	if envErr == nil {
 		w.log.Info("successfully loaded private key",
 			zap.String("type", "certificate"),
 			zap.String("source", "env"),
 		)
 
-		return CertificateKey, EntityTypeService, nil
+		go w.refreshWonkaCert(ctx, certRefreshPeriod)
+		return CertificateKey, nil
 	}
-	w.log.Info("unable to load ecc private key from env paths, trying to load from other config.", zap.Error(envErr))
+	w.log.Info("unable to load private key from env, trying to load from config.", zap.Error(envErr))
 
-	// next check to see if we have a configured old-style rsa pem
-	pemCfgErr := errors.New("no configured private key pem specified")
-	pathCfgErr := errors.New("no configured private key path specified")
-	if cfg.PrivateKeyPath != "" {
-		var rsaPriv *rsa.PrivateKey
-		rsaPriv, pemCfgErr = w.loadKeyFromPem([]byte(cfg.PrivateKeyPath))
-		if pemCfgErr == nil {
-			w.log.Info("successfully loaded private key",
-				zap.String("type", "static"),
-				zap.String("source", "config"),
-			)
-
-			w.clientKey = rsaPriv
-			w.writeECCKey(ECCFromRSA(rsaPriv))
-
-			return StaticKey, EntityTypeService, nil
-		}
-
-		rsaPriv, pathCfgErr = w.loadKeyFromPath(cfg.PrivateKeyPath)
-		if pathCfgErr == nil {
-			w.log.Info("successfully loaded private key",
-				zap.String("type", "file"),
-				zap.String("source", "config"),
-				zap.String("path", cfg.PrivateKeyPath),
-			)
-
-			w.clientKey = rsaPriv
-			w.writeECCKey(ECCFromRSA(rsaPriv))
-
-			return FileKey, EntityTypeService, nil
-		}
+	// next check to see if we have a configured key
+	var cfgErr error
+	w.clientKey, cfgErr = w.loadPrivateKey(cfg.PrivateKeyPath)
+	if cfgErr == nil {
+		w.log.Info("successfully loaded private key",
+			zap.String("type", "static"),
+			zap.String("source", "config"),
+			zap.String("path", cfg.PrivateKeyPath),
+		)
+		return StaticKey, w.initClientECC()
 	}
 
-	w.log.Info("unable to load rsa private key from config, trying personnel request.",
-		zap.NamedError("pem_error", pemCfgErr),
-		zap.NamedError("path_error", pathCfgErr),
-		zap.Any("sshAgent_is_nil", w.sshAgent == nil))
+	w.log.Info("unable to read private key, trying personnel request.",
+		zap.Error(cfgErr),
+		zap.Any("sshAgent_is_nil", w.sshAgent == nil),
+	)
 
 	var usshErr error
 	w.ussh, usshErr = w.usshUserCert()
 	if usshErr == nil {
-		eType := EntityTypeHost
-		w.log.Info("successfully loaded private key", zap.String("type", "ussh"),
-			zap.String("source", "ussh"))
+		w.log.Info("successfully loaded private key",
+			zap.String("type", "ussh"),
+			zap.String("source", "ussh"),
+		)
 		if w.ussh.CertType == ssh.UserCert {
-			eType = EntityTypeUser
 			// UBER_OWNER is set on laptops
 			if userName := os.Getenv("UBER_OWNER"); userName != "" {
 				if !strings.EqualFold(w.entityName, userName) {
@@ -572,10 +439,9 @@ func (w *uberWonka) loadKey(ctx context.Context, cfg Config) (KeyType, EntityTyp
 				}
 			}
 		}
-
-		return UsshKey, eType, nil
+		// might just need to init client ecc key here.
+		return UsshKey, w.generateSessionKeys()
 	}
-
 	w.log.Info("unable to read ussh user cert, asking wonkad for keys.", zap.Error(usshErr))
 
 	wonkadErr := w.askWonkadForKeys()
@@ -585,110 +451,94 @@ func (w *uberWonka) loadKey(ctx context.Context, cfg Config) (KeyType, EntityTyp
 			zap.String("source", "wonkad"),
 		)
 
-		return CertificateKey, EntityTypeService, nil
+		go w.refreshWonkaCert(ctx, certRefreshPeriod)
+		return CertificateKey, nil
 	}
 	w.log.Info("unable to get key from wonkad", zap.Error(wonkadErr))
 
-	// Try loading a private key from the default location
-	var defaultCfgErr error
-	var rsaPriv *rsa.PrivateKey
-	rsaPriv, defaultCfgErr = w.loadKeyFromPath(_defaultPrivateKeyPath)
-	if defaultCfgErr == nil {
-		w.log.Info("successfully loaded private key",
-			zap.String("type", "file"),
-			zap.String("source", "config"),
-			zap.String("path", _defaultPrivateKeyPath),
+	w.metrics.Counter("key-invalid").Inc(1)
+
+	return KeyInvalid, fmt.Errorf("load keys failed: (env: %v), (cfg: %v), (ussh: %v), (wonkad: %v)", envErr, cfgErr, usshErr, wonkadErr)
+}
+
+func (w *uberWonka) Admin(ctx context.Context, req AdminRequest) (err error) {
+	m := w.metrics.Tagged(map[string]string{"endpoint": "admin"})
+	stopWatch := m.Timer("time").Start()
+	defer stopWatch.Stop()
+	m.Counter("call").Inc(1)
+	defer func() {
+		name := "success"
+		if err != nil {
+			// TODO(jkline): Differentiate between 400ish client side failures
+			// and 500ish server side failures. Currently we don't get back the
+			// http response object so there is no firm way to tell.
+			name = "failure"
+		}
+		m.Counter(name).Inc(1)
+	}()
+
+	if w.verifyOnly {
+		return errVerifyOnly
+	}
+
+	if w.ussh == nil {
+		return errors.New("no ussh cert")
+	}
+
+	req.Ctime = time.Now().Unix()
+	req.Ussh = string(ssh.MarshalAuthorizedKey(w.ussh))
+	toSign, err := json.Marshal(req)
+	if err != nil {
+		return fmt.Errorf("marsalling admin request: %v", err)
+	}
+
+	sig, err := w.sshSignMessage(toSign)
+	if err != nil {
+		return fmt.Errorf("signing ssh message: %v", err)
+	}
+	req.Signature = base64.StdEncoding.EncodeToString(sig.Blob)
+	req.SignatureFormat = sig.Format
+
+	switch req.Action {
+	case DeleteEntity:
+		w.log.Debug("request to delete",
+			zap.Any("entity_to_delete", req.EntityName),
 		)
 
-		w.clientKey = rsaPriv
-		w.writeECCKey(ECCFromRSA(rsaPriv))
-
-		return FileKey, EntityTypeService, nil
-	}
-
-	w.metrics.Counter("key-invalid").Inc(1)
-	return KeyInvalid, EntityTypeInvalid, fmt.Errorf(
-		"load keys failed: (cfg: %v), (env: %v), (pem: %v), (path: %v), (ussh: %v), (wonkad: %v), (defaultCfg: %v)",
-		cfgErr, envErr, pemCfgErr, pathCfgErr, usshErr, wonkadErr, defaultCfgErr,
-	)
-}
-
-func (w *uberWonka) host() (string, error) {
-	if cert := w.readCertificate(); cert != nil {
-		return cert.Host, nil
-	}
-
-	if w.ussh != nil && w.ussh.CertType == ssh.HostCert {
-		return w.ussh.ValidPrincipals[0], nil
-	}
-
-	if w.sshAgent != nil {
-		if keys, err := w.sshAgent.List(); err == nil {
-			for _, k := range keys {
-				pubKey, err := ssh.ParsePublicKey(k.Blob)
-				if err != nil {
-					continue
-				}
-				cert, ok := pubKey.(*ssh.Certificate)
-				if ok && cert.CertType == ssh.HostCert {
-					return cert.ValidPrincipals[0], nil
-				}
+		var resp GenericResponse
+		if err := w.httpRequest(ctx, adminEndpoint, req, &resp); err != nil {
+			if resp.Result != "" {
+				err = fmt.Errorf("%s", resp.Result)
 			}
+			w.log.Error("https request error",
+				zap.Error(err),
+				zap.Any("action", req.Action),
+				zap.Any("entity_to_delete", req.EntityName),
+			)
+
+			return err
 		}
+		w.log.Debug("response", zap.Any("response", resp.Result))
+
+	default:
+		return fmt.Errorf("invalid admin action: %s", req.Action)
 	}
 
-	return os.Hostname()
-}
-
-func (w *uberWonka) upgradeToWonkaCert(ctx context.Context, eType EntityType) error {
-	hostname, err := w.host()
-	if err != nil {
-		return fmt.Errorf("error getting hostname: %v", err)
-	}
-
-	// if this is a pre-enrolled you might be tempted to just use the pre-set
-	// keypair for the certificate. This would be a mistake because it would mean
-	// that every instance of a service would have the same key.
-	cert, key, err := NewCertificate(CertEntityName(w.entityName),
-		CertEntityType(eType), CertHostname(hostname))
-	if err != nil {
-		return fmt.Errorf("error generating new certificate: %v", err)
-	}
-
-	err = w.CertificateSignRequest(ctx, cert, nil)
-	if err != nil {
-		return fmt.Errorf("error getting cert signed: %v", err)
-	}
-
-	w.writeCertAndKey(cert, key)
 	return nil
 }
 
-// initRedswitchReader initializes the reader that will be used to query for
-// global disabled status.
-func (w *uberWonka) initRedswitchReader() error {
-	pubKeys := make([]crypto.PublicKey, len(WonkaMasterPublicKeys))
-	for i := range WonkaMasterPublicKeys {
-		pubKeys[i] = WonkaMasterPublicKeys[i]
-	}
-
-	reader, err := redswitch.NewReader(
-		redswitch.WithLogger(w.log),
-		redswitch.WithMetrics(w.metrics),
-		redswitch.WithRecoveryNotification(w.globalDisableRecovery),
-		redswitch.WithPublicKeys(pubKeys...),
-	)
-	if err != nil {
-		return err
-	}
-
-	creader, ok := reader.(redswitch.CachelessReader)
+// initClientECC sets up the client ecdsa key based on the client's rsa private key.
+func (w *uberWonka) initClientECC() error {
+	k, ok := w.clientKey.(*rsa.PrivateKey)
 	if !ok {
-		return errors.New("failed to type assert redswitch.Reader to redswitch.CachelessReader")
+		return errors.New("not an rsa private key")
 	}
 
-	w.globalDisableReader = creader
-	return err
+	w.clientKeysMu.Lock()
+	defer w.clientKeysMu.Unlock()
+	w.clientECC = ECCFromRSA(k)
+
+	return nil
 }
 
 // initLogAndMetrics initializes the logger and metrics scope.
@@ -696,7 +546,7 @@ func (w *uberWonka) initRedswitchReader() error {
 // will be used so we don't force extra configuration on consumers.
 // Either way, logger will be namespaced to wonka and the metrics will be
 // scoped to component:wonka and the given entity name.
-func (w *uberWonka) initLogAndMetrics(cfg Config) {
+func (w *uberWonka) initLogAndMetrics(cfg Config) error {
 	ms := cfg.Metrics
 	l := cfg.Logger
 	if ms == nil {
@@ -705,28 +555,31 @@ func (w *uberWonka) initLogAndMetrics(cfg Config) {
 	if l == nil {
 		l = zap.L()
 	}
-	w.log = l.With(
-		zap.Namespace("wonka"),
-		zap.String("entity", w.entityName),
-		zap.String("version", LibraryVersion()),
-	)
+	w.log = l.With(zap.Namespace("wonka"), zap.String("entity", w.entityName))
 	w.metrics = ms.Tagged(map[string]string{
 		"component": "wonka",
 		"entity":    w.entityName,
-		// Override host for Wonka's scope in case caller set per-host metrics
-		// because Wonka already has large metric cardinality.
-		"host": "global",
+		"version":   Version,
 	})
+	return nil
 }
 
-// initTracer initializes a tracer.
-//
-// The tracer from config object will be used, if
+// initTracerAndHTTPClient initializes a tracer and an http client with an
+// appropriate tracing filter. The tracer from config object will be used, if
 // given. Otherwise opentracing.GlobalTracer will be used.
-func (w *uberWonka) initTracer(cfg Config) {
+func (w *uberWonka) initTracerAndHTTPClient(cfg Config) {
 	w.tracer = cfg.Tracer
 	if w.tracer == nil {
 		w.tracer = opentracing.GlobalTracer()
+	}
+	tracer := xhttp.Tracer{Tracer: w.tracer}
+	clientFilter := xhttp.ClientFilterFunc(tracer.TracedClient)
+	w.httpClient = &xhttp.Client{
+		// Client timeout is max upper bound. Set a lower timeout using ctx.
+		Client: http.Client{Timeout: 10 * time.Second},
+		// Explicitly set filter to avoi the default client filter with the
+		// default global tracer.
+		Filter: clientFilter,
 	}
 }
 
@@ -739,7 +592,7 @@ func (w *uberWonka) EntityName() string {
 func (w *uberWonka) Ping(ctx context.Context) error {
 	var in interface{}
 	var out interface{}
-	return w.httpRequester.Do(ctx, healthEndpoint, in, out)
+	return w.httpRequest(ctx, healthEndpoint, in, out)
 }
 
 // Update updates an existing enrollment.
@@ -817,6 +670,15 @@ func (w *uberWonka) EnrollEntity(ctx context.Context, e *Entity) (_ *Entity, err
 		m.Counter(name).Inc(1)
 	}()
 
+	if w.verifyOnly {
+		w.log.Error("cannot enroll entity in verifyonly mode",
+			zap.String("enrollee_entity", e.EntityName),
+			zap.Bool("verifyOnly", w.verifyOnly),
+		)
+
+		return nil, errVerifyOnly
+	}
+
 	enrollReq := EnrollRequest{Entity: e}
 	// try to include an engineering claim with this enroll request.
 	cr := ClaimRequest{
@@ -843,7 +705,7 @@ func (w *uberWonka) EnrollEntity(ctx context.Context, e *Entity) (_ *Entity, err
 	}
 
 	var resp EnrollResponse
-	err = w.httpRequester.Do(ctx, enrollEndpoint, enrollReq, &resp)
+	err = w.httpRequest(ctx, enrollEndpoint, enrollReq, &resp)
 	if err != nil {
 		return nil, fmt.Errorf("error from %s: %v", enrollEndpoint, err)
 	}
@@ -868,22 +730,13 @@ func (w *uberWonka) Lookup(ctx context.Context, entity string) (_ *Entity, err e
 	}()
 	w.log.Debug("lookup", zap.Any("requested_entity", entity))
 
-	var certBytes []byte
-	cert := w.readCertificate()
-	if cert == nil {
-		// a log.Warn() might seem excessive, but we should be upgrading everything
-		// to a wonkacert so this _is_ odd.
-		w.log.Warn("no certificate present",
-			zap.Any("requesting_entity", w.entityName),
-			zap.Any("requested_entity", entity))
-	} else {
-		certBytes, err = MarshalCertificate(*cert)
-		if err != nil {
-			certBytes = nil
-			w.log.Warn("error marshalling certifcate", zap.Error(err),
-				zap.Any("requesting_entity", w.entityName),
-				zap.Any("requested_entity", entity))
-		}
+	if w.verifyOnly {
+		w.log.Error("lookup requested in verify only mode",
+			zap.Any("requested_entity", entity),
+			zap.Error(errVerifyOnly),
+		)
+
+		return nil, errVerifyOnly
 	}
 
 	l := LookupRequest{
@@ -891,7 +744,6 @@ func (w *uberWonka) Lookup(ctx context.Context, entity string) (_ *Entity, err e
 		EntityName:      w.entityName,
 		RequestedEntity: entity,
 		Ctime:           int(time.Now().Unix()),
-		Certificate:     certBytes,
 		SigType:         SHA256,
 	}
 
@@ -908,8 +760,27 @@ func (w *uberWonka) Lookup(ctx context.Context, entity string) (_ *Entity, err e
 	}
 	l.Signature = base64.StdEncoding.EncodeToString(sig)
 
+	if w.ussh != nil {
+		l.USSHCertificate = string(ssh.MarshalAuthorizedKey(w.ussh))
+
+		toSign, err := json.Marshal(l)
+		if err != nil {
+			w.log.Error("marshalling lookup request for ussh signing", zap.Error(err))
+			return nil, err
+		}
+
+		sig, err := w.sshSignMessage(toSign)
+		if err != nil {
+			w.log.Error("ssh signing message", zap.Error(err))
+			return nil, err
+		}
+
+		l.USSHSignatureType = sig.Format
+		l.USSHSignature = base64.StdEncoding.EncodeToString(sig.Blob)
+	}
+
 	var resp LookupResponse
-	err = w.httpRequester.Do(ctx, lookupEndpoint, l, &resp)
+	err = w.httpRequest(ctx, lookupEndpoint, l, &resp)
 	if err != nil {
 		return nil, fmt.Errorf("lookup httpRequest: %v", err)
 	}
@@ -933,7 +804,7 @@ func (w *uberWonka) Lookup(ctx context.Context, entity string) (_ *Entity, err e
 		return &e, nil
 	}
 
-	return nil, errors.New("lookup signature does not verify")
+	return nil, fmt.Errorf("lookup signature does not verify")
 }
 
 // LastError is here for libwonka compatibility.
@@ -950,6 +821,75 @@ func (w *uberWonka) Certificate() *Certificate {
 // Will return a nil instance if an EntityCrypter cannot be instantiated.
 func (w *uberWonka) NewEntityCrypter() wonkacrypter.EntityCrypter {
 	return wonkacrypter.NewEntityCrypter(w.readECCKey())
+}
+
+// setWonkaURL sets the wonkaURL which is used for all web requests.
+func (w *uberWonka) setWonkaURL(ctx context.Context, wonkaMasterURL string) {
+	// If Wonkamaster URL is specified in the config
+	if wonkaMasterURL != "" {
+		w.wonkaURL = wonkaMasterURL
+		return
+	}
+
+	// If Wonkamaster host & port are specified in environment vars
+	h := os.Getenv("WONKA_MASTER_HOST")
+	p := os.Getenv("WONKA_MASTER_PORT")
+	if h != "" && p != "" {
+		w.wonkaURL = fmt.Sprintf("http://%s:%s", h, p)
+		return
+	}
+
+	// Discover the wonkamaster host & port
+	ctx, cancel := context.WithTimeout(ctx, 200*time.Millisecond)
+	defer cancel()
+	done := make(chan struct{})
+	wonkaURL := ""
+	var once sync.Once
+
+	go func() {
+		in := struct{}{}
+		out := struct{}{}
+		url := fmt.Sprintf("%s%s", prodURL, healthEndpoint)
+		if err := w.httpRequestWithURL(ctx, url, in, &out); err == nil {
+			once.Do(func() {
+				wonkaURL = prodURL
+				close(done)
+			})
+		}
+	}()
+
+	go func() {
+		in := struct{}{}
+		out := struct{}{}
+		url := fmt.Sprintf("%s%s", localhostURL, healthEndpoint)
+		if err := w.httpRequestWithURL(ctx, url, in, &out); err == nil {
+			once.Do(func() {
+				wonkaURL = localhostURL
+				close(done)
+			})
+		}
+	}()
+
+	select {
+	case <-done:
+	case <-ctx.Done():
+		// timed out or cancel called explicitly
+		wonkaURL = externalURL
+	}
+
+	w.wonkaURL = wonkaURL
+	return
+}
+
+// generateSessionKeys will set ClientRSA to a newly generated rsa key.
+func (w *uberWonka) generateSessionKeys() error {
+	var err error
+	w.clientKey, err = rsa.GenerateKey(rand.Reader, keySize)
+	if err != nil {
+		return fmt.Errorf("error generating rsa session key: %v", err)
+	}
+
+	return w.initClientECC()
 }
 
 // signMessage signs toSign with the client's private key using the given
@@ -972,40 +912,26 @@ func (w *uberWonka) signMessage(toSign string, hasher crypto.Hash) (string, erro
 	return base64.StdEncoding.EncodeToString(b), nil
 }
 
-// loadKeyFromPem returns the rsa.PrivateKey associated with the given pem.
-func (w *uberWonka) loadKeyFromPem(pemBytes []byte) (*rsa.PrivateKey, error) {
-	p, _ := pem.Decode(pemBytes)
-	if p == nil {
-		w.log.Debug("error decoding private key pem")
-		return nil, errors.New("invalid pem")
+// loadPrivateKey returns the rsa.PrivateKey associated with the given pem or
+// filename.
+func (w *uberWonka) loadPrivateKey(keyPath string) (*rsa.PrivateKey, error) {
+	if keyPath == "" {
+		keyPath = "./config/secrets.yaml"
 	}
-
-	k, err := x509.ParsePKCS1PrivateKey(p.Bytes)
-	if err != nil {
-		w.log.Debug("x509 parsing failed", zap.Error(err))
-
-		return nil, fmt.Errorf("error x509 parsing private key: %v", err)
-	}
-
-	return k, nil
-}
-
-// loadKeyFromPath returns the rsa.PrivateKey contained in the file with the
-// given filename.
-func (w *uberWonka) loadKeyFromPath(keyPath string) (*rsa.PrivateKey, error) {
 	w.log.Debug("loading private key", zap.Any("path", keyPath))
 
+	b := []byte(keyPath)
 	var privBytes []byte
 	var err error
 
 	privBytes, err = ioutil.ReadFile(keyPath)
-	if err != nil {
-		return nil, fmt.Errorf("error reading private key from file: %v", err)
+	if err == nil {
+		b = privBytes
 	}
 
 	if strings.EqualFold(filepath.Ext(keyPath), ".yaml") {
 		// it's a yaml file
-		k, err := w.parseLangleyYAML(privBytes)
+		privBytes, err = w.parseLangleyYAML(b)
 		if err != nil {
 			w.log.Debug("parsing key from yaml file",
 				zap.Error(err),
@@ -1014,18 +940,30 @@ func (w *uberWonka) loadKeyFromPath(keyPath string) (*rsa.PrivateKey, error) {
 
 			return nil, err
 		}
-		return k, nil
+	} else {
+		// otherwise it might be a pem file/string
+		p, _ := pem.Decode(b)
+		if p == nil {
+			w.log.Debug("error decoding pem", zap.Any("path", keyPath))
+			return nil, fmt.Errorf("no pem in private key file")
+		}
+		privBytes = p.Bytes
 	}
 
-	k, err := w.loadKeyFromPem(privBytes)
+	k, err := x509.ParsePKCS1PrivateKey(privBytes)
 	if err != nil {
-		return nil, fmt.Errorf("error parsing private key pem from file %s: %v", keyPath, err)
+		w.log.Info("x509 parsing failed",
+			zap.Error(err),
+			zap.Any("path", keyPath),
+		)
+
+		return nil, fmt.Errorf("error parsing private key pem bytes: %v", err)
 	}
 
 	return k, nil
 }
 
-func (w *uberWonka) parseLangleyYAML(yamlBytes []byte) (*rsa.PrivateKey, error) {
+func (w uberWonka) parseLangleyYAML(yamlBytes []byte) ([]byte, error) {
 	var b SecretsYAML
 	if err := yaml.Unmarshal(yamlBytes, &b); err != nil {
 		w.log.Debug("yaml unmarshal error", zap.Error(err))
@@ -1035,19 +973,13 @@ func (w *uberWonka) parseLangleyYAML(yamlBytes []byte) (*rsa.PrivateKey, error) 
 	keyStr := strings.TrimPrefix(b.WonkaPrivate, rsaPrivHeader)
 	keyStr = strings.TrimSuffix(keyStr, rsaPrivFooter)
 
-	// Content of langley yaml cannot be pem.Decoded because it doesn't contain
-	// any new lines.
 	pemBytes, err := base64.StdEncoding.DecodeString(keyStr)
 	if err != nil {
-		return nil, fmt.Errorf("error base64 decoding private key from langley yaml: %v", err)
+		w.log.Debug("base64 decode", zap.Error(err))
+		return nil, err
 	}
 
-	k, err := x509.ParsePKCS1PrivateKey(pemBytes)
-	if err != nil {
-		return nil, fmt.Errorf("error x509 parsing private key from langley yaml: %v", err)
-	}
-
-	return k, nil
+	return pemBytes, nil
 }
 
 // can these be replaced with atomic ops?
@@ -1058,28 +990,11 @@ func (w *uberWonka) readECCKey() *ecdsa.PrivateKey {
 	return k
 }
 
-func (w *uberWonka) writeECCKey(k *ecdsa.PrivateKey) {
-	w.clientKeysMu.Lock()
-	w.clientECC = k
-	w.clientKeysMu.Unlock()
-}
-
 func (w *uberWonka) readCertificate() *Certificate {
 	w.clientKeysMu.RLock()
-	cert := w.certificate
-	w.clientKeysMu.RUnlock()
-
-	if w.certRegHandle == nil {
-		return cert
-	}
-
-	newCert, key := w.certRegHandle.GetCertificateAndPrivateKey()
-	if !cert.equal(newCert) {
-		cert = newCert
-		w.writeCertAndKey(cert, key)
-	}
-
-	return cert
+	defer w.clientKeysMu.RUnlock()
+	c := w.certificate
+	return c
 }
 
 func (w *uberWonka) writeCertAndKey(c *Certificate, k *ecdsa.PrivateKey) {

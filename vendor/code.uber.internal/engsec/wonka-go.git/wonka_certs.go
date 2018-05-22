@@ -1,7 +1,6 @@
 package wonka
 
 import (
-	"bytes"
 	"context"
 	"crypto/ecdsa"
 	"crypto/elliptic"
@@ -22,7 +21,6 @@ import (
 
 	"go.uber.org/zap"
 	"golang.org/x/crypto/ssh"
-	"golang.org/x/crypto/ssh/agent"
 )
 
 // MarshalCertificate turns a Certificate into wire-format
@@ -64,13 +62,6 @@ func CertEntityName(s string) CertificateOption {
 	}
 }
 
-// CertEntityType sets the entity type for this cert
-func CertEntityType(e EntityType) CertificateOption {
-	return func(c *Certificate) {
-		c.Type = e
-	}
-}
-
 // CertTaskIDTag sets the task id tag.
 func CertTaskIDTag(t string) CertificateOption {
 	return func(c *Certificate) {
@@ -82,20 +73,6 @@ func CertTaskIDTag(t string) CertificateOption {
 func CertRuntimeTag(t string) CertificateOption {
 	return func(c *Certificate) {
 		c.Tags[TagRuntime] = t
-	}
-}
-
-// CertUSSHCertTag adds a ussh certificate to the tags.
-func CertUSSHCertTag(t string) CertificateOption {
-	return func(c *Certificate) {
-		c.Tags[TagUSSHCert] = t
-	}
-}
-
-// CertLaunchRequestTag adds a luanch request to the tags.
-func CertLaunchRequestTag(t string) CertificateOption {
-	return func(c *Certificate) {
-		c.Tags[TagLaunchRequest] = t
 	}
 }
 
@@ -212,41 +189,8 @@ func (c *Certificate) PublicKey() (*ecdsa.PublicKey, error) {
 
 // CheckCertificate validates a certificate. It checks that it was
 // signed by the wonkamaster and the current time falls inside the
-// validity period defined by the certificate, taking into account
-// a default clock slew.
+// validity period.
 func (c *Certificate) CheckCertificate() error {
-	if err := c.ValidateSignature(); err != nil {
-		return err
-	}
-
-	now := time.Now()
-	if c.NotYetValid(now.Add(clockSkew)) {
-		return errors.New("certificate is not yet valid")
-	}
-
-	if c.Expired(now.Add(-clockSkew)) {
-		return errors.New("certificate expired")
-	}
-
-	return nil
-}
-
-// Expired returns true if the certificate has expired relative to now.
-func (c *Certificate) Expired(now time.Time) bool {
-	expireTime := time.Unix(int64(c.ValidBefore), 0)
-	return now.After(expireTime)
-}
-
-// NotYetValid returns true if the cerficate is not yet valid relative to now.
-func (c *Certificate) NotYetValid(now time.Time) bool {
-	createTime := time.Unix(int64(c.ValidAfter), 0)
-	return now.Before(createTime)
-}
-
-// ValidateSignature checks that the certificate was
-// signed by the wonkamaster. It performs no additional
-// validation.
-func (c *Certificate) ValidateSignature() error {
 	certToVerify := *c
 	certToVerify.Signature = nil
 
@@ -259,18 +203,18 @@ func (c *Certificate) ValidateSignature() error {
 		return errors.New("wonkacert signature verification failure")
 	}
 
-	return nil
-}
-
-// Verify verifies that the given data was signed by the private key associated
-// with this certificate.
-func (c *Certificate) Verify(data, sig []byte) bool {
-	pubKey, err := c.PublicKey()
-	if err != nil {
-		return false
+	now := time.Now()
+	createTime := time.Unix(int64(c.ValidAfter), 0)
+	if now.Add(clockSkew).Before(createTime) {
+		return errors.New("certificate is not yet valid")
 	}
 
-	return wonkacrypter.New().Verify(data, sig, pubKey)
+	expireTime := time.Unix(int64(c.ValidBefore), 0)
+	if now.Add(-clockSkew).After(expireTime) {
+		return errors.New("certificate expired")
+	}
+
+	return nil
 }
 
 // SignCertificate signs a wonka certificate with the given private key.
@@ -291,63 +235,24 @@ func (c *Certificate) SignCertificate(signer *ecdsa.PrivateKey) error {
 	return nil
 }
 
-// equal tests if two certificates are equal without the overhead of
-// reflect.DeepEqual.
-func (c *Certificate) equal(rhs *Certificate) bool {
-	if c == rhs {
-		return true
-	}
-
-	// Evalute deep equality
-	eq := c.EntityName == rhs.EntityName &&
-		c.Host == rhs.Host &&
-		bytes.Equal(c.Key, rhs.Key) &&
-		c.Serial == rhs.Serial &&
-		bytes.Equal(c.Signature, rhs.Signature) &&
-		c.Type == rhs.Type &&
-		c.ValidAfter == rhs.ValidAfter &&
-		c.ValidBefore == rhs.ValidBefore
-
-	if !eq {
-		return false
-	}
-
-	// Finally test the tags
-	if len(c.Tags) != len(rhs.Tags) {
-		return false
-	}
-
-	for k, v := range c.Tags {
-		if v2, ok := rhs.Tags[k]; !ok || (ok && v != v2) {
-			return false
-		}
-	}
-
-	return true
-}
-
-func signCSRWithSSH(c *Certificate,
-	req *CertificateSignature,
-	sshAgent agent.Agent,
-	log *zap.Logger) (*CertificateSigningRequest, error) {
-
-	keys, err := sshAgent.List()
+func (w *uberWonka) signCSRWithSSH(c *Certificate, req *CertificateSignature) (*CertificateSigningRequest, error) {
+	keys, err := w.sshAgent.List()
 	if err != nil {
 		return nil, fmt.Errorf("error getting valid signers from ssh-agent: %v", err)
 	}
 
-	log.Debug("number of signers found", zap.Int("num", len(keys)))
+	w.log.Debug("number of signers found", zap.Int("num", len(keys)))
 	// TODO(pmoody): validate that this is a ussh certificate
 	var usshCert *ssh.Certificate
 	for _, k := range keys {
 		k, err := ssh.ParsePublicKey(k.Blob)
 		if err != nil {
-			log.Error("error parsing ssh key", zap.Error(err))
+			w.log.Error("error parsing ssh key", zap.Error(err))
 			continue
 		}
 		c, ok := k.(*ssh.Certificate)
 		if !ok {
-			log.Info("not a ussh certificate")
+			w.log.Info("not a ussh certificate")
 			continue
 		}
 		usshCert = c
@@ -382,7 +287,7 @@ func signCSRWithSSH(c *Certificate,
 		return nil, fmt.Errorf("error marshalling csr to sign: %v", err)
 	}
 
-	sig, err := sshAgent.Sign(usshCert, toSign)
+	sig, err := w.sshAgent.Sign(usshCert, toSign)
 	if err != nil {
 		return nil, fmt.Errorf("error signing csr: %v", err)
 	}
@@ -393,18 +298,20 @@ func signCSRWithSSH(c *Certificate,
 	return csr, nil
 }
 
-func signCSRWithCert(cert *Certificate, signingCert *Certificate, signingKey *ecdsa.PrivateKey) (*CertificateSigningRequest, error) {
+func (w *uberWonka) signCSRWithCert(cert *Certificate) (*CertificateSigningRequest, error) {
 	if cert == nil {
 		return nil, errors.New("certificate is nil")
 	}
 
+	signingCert := w.readCertificate()
+	signingKey := w.readECCKey()
 	if signingCert == nil || signingKey == nil {
 		return nil, fmt.Errorf("nil cert %v and/or nil key %v", signingCert == nil, signingKey == nil)
 	}
 
 	certBytes, err := MarshalCertificate(*cert)
 	if err != nil {
-		return nil, fmt.Errorf("error marshalling signing certificate for csr: %v", err)
+		return nil, fmt.Errorf("error marshalling new certificate for csr: %v", err)
 	}
 
 	signingCertBytes, err := MarshalCertificate(*signingCert)
@@ -431,90 +338,10 @@ func signCSRWithCert(cert *Certificate, signingCert *Certificate, signingKey *ec
 	return csr, nil
 }
 
-func (w *uberWonka) signCSRWithEnrolled(cert *Certificate) (*CertificateSigningRequest, error) {
-	if cert == nil {
-		return nil, errors.New("certificate is nil")
-	}
-
-	certBytes, err := MarshalCertificate(*cert)
-	if err != nil {
-		return nil, fmt.Errorf("error marshalling new certificate for csr: %v", err)
-	}
-
-	csr := &CertificateSigningRequest{
-		Certificate: certBytes,
-	}
-
-	toSign, err := json.Marshal(csr)
-	if err != nil {
-		return nil, fmt.Errorf("error marshalling csr for signing: %v", err)
-	}
-
-	csr.Signature, err = wonkacrypter.New().Sign(toSign, w.readECCKey())
-	if err != nil {
-		return nil, fmt.Errorf("error signing csr: %v", err)
-	}
-
-	return csr, nil
-}
-
-// signCertificate signs c using the signing certificate and signingKey.
-func signCertificate(ctx context.Context,
-	c, signingCert *Certificate,
-	signingKey *ecdsa.PrivateKey,
-	h *httpRequester) error {
-
-	if c == nil {
-		return errors.New("certificate is nil")
-	}
-
-	if c.EntityName == "" {
-		return errors.New("no entity name provided")
-	}
-
-	if c.Host == "" {
-		return errors.New("no hostname provided")
-	}
-
-	if signingCert == nil {
-		return errors.New("cannot refresh cert without existing valid cert")
-	}
-
-	if h == nil {
-		return errors.New("httpRequester is nil")
-	}
-
-	var csr *CertificateSigningRequest
-	var err error
-
-	// For refreshing a certificate we only ever need to sign with existing certificate.
-	csr, err = signCSRWithCert(c, signingCert, signingKey)
-	if err != nil {
-		return fmt.Errorf("error signing request: %v", err)
-	}
-
-	var reply CertificateSigningRequest
-	if err := h.Do(ctx, csrEndpoint, csr, &reply); err != nil {
-		return fmt.Errorf("error getting cert signed by wonkamaster: %v", err)
-	}
-
-	replyCert, err := UnmarshalCertificate(reply.Certificate)
-	if err != nil {
-		return fmt.Errorf("error unmarshalling certificate: %v", err)
-	}
-
-	*c = *replyCert
-
-	return c.CheckCertificate()
-}
-
 // CertificateSignRequest tries to get wonkamaster to sign the given certificate.
 // On success, nil is returned and the certificate passed in has the Signature field
 // updated. On error, the passed in certificate is un-modified and an error is returned.
-func (w *uberWonka) CertificateSignRequest(ctx context.Context,
-	c *Certificate,
-	req *CertificateSignature) error {
-
+func (w *uberWonka) CertificateSignRequest(ctx context.Context, c *Certificate, req *CertificateSignature) error {
 	if c == nil {
 		return errors.New("certificate is nil")
 	}
@@ -530,15 +357,11 @@ func (w *uberWonka) CertificateSignRequest(ctx context.Context,
 	var csr *CertificateSigningRequest
 	var err error
 
-	existingCert := w.readCertificate()
 	// we should probably only sign csr's with the ssh-agent if there's a launch request included.
 	if req != nil || w.sshAgent != nil {
-		csr, err = signCSRWithSSH(c, req, w.sshAgent, w.log)
-	} else if existingCert != nil {
-		csr, err = signCSRWithCert(c, existingCert, w.readECCKey())
+		csr, err = w.signCSRWithSSH(c, req)
 	} else {
-		// pre-enrolled
-		csr, err = w.signCSRWithEnrolled(c)
+		csr, err = w.signCSRWithCert(c)
 	}
 
 	if err != nil {
@@ -546,7 +369,7 @@ func (w *uberWonka) CertificateSignRequest(ctx context.Context,
 	}
 
 	var reply CertificateSigningRequest
-	if err := w.httpRequester.Do(ctx, csrEndpoint, csr, &reply); err != nil {
+	if err := w.httpRequest(ctx, csrEndpoint, csr, &reply); err != nil {
 		return fmt.Errorf("error getting cert signed by wonkamaster: %v", err)
 	}
 
@@ -560,27 +383,33 @@ func (w *uberWonka) CertificateSignRequest(ctx context.Context,
 	return c.CheckCertificate()
 }
 
-// ValidCertFromBytes returns the certificate unmarshalled certificate if it's good.
-func ValidCertFromBytes(b []byte) (*Certificate, error) {
-	cert, err := UnmarshalCertificate(b)
-	if err != nil {
-		return nil, fmt.Errorf("error unmarshalling cert reply: %v", err)
-	}
+func (w *uberWonka) refreshWonkaCert(ctx context.Context, period time.Duration) {
+	ticker := time.NewTicker(period)
+	defer ticker.Stop()
 
-	if err := cert.CheckCertificate(); err != nil {
-		return nil, fmt.Errorf("new certificate is invalid: %v", err)
+	for {
+		select {
+		case <-ctx.Done():
+			return
+		case <-ticker.C:
+			// every 30 minutes, try to refresh the cert by asking wonkamster first, and
+			// wonkad on localhost second.
+			if err := w.refreshCertFromWonkamaster(ctx); err != nil {
+				w.log.Warn("error refreshing from wonkamaster", zap.Error(err))
+				if err := w.refreshCertFromWonkad(); err != nil {
+					w.log.Warn("error refreshing from wonkad", zap.Error(err))
+				}
+			}
+		}
 	}
-
-	return cert, nil
 }
 
-func refreshCertFromWonkamaster(ctx context.Context,
-	signingCert *Certificate,
-	signingKey *ecdsa.PrivateKey,
-	h *httpRequester) (*Certificate, *ecdsa.PrivateKey, error) {
-
+// TODO(pmoody): extract the csr generation to a helper
+func (w *uberWonka) refreshCertFromWonkamaster(ctx context.Context) error {
+	signingCert := w.readCertificate()
+	signingKey := w.readECCKey()
 	if signingCert == nil || signingKey == nil {
-		return nil, nil, fmt.Errorf("nil cert %v and/or nil key %v", signingCert == nil,
+		return fmt.Errorf("nil cert %v and/or nil key %v", signingCert == nil,
 			signingKey == nil)
 	}
 
@@ -588,42 +417,32 @@ func refreshCertFromWonkamaster(ctx context.Context,
 	if !ok {
 		runtimeEnv = os.Getenv("UBER_RUNTIME_ENVIRONMENT")
 	}
-
 	cert, key, err := NewCertificate(
 		CertEntityName(signingCert.EntityName),
 		CertHostname(signingCert.Host),
 		CertTaskIDTag(signingCert.Tags[TagTaskID]),
 		CertRuntimeTag(runtimeEnv))
 	if err != nil {
-		return nil, nil, fmt.Errorf("error generating new certificate: %v", err)
+		return fmt.Errorf("error generating new certificate: %v", err)
 	}
 
 	// This method runs as a background refresh job in a go routine.
 	ctx, cancel := context.WithTimeout(ctx, 5*time.Second)
 	defer cancel()
 
-	if err := signCertificate(ctx, cert, signingCert, signingKey, h); err != nil {
-		return nil, nil, fmt.Errorf("error refreshing certificate: %v", err)
+	if err := w.CertificateSignRequest(ctx, cert, nil); err != nil {
+		return fmt.Errorf("error refreshing certificate: %v", err)
 	}
 
-	return cert, key, err
+	w.writeCertAndKey(cert, key)
+	return nil
 }
 
-// IsCertGrantingCert returns tre if this certificate can only be used to
-// request a fully-signed wonka certificate.
-func IsCertGrantingCert(cert *Certificate) bool {
-	if cert == nil {
-		return false
-	}
-
-	_, usshOk := cert.Tags[TagUSSHCert]
-	_, launchReqOk := cert.Tags[TagLaunchRequest]
-	return usshOk && launchReqOk
-}
-
-func refreshCertFromWonkad(cert *Certificate, key *ecdsa.PrivateKey) (*Certificate, *ecdsa.PrivateKey, error) {
+func (w *uberWonka) refreshCertFromWonkad() error {
+	key := w.readECCKey()
+	cert := w.readCertificate()
 	if cert == nil || key == nil {
-		return nil, nil, fmt.Errorf("nil cert %v and/or nil key %v", cert == nil, key == nil)
+		return fmt.Errorf("nil cert %v and/or nil key %v", cert == nil, key == nil)
 	}
 
 	taskID, ok := cert.Tags["TaskID"]
@@ -643,127 +462,63 @@ func refreshCertFromWonkad(cert *Certificate, key *ecdsa.PrivateKey) (*Certifica
 
 	toSign, err := json.Marshal(req)
 	if err != nil {
-		return nil, nil, fmt.Errorf("error marshalling msg to sign: %v", err)
+		return fmt.Errorf("error marshalling msg to sign: %v", err)
 	}
 
 	sig, err := wonkacrypter.New().Sign(toSign, key)
 	if err != nil {
-		return nil, nil, fmt.Errorf("error signing message: %v", err)
+		return fmt.Errorf("error signing message: %v", err)
 	}
 
 	req.Signature = []byte(base64.StdEncoding.EncodeToString(sig))
 	toWrite, err := json.Marshal(req)
 	if err != nil {
-		return nil, nil, fmt.Errorf("error marshalling msg to send to wonkad: %v", err)
+		return fmt.Errorf("error marshalling msg to send to wonkad: %v", err)
 	}
 
 	conn, err := net.Dial("tcp", WonkadTCPAddress)
 	if err != nil {
-		return nil, nil, fmt.Errorf("error connecting to wonkad: %v", err)
+		return fmt.Errorf("error connecting to wonkad: %v", err)
 	}
 
 	if _, err := conn.Write(toWrite); err != nil {
-		return nil, nil, fmt.Errorf("error writing request to wonkad: %v", err)
+		return fmt.Errorf("error writing request to wonkad: %v", err)
 	}
 
 	b, err := ioutil.ReadAll(conn)
 	if err != nil {
-		return nil, nil, fmt.Errorf("error reading reply from wonkad: %v", err)
+		return fmt.Errorf("error reading reply from wonkad: %v", err)
 	}
 
 	var repl WonkadReply
 	if err := json.Unmarshal(b, &repl); err != nil {
-		return nil, nil, fmt.Errorf("error unmarshalling reply from wonkad: %v", err)
+		return fmt.Errorf("error unmarshalling reply from wonkad: %v", err)
 	}
 
-	newCert, err := UnmarshalCertificate(repl.Certificate)
-	if err != nil {
-		return nil, nil, fmt.Errorf("error unmarshalling certificate: %v", err)
-	}
-
-	newKey, err := x509.ParseECPrivateKey(repl.PrivateKey)
-	if err != nil {
-		return nil, nil, fmt.Errorf("error parsing ec private key: %v", err)
-	}
-
-	return newCert, newKey, nil
-}
-
-// upgradeCGCert turns a cert-granting cert into a regular wonka cert.
-// we hold the lock all the way through this function to avoid any improable
-// race conditions where we're called twice.
-// this also means that we can't use any lock-grabbing helpers, and nothing that
-// we call can use any lock grabbing helpers.
-func (w *uberWonka) upgradeCGCert(ctx context.Context) error {
-	w.clientKeysMu.Lock()
-	defer w.clientKeysMu.Unlock()
-
-	if !IsCertGrantingCert(w.certificate) {
-		return nil
-	}
-
-	lr, err := unmarshalLaunchRequest(w.certificate.Tags[TagLaunchRequest])
-	if err != nil {
-		return err
-	}
-
-	taskID := lr.TaskID
-	if taskID == "" {
-		taskID = lr.InstID
-	}
-
-	cert, privKey, err := NewCertificate(CertHostname(lr.Hostname),
-		CertEntityName(lr.SvcID), CertTaskIDTag(taskID))
-	if err != nil {
-		return err
-	}
-
-	// we do this manually because we can't call CertificateSignRequest
-	// due to the lock requirements.
-	csr, err := signCSRWithCert(cert, w.certificate, w.clientECC)
-	if err != nil {
-		return fmt.Errorf("error signing upgrade cert: %v", err)
-	}
-
-	var reply CertificateSigningRequest
-	if err := w.httpRequester.Do(ctx, csrEndpoint, csr, &reply); err != nil {
-		return fmt.Errorf("error getting cert signed by wonkamaster: %v", err)
-	}
-
-	cert, err = UnmarshalCertificate(reply.Certificate)
+	cert, err = UnmarshalCertificate(repl.Certificate)
 	if err != nil {
 		return fmt.Errorf("error unmarshalling certificate: %v", err)
 	}
 
-	if err := cert.CheckCertificate(); err != nil {
-		return fmt.Errorf("certificate is invalid: %v", err)
+	key, err = x509.ParseECPrivateKey(repl.PrivateKey)
+	if err != nil {
+		return fmt.Errorf("error parsing ec private key: %v", err)
 	}
 
-	w.certificate = cert
-	w.clientECC = privKey
-
+	w.writeCertAndKey(cert, key)
 	return nil
 }
 
-func unmarshalLaunchRequest(req string) (*LaunchRequest, error) {
-	if req == "" {
-		return nil, errors.New("no launch request supplied")
-	}
-
-	reqBytes, err := base64.StdEncoding.DecodeString(req)
+// ValidCertFromBytes returns the certificate unmarshalled certificate if it's good.
+func ValidCertFromBytes(b []byte) (*Certificate, error) {
+	cert, err := UnmarshalCertificate(b)
 	if err != nil {
-		return nil, fmt.Errorf("error base64 decoding launch request: %v", err)
+		return nil, fmt.Errorf("error unmarshalling cert reply: %v", err)
 	}
 
-	var sig CertificateSignature
-	if err := json.Unmarshal(reqBytes, &sig); err != nil {
-		return nil, fmt.Errorf("error unmarshalling signature: %v", err)
+	if err := cert.CheckCertificate(); err != nil {
+		return nil, fmt.Errorf("new certificate is invalid: %v", err)
 	}
 
-	var lr LaunchRequest
-	if err := json.Unmarshal(sig.Data, &lr); err != nil {
-		return nil, fmt.Errorf("error json unmarshalling launch request: %v", err)
-	}
-
-	return &lr, nil
+	return cert, nil
 }

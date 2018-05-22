@@ -6,7 +6,6 @@ import (
 	"crypto/ecdsa"
 	"encoding/base64"
 	"encoding/json"
-	"errors"
 	"fmt"
 	"net/http"
 	"time"
@@ -37,7 +36,6 @@ type lookupHandler struct {
 	eccPrivateKey *ecdsa.PrivateKey
 	usshCAKeys    []ssh.PublicKey
 	host          string
-	certAuth      *common.CertAuthOverride
 }
 
 func (h lookupHandler) logAndMetrics() (*zap.Logger, tally.Scope) {
@@ -53,7 +51,6 @@ func newLookupHandler(cfg common.HandlerConfig) xhttp.Handler {
 		eccPrivateKey: cfg.ECPrivKey,
 		usshCAKeys:    cfg.Ussh,
 		host:          cfg.Host,
-		certAuth:      cfg.CertAuthenticationOverride,
 	}
 	return h
 }
@@ -87,104 +84,9 @@ func (h lookupHandler) verifyLookupSignature(pubKey crypto.PublicKey, req wonka.
 		}
 	}
 
-	h.log.Debug("trying to verify lookup signature")
 	if err := keys.VerifySignature(pubKey, req.Signature, req.SigType, string(toVerify)); err != nil {
 		h.log.Error("signature doesn't validate", zap.Error(err))
 		return err
-	}
-
-	return nil
-}
-
-func (h lookupHandler) verifyWonkaCertSignature(req wonka.LookupRequest) error {
-	toVerify := req
-	toVerify.Signature = ""
-	toVerifyBytes, err := json.Marshal(toVerify)
-	if err != nil {
-		return fmt.Errorf("error marshalling request to verify: %v", err)
-	}
-
-	sig, err := base64.StdEncoding.DecodeString(req.Signature)
-	if err != nil {
-		return fmt.Errorf("error unmarshalling signature: %v", err)
-	}
-
-	cert, err := authenticateCertificate(req.Certificate, req.EntityName, h.certAuth, h.log)
-	if err != nil {
-		return err
-	}
-
-	pubKey, err := cert.PublicKey()
-	if err != nil {
-		return fmt.Errorf("error extracting public key from certificate: %v", err)
-	}
-
-	if ok := wonkacrypter.New().Verify(toVerifyBytes, sig, pubKey); !ok {
-		return errors.New("certificate signature does not verify")
-	}
-
-	h.log.Debug("certificate lookup signature is valid")
-
-	return nil
-}
-
-func (h lookupHandler) verifyUsshSignature(req wonka.LookupRequest) error {
-	h.log.Debug("non-enrolled entity performing lookup")
-
-	cert, err := wonkassh.CertFromRequest(req.USSHCertificate, h.usshCAKeys)
-	if err != nil {
-		return errors.New(wonka.LookupInvalidUSSHCert)
-	}
-
-	toVerify := []byte(fmt.Sprintf("%s<%d>%s|%s", req.EntityName, req.Ctime, req.RequestedEntity,
-		req.USSHCertificate))
-
-	if req.Version == wonka.SignEverythingVersion {
-		verifyReq := req
-		verifyReq.USSHSignature = ""
-		verifyReq.USSHSignatureType = ""
-		toVerify, err = json.Marshal(verifyReq)
-		if err != nil {
-			return errors.New(wonka.DecodeError)
-		}
-	}
-
-	h.log.Debug("verify ussh signature", zap.Any("toVerify", toVerify))
-
-	err = wonkassh.VerifyUSSHSignature(cert, string(toVerify), req.USSHSignature, req.USSHSignatureType)
-	if err != nil {
-		return errors.New(wonka.LookupInvalidUSSHSignature)
-	}
-
-	return validTime(req.Ctime, 30*time.Second)
-}
-
-func (h lookupHandler) verifyEnrolled(ctx context.Context, req wonka.LookupRequest) error {
-	requestorEntity, err := h.db.Get(ctx, req.EntityName)
-	if err != nil {
-		return errors.New(wonka.LookupEntityUnknown)
-	}
-
-	var pubKey crypto.PublicKey
-	switch req.Version {
-	case wonka.SignEverythingVersion:
-		pubKey, err = wonka.KeyFromCompressed(requestorEntity.ECCPublicKey)
-	default:
-		pubKey, err = keys.ParsePublicKey(requestorEntity.PublicKey)
-	}
-
-	if err != nil {
-		// since the public key comes from the database any problems are
-		// server's fault.
-		return errors.New(wonka.LookupServerError)
-	}
-
-	if err := h.verifyLookupSignature(pubKey, req); err != nil {
-		return errors.New(wonka.ResultRejected)
-	}
-
-	if err := validTime(req.Ctime, lookupDuration); err != nil {
-		return errors.New(wonka.LookupExpired)
 	}
 
 	return nil
@@ -197,23 +99,75 @@ func (h lookupHandler) processLookupRequest(ctx context.Context, req wonka.Looku
 		zap.Any("entity", req.EntityName),
 		zap.Any("requested_entity", req.RequestedEntity),
 	)
-
 	// first lookup the entity making the request. we do this so we can
 	// verify the signature of the request.
-	if len(req.Certificate) > 0 {
-		if err := h.verifyWonkaCertSignature(req); err != nil {
-			writeResponse(w, h, err, wonka.LookupInvalidSignature, http.StatusBadRequest)
+	if req.USSHSignature != "" && req.USSHCertificate != "" {
+		h.log.Debug("non-enrolled entity performing lookup")
+
+		cert, err := wonkassh.CertFromRequest(req.USSHCertificate, h.usshCAKeys)
+		if err != nil {
+			writeResponse(w, h, err, wonka.LookupInvalidUSSHCert, http.StatusNotFound)
 			return
 		}
-	} else if req.USSHSignature != "" && req.USSHCertificate != "" {
-		if err := h.verifyUsshSignature(req); err != nil {
-			writeResponse(w, h, err, wonka.ResultRejected, http.StatusBadRequest)
+
+		toVerify := []byte(fmt.Sprintf("%s<%d>%s|%s", req.EntityName, req.Ctime, req.RequestedEntity,
+			req.USSHCertificate))
+
+		if req.Version == wonka.SignEverythingVersion {
+			verifyReq := req
+			verifyReq.USSHSignature = ""
+			verifyReq.USSHSignatureType = ""
+			toVerify, err = json.Marshal(verifyReq)
+			if err != nil {
+				writeResponse(w, h, err, wonka.DecodeError, http.StatusBadRequest)
+				return
+			}
+		}
+
+		h.log.Debug("verify ussh signature", zap.Any("toVerify", toVerify))
+
+		if err := wonkassh.VerifyUSSHSignature(cert, string(toVerify), req.USSHSignature,
+			req.USSHSignatureType); err != nil {
+			writeResponse(w, h, err, wonka.LookupInvalidUSSHSignature, http.StatusBadRequest)
+			return
+		}
+
+		if err := validTime(req.Ctime, 30*time.Second); err != nil {
+			writeResponse(w, h, err, wonka.LookupExpired, http.StatusBadRequest)
 			return
 		}
 	} else {
-		if err := h.verifyEnrolled(ctx, req); err != nil {
-			writeResponse(w, h, err, wonka.ResultRejected, http.StatusBadRequest)
+		requestorEntity, err := h.db.Get(ctx, req.EntityName)
+		if err != nil {
+			writeResponseForWonkaDBError(w, h, err, "lookup")
 			return
+		}
+
+		var pubKey crypto.PublicKey
+		switch req.Version {
+		case wonka.SignEverythingVersion:
+			pubKey, err = wonka.KeyFromCompressed(requestorEntity.ECCPublicKey)
+		default:
+			pubKey, err = keys.ParsePublicKey(requestorEntity.PublicKey)
+		}
+
+		if err != nil {
+			// since the public key comes from the database any problems are
+			// server's fault.
+			writeResponse(w, h, err, wonka.LookupServerError, http.StatusInternalServerError)
+			return
+		}
+
+		if err := h.verifyLookupSignature(pubKey, req); err != nil {
+			writeResponse(w, h, err, wonka.ResultRejected, http.StatusForbidden)
+			return
+		}
+
+		if req.Ctime != 0 {
+			if err := validTime(req.Ctime, lookupDuration); err != nil {
+				writeResponse(w, h, err, wonka.LookupExpired, http.StatusBadRequest)
+				return
+			}
 		}
 	}
 

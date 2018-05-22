@@ -19,10 +19,12 @@ import (
 	"golang.org/x/crypto/ssh"
 )
 
-var cachePeriod = 24 * time.Hour
+var (
+	errInvalidNum = errors.New("invalid number")
+	errExpired    = errors.New("expired key")
+	cachePeriod   = 24 * time.Hour
+)
 
-// Encrypt encrypts data for a particular entity.
-// Deprecated
 func (w *uberWonka) Encrypt(ctx context.Context, plainText []byte, entity string) ([]byte, error) {
 	remotePublic, err := w.entityPubKey(ctx, entity)
 	if err != nil {
@@ -37,8 +39,6 @@ func (w *uberWonka) Encrypt(ctx context.Context, plainText []byte, entity string
 	return wonkacrypter.New().Encrypt(plainText, w.readECCKey(), remotePublic)
 }
 
-// Decrypt decrypts data encrypted by a particular entity
-// Deprecated
 func (w *uberWonka) Decrypt(ctx context.Context, cipherText []byte, entity string) ([]byte, error) {
 	remotePublic, err := w.entityPubKey(ctx, entity)
 	if err != nil {
@@ -54,12 +54,10 @@ func (w *uberWonka) Decrypt(ctx context.Context, cipherText []byte, entity strin
 
 }
 
-// Sign signs data such that the signature can be verified has having come from us.
 func (w *uberWonka) Sign(data []byte) ([]byte, error) {
 	return wonkacrypter.New().Sign(data, w.readECCKey())
 }
 
-// Verify verifies that the given data was signed by the named entity.
 func (w *uberWonka) Verify(ctx context.Context, data, sig []byte, entity string) bool {
 	remotePublic, err := w.entityPubKey(ctx, entity)
 	if err != nil {

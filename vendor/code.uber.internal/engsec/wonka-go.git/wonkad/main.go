@@ -5,9 +5,6 @@ import (
 	"fmt"
 	"net"
 
-	"github.com/uber-go/tally"
-	"golang.org/x/crypto/ssh/agent"
-
 	"code.uber.internal/engsec/wonka-go.git"
 
 	"go.uber.org/zap"
@@ -26,8 +23,6 @@ type wonkad struct {
 	unixListener net.Listener
 	tcpListener  net.Listener
 	log          *zap.Logger
-	wonka        wonka.Wonka
-	host         string
 }
 
 func main() {
@@ -46,16 +41,7 @@ func main() {
 
 	zap.ReplaceGlobals(log)
 
-	uwonka, err := createWonka(log)
-	if err != nil {
-		log.Fatal("creating wonka", zap.Error(err))
-	}
-	defer wonka.Close(uwonka)
-	w := &wonkad{
-		log:   log,
-		wonka: uwonka,
-		host:  uwonka.EntityName(),
-	}
+	w := &wonkad{log: log}
 
 	if err := w.setupListeners(*unixSocket, *loopbackAddr); err != nil {
 		w.log.Fatal("setting up listeners", zap.Error(err))
@@ -64,32 +50,4 @@ func main() {
 	if err := w.listenAndServe(); err != nil {
 		log.Fatal("wonkad failed", zap.Error(err))
 	}
-}
-
-func createWonka(log *zap.Logger) (wonka.Wonka, error) {
-	log.Debug("reading sshd config", zap.Any("sshd_config", sshdConfig))
-	cert, privKey, err := usshHostCert(log, *sshdConfig)
-	if err != nil {
-		return nil, fmt.Errorf("error loading host key: %v", err)
-	}
-
-	log.Debug("starting ssh agent")
-	a := agent.NewKeyring()
-	if err := a.Add(agent.AddedKey{PrivateKey: privKey, Certificate: cert}); err != nil {
-		return nil, fmt.Errorf("error adding keys to agent: %v", err)
-	}
-
-	// now we're ready to talk to wonka.
-	host := cert.ValidPrincipals[0]
-	cfg := wonka.Config{
-		EntityName: host,
-		Agent:      a,
-		Logger:     log,
-		Metrics:    tally.NoopScope,
-	}
-	w, err := wonka.Init(cfg)
-	if err != nil {
-		return nil, fmt.Errorf("error initializing wonka: %v", err)
-	}
-	return w, nil
 }

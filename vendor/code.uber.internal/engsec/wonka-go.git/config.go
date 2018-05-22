@@ -6,10 +6,11 @@ import (
 	"sync"
 	"time"
 
-	"code.uber.internal/engsec/wonka-go.git/redswitch"
+	"code.uber.internal/engsec/wonka-go.git/internal/xhttp"
 
 	opentracing "github.com/opentracing/opentracing-go"
 	"github.com/uber-go/tally"
+	"go.uber.org/atomic"
 	"go.uber.org/zap"
 	"golang.org/x/crypto/ssh"
 	"golang.org/x/crypto/ssh/agent"
@@ -21,17 +22,29 @@ type KeyType int
 const (
 	// KeyInvalid is an error
 	KeyInvalid KeyType = iota
-	// StaticKey means the private key is directly contained in the
-	// configuration itself.
+	// StaticKey is a key loaded from either langley or from a
+	// wonka configuration object.
 	StaticKey
 	// UsshKey is a key based on the ussh user certificate.
 	UsshKey
 	// CertificateKey is a wonka Certificate and key.
 	CertificateKey
-	// FileKey means configuration contained a path to a file containing the
-	// key. Possibly encoded in a yaml file loaded from langley.
-	FileKey
 )
+
+func keyNameFromType(k KeyType) string {
+	switch k {
+	case KeyInvalid:
+		return "key invalid"
+	case StaticKey:
+		return "static key"
+	case UsshKey:
+		return "ussh key"
+	case CertificateKey:
+		return "certificate key"
+	default:
+		return "unknown"
+	}
+}
 
 type entityKey struct {
 	ctime time.Time
@@ -45,6 +58,11 @@ type uberWonka struct {
 	tracer  opentracing.Tracer
 
 	entityName string
+	publicKey  string
+	privateKey string
+
+	homeDirectory string
+	location      string
 
 	clientKey crypto.PrivateKey
 	ussh      *ssh.Certificate
@@ -52,39 +70,29 @@ type uberWonka struct {
 	// access to these two must be protected
 	clientECC    *ecdsa.PrivateKey
 	certificate  *Certificate
-	clientKeysMu sync.RWMutex
+	clientKeysMu *sync.RWMutex
 
 	sshAgent agent.Agent
 
 	cachedKeys   map[string]entityKey
-	cachedKeysMu sync.RWMutex
+	cachedKeysMu *sync.RWMutex
 
-	httpRequester     *httpRequester
-	wonkaURLRequested string
+	httpClient   *xhttp.Client
+	wonkaURL     string
+	verifyOnly   bool
+	destRequires []string
 
 	// we can use a sync.Map eventually
-	derelicts              map[string]time.Time
-	derelictsTimer         *time.Timer
-	derelictsRefreshPeriod time.Duration
-	derelictsLock          sync.RWMutex
+	derelicts     map[string]time.Time
+	derelictsLock *sync.RWMutex
 
-	// globally disabled switch
-	globalDisableReader   redswitch.CachelessReader
-	globalDisableRecovery chan time.Time
+	// isGloballyDisabled is true if wonka is disabled
+	isGloballyDisabled *atomic.Bool
 
 	implicitClaims []string
 
 	// cancel is called when the user calls wonka.Close(w)
 	cancel func()
-
-	// certRepository is a reference to the global certificate
-	// repository.
-	certRepository certificateRegistry
-
-	// certRegHandle is the handle returned from the certRepository
-	// after we have registered our certificate with it. It is required
-	// for reading updates and for eventual unregistration.
-	certRegHandle *certificateRegistrationHandle
 }
 
 // SecretsYAML has the wonka public and private keys.
@@ -99,14 +107,16 @@ type Config struct {
 	EntityName string
 	// EntityLocation is deprecated. It used to describe where an entity
 	// could be found, if wonkamster were acting as a directory service.
-	// Deprecated: EntityLocation is unused.
 	EntityLocation string
 	// PrivateKeyPath is either the pem bytes of the rsa private key, or
 	// where the private key can be found. If it starts with a "/", it's
 	// it's treated as a path, otherwise it's treated as pem bytes.
 	// currently: "/langley/current/<entity name>/wonka_private.yaml"
 	PrivateKeyPath string
-	// Deprecated: DestinationRequires is unused.
+	// DestinationRequires is the set of claims required. By default, this
+	// is set to an entity's own name, but it could contain other names if
+	// an entity wants to be able to accept claims for other entities. It's
+	// also used for claim chain validation.
 	DestinationRequires []string
 	// Wonka client will create a new metrics scope as a child of Metrics and
 	// tagged with component:wonka. Optional.
@@ -120,26 +130,9 @@ type Config struct {
 	Agent agent.Agent
 	// WonkaMasterURL is the preferred protocol:hostname:port used for calls to the Wonka Master.
 	WonkaMasterURL string
+
 	// ImplicitClaims are claims that we always ask for.
 	ImplicitClaims []string
-	// WonkaClientCert is a wonka certificate
-	WonkaClientCert *Certificate
-	// WonkaClientKey is a wonka key
-	WonkaClientKey *ecdsa.PrivateKey
-	// WonkaMasterPublicKeys is a slice of public keys for wonkamaster
-	WonkaMasterPublicKeys []*ecdsa.PublicKey
-
-	// WonkaClientCertPath is the file path of the wonka client certificate.
-	// The file should contain a JSON-encoded Certificate type as defined below.
-	//
-	// Note: This option is prioritized over the WONKA_CLIENT_CERT environment variable.
-	WonkaClientCertPath string
-
-	// WonkaClientKeyPath is the file path of the wonka client key.
-	// The file should contain a DER-encoded EC private key, further encoded into base64.
-	//
-	// Note: This option is prioritized over the WONKA_CLIENT_KEY environment variable.
-	WonkaClientKeyPath string
 }
 
 // EntityType describes the type of entity for which a claim or certificate
@@ -148,11 +141,8 @@ type Config struct {
 type EntityType int
 
 const (
-	// EntityTypeInvalid represents an error finding the entity type.
-	// Claims and certificates cannot be issued.
-	EntityTypeInvalid EntityType = iota
-	// EntityTypeService is a service, eg rt-api
-	EntityTypeService
+	// EntityTypeService is a service, eg rtapi
+	EntityTypeService EntityType = iota
 	// EntityTypeUser is an employee, eg pmoody@uber.com
 	EntityTypeUser
 	// EntityTypeHost is a host, eg engsec01-sjc1.prod.uber.internal
@@ -186,17 +176,6 @@ type Certificate struct {
 	Tags map[string]string `json:"tags,omitempty"`
 	// Signature is a signature calculated over the certificate using wonkamaster's private key.
 	Signature []byte `json:"signature,omitempty"`
-}
-
-// Cookie is a wonka authentication cookie. It's signed by the private key associated with
-// the included Certificate. The certificate chains back to wonka master.
-type Cookie struct {
-	Destination string       `json:"d,omitempty"`
-	Version     string       `json:"v,omitempty"`
-	Serial      uint64       `json:"s,omitempty"`
-	Certificate *Certificate `json:"c,omitempty"`
-	Ctime       uint64       `json:"t,omitempty"`
-	Signature   []byte       `json:"sig,omitempty"`
 }
 
 // CertificateSignature is signature that includes the cert that
@@ -384,7 +363,6 @@ type LookupRequest struct {
 	USSHSignatureType string `json:"ussh_sigtype,omitempty"`
 	USSHSignature     string `json:"ussh_signature,omitempty"`
 	USSHCertificate   string `json:"ussh_certificate,omitempty"`
-	Certificate       []byte `json:"certificate,omitempty"`
 }
 
 // LookupResponse is the wonkmaseter reply to a Lookup() request
@@ -411,8 +389,6 @@ type ResolveRequest struct {
 // DisableMessage is signed by wonkamaster and put as a txt record in a json blob
 // under uber.com. It's used to globally disable wonka for some period of time.
 // This is a hack and will go away when flipr supports disabling galileo.
-//
-// Deprecated: use redswitch.DisableMessage instead.
 type DisableMessage struct {
 	Ctime      int64  `json:"ctime,omitempty"`
 	Etime      int64  `json:"etime,omitempty"`
@@ -452,8 +428,6 @@ const (
 	InvalidPublicKey = "REJECTED_INVALID_PUBLICKEY"
 	// InternalError can be returned when wonkamaster barfs for some reason
 	InternalError = "WONKA_INTERNAL_ERROR"
-	// GatewayError is returned when one of wonkamaster's service dependencies is unavailable
-	GatewayError = "WONKA_GATEWAY_ERROR"
 	// ErrTimeWindow can be returned when there is an error with the time stamp on the request
 	// being outside of the allowed skew.
 	ErrTimeWindow = "ERROR_OUTSIDE_TIME_WINDOW"
@@ -556,10 +530,6 @@ const (
 	TagTaskID = "TaskID"
 	// TagRuntime is the runtime environment of a given task, for example "production" or "staging".
 	TagRuntime = "Runtime"
-	// TagUSSHCert is the ussh cert of the host where a given task was launched.
-	TagUSSHCert = "USSHCertificate"
-	// TagLaunchRequest is the launch request for a given task.
-	TagLaunchRequest = "LaunchRequest"
 )
 
 var (

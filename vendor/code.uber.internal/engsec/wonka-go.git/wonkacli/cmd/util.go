@@ -64,7 +64,6 @@ func wonkadRequest(path string, req wonka.WonkadRequest) (wonka.WonkadReply, err
 	if err != nil {
 		return repl, fmt.Errorf("error contacting wonkad: %v", err)
 	}
-	defer conn.Close()
 
 	toWrite, err := json.Marshal(req)
 	if err != nil {

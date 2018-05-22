@@ -25,21 +25,14 @@ type usshCheck struct {
 	hostCB ssh.HostKeyCallback
 }
 
-func (w *uberWonka) connectToSSHAgent() error {
-	agentSock, err := net.Dial("unix", os.Getenv("SSH_AUTH_SOCK"))
-	if err != nil {
-		return fmt.Errorf("error connecting to ssh agent: %v", err)
-	}
-	w.sshAgent = agent.NewClient(agentSock)
-	return nil
-}
-
 func (w *uberWonka) sshSignMessage(toSign []byte) (*ssh.Signature, error) {
 	w.log.Debug("trying to sign message with ssh-agent")
 	if w.sshAgent == nil {
-		if err := w.connectToSSHAgent(); err != nil {
-			return nil, err
+		agentSock, err := net.Dial("unix", os.Getenv("SSH_AUTH_SOCK"))
+		if err != nil {
+			return nil, fmt.Errorf("error connecting to ssh agent: %v", err)
 		}
+		w.sshAgent = agent.NewClient(agentSock)
 	}
 
 	k, err := usshCertWithAgent(w.log, w.sshAgent)
@@ -65,9 +58,12 @@ func (w *uberWonka) sshSignMessage(toSign []byte) (*ssh.Signature, error) {
 // this should be the *only* ussh cert on the agent.
 func (w *uberWonka) usshUserCert() (*ssh.Certificate, error) {
 	if w.sshAgent == nil {
-		if err := w.connectToSSHAgent(); err != nil {
-			return nil, err
+		agentSock, err := net.Dial("unix", os.Getenv("SSH_AUTH_SOCK"))
+		if err != nil {
+			// here we look to see if we can find a host certificate
+			return nil, fmt.Errorf("couldn't connect to agent: %v", err)
 		}
+		w.sshAgent = agent.NewClient(agentSock)
 	}
 	return usshCertWithAgent(w.log, w.sshAgent)
 }
@@ -155,10 +151,6 @@ func isUsshCert(log *zap.Logger, key *agent.Key, certCheck usshCheck) bool {
 // certFromAgentKey returns the unmarshalled ssh certificate from
 // the given ssh key.
 func certFromAgentKey(log *zap.Logger, k *agent.Key) (*ssh.Certificate, error) {
-	if k == nil {
-		return nil, fmt.Errorf("nil key pointer")
-	}
-
 	pubKey, err := ssh.ParsePublicKey(k.Marshal())
 	if err != nil {
 		return nil, fmt.Errorf("parsing key: %v", err)

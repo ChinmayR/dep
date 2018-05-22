@@ -12,8 +12,10 @@ import (
 
 	wonka "code.uber.internal/engsec/wonka-go.git"
 	"code.uber.internal/engsec/wonka-go.git/wonkacrypter"
+	"github.com/uber-go/tally"
 
 	"go.uber.org/zap"
+	"golang.org/x/crypto/ssh/agent"
 )
 
 // verifySignature verifies the signature on a certificate refresh message
@@ -48,40 +50,68 @@ func requestClaim(ctx context.Context, w wonka.Wonka, req wonka.WonkadRequest) (
 	return clm, fmt.Errorf("error requesting claim: %v", err)
 }
 
-func (w *wonkad) handleWonkaRequest(ctx context.Context, req wonka.WonkadRequest) (*wonka.Certificate, *ecdsa.PrivateKey, *wonka.Claim, error) {
+func handleWonkaRequest(ctx context.Context, log *zap.Logger, req wonka.WonkadRequest) (*wonka.Certificate, *ecdsa.PrivateKey, *wonka.Claim, error) {
+	log.Debug("reading sshd config", zap.Any("sshd_config", sshdConfig))
+	cert, privKey, err := usshHostCert(log, *sshdConfig)
+	if err != nil {
+		return nil, nil, nil, fmt.Errorf("error loading host key: %v", err)
+	}
+
+	log.Debug("starting ssh agent")
+	a := agent.NewKeyring()
+	if err := a.Add(agent.AddedKey{PrivateKey: privKey, Certificate: cert}); err != nil {
+		return nil, nil, nil, fmt.Errorf("error adding keys to agent: %v", err)
+	}
+
+	// now we're ready to talk to wonka.
+	host := cert.ValidPrincipals[0]
+	log.Info("trying to get a claim",
+		zap.String("hostname", host),
+		zap.String("service", req.Service),
+	)
+	cfg := wonka.Config{
+		EntityName: host,
+		Agent:      a,
+		Logger:     zap.L(),
+		Metrics:    tally.NoopScope,
+	}
+
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+
+	w, err := wonka.InitWithContext(ctx, cfg)
+	if err != nil {
+		return nil, nil, nil, fmt.Errorf("error initializing wonka: %v", err)
+	}
+
 	// TODO(pmoody): find a better way to do this.
 	// request a claim for some process running on the host, or ask wonkamaster
 	// if this task+taskid should be running on this host.
 	if req.Destination != "" {
-		w.log.Info("trying to get a claim",
-			zap.String("hostname", w.host),
-			zap.String("service", req.Service),
-		)
-		claim, err := requestClaim(ctx, w.wonka, req)
+		claim, err := requestClaim(ctx, w, req)
 		if err != nil {
-			w.log.Error("error requesting claim", zap.Error(err))
+			log.Error("error requesting claim", zap.Error(err))
 			return nil, nil, nil, fmt.Errorf("marshalling claim: %v", err)
 		}
 		return nil, nil, claim, nil
 	} else if req.Service != "" {
 		if req.TaskID == "" {
-			w.log.Error("no task id")
-			// ugly hack to account for cases where a process does not provide a task id
-			req.TaskID = fmt.Sprintf("%s-%s", w.host, req.Service)
+			log.Error("no task id")
+			return nil, nil, nil, errors.New("no task id in request")
 		}
 
 		// fill out the certificate
 		cert, privKey, err := wonka.NewCertificate(
 			wonka.CertEntityName(req.Service),
-			wonka.CertHostname(w.host),
+			wonka.CertHostname(host),
 			wonka.CertTaskIDTag(req.TaskID))
 		if err != nil {
-			w.log.Error("error generating certificate", zap.Error(err))
+			log.Error("error generating certificate", zap.Error(err))
 			return nil, nil, nil, fmt.Errorf("error generating cert: %v", err)
 		}
 
-		if err := w.wonka.CertificateSignRequest(ctx, cert, nil); err != nil {
-			w.log.Error("error requesting certificate", zap.Error(err))
+		if err := w.CertificateSignRequest(ctx, cert, nil); err != nil {
+			log.Error("error requesting certificate", zap.Error(err))
 			return nil, nil, nil, fmt.Errorf("error requesting cert: %v", err)
 		}
 
@@ -118,25 +148,25 @@ func writeCertAndKey(conn net.Conn, cert *wonka.Certificate, privKey *ecdsa.Priv
 	return nil
 }
 
-func (w *wonkad) serve(conn net.Conn, needSig bool) {
-	w.log.Debug("calling serve")
+func serve(log *zap.Logger, conn net.Conn, needSig bool) {
+	log.Debug("calling serve")
 	defer conn.Close()
 
 	var req wonka.WonkadRequest
 	if err := json.NewDecoder(conn).Decode(&req); err != nil {
-		w.log.Error("decoding request", zap.Error(err))
+		log.Error("decoding request", zap.Error(err))
 		return
 	}
 
-	if needSig && !verifySignature(w.log, req) {
+	if needSig && !verifySignature(log, req) {
 		conn.Write([]byte(fmt.Sprintf("no sig, no claim, %s", req.Process)))
 		return
 	}
 
-	w.log.Debug("handling request")
-	cert, privKey, claim, err := w.handleWonkaRequest(context.Background(), req)
+	log.Debug("handling request")
+	cert, privKey, claim, err := handleWonkaRequest(context.Background(), log, req)
 	if err != nil {
-		w.log.Error("error handling request", zap.Error(err))
+		log.Error("error handling request", zap.Error(err))
 		conn.Write([]byte(err.Error()))
 		return
 	}
@@ -144,13 +174,13 @@ func (w *wonkad) serve(conn net.Conn, needSig bool) {
 	if cert != nil {
 		err := writeCertAndKey(conn, cert, privKey)
 		if err != nil {
-			w.log.Error("", zap.Error(err))
+			log.Error("", zap.Error(err))
 			return
 		}
 	}
 
 	if claim != nil {
-		w.log.Debug("good request", zap.Any("claim", claim))
+		log.Debug("good request", zap.Any("claim", claim))
 		toWrite, err := wonka.MarshalClaim(claim)
 		if err != nil {
 			conn.Write([]byte(err.Error()))
@@ -162,7 +192,7 @@ func (w *wonkad) serve(conn net.Conn, needSig bool) {
 
 }
 
-func (w *wonkad) listen(l net.Listener) {
+func listen(log *zap.Logger, l net.Listener) {
 	// check signature when mesos and docker support bootstrapping.
 	for {
 		c, err := l.Accept()
@@ -170,14 +200,14 @@ func (w *wonkad) listen(l net.Listener) {
 			continue
 		}
 
-		w.log.Info("new connection", zap.Any("address", c.RemoteAddr()))
-		go w.serve(c, false)
+		log.Info("new connection", zap.Any("address", c.RemoteAddr()))
+		go serve(log, c, false)
 	}
 }
 
 func (w *wonkad) listenAndServe() error {
-	go w.listen(w.unixListener)
-	go w.listen(w.tcpListener)
+	go listen(w.log, w.unixListener)
+	go listen(w.log, w.tcpListener)
 
 	// now, we wait
 	select {}

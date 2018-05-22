@@ -20,8 +20,6 @@ import (
 	"golang.org/x/crypto/ssh/agent"
 )
 
-var sshdConfigPath = "/etc/ssh/sshd_config"
-
 func saveP256ECDSAPrivateKeyToPem(privatekey *ecdsa.PrivateKey, out io.Writer) error {
 	marshalledprivkey, err := x509.MarshalECPrivateKey(privatekey)
 
@@ -91,7 +89,7 @@ func writeCertAndPrivateKey(cert *wonka.Certificate, key *ecdsa.PrivateKey, c CL
 }
 
 func doRequestCertificate(c CLIContext) error {
-	usshCert, usshKey, err := sshhelper.UsshHostCert(zap.L(), sshdConfigPath)
+	usshCert, usshKey, err := sshhelper.UsshHostCert(zap.L(), "/etc/ssh/sshd_config")
 	if err != nil {
 		return cli.NewExitError(err.Error(), 1)
 	}

@@ -1,6 +1,6 @@
 PROJECT_ROOT = code.uber.internal/engsec/wonka-go.git
 
-LINT_EXCLUDES = mock_.*
+LINT_EXCLUDES = mock_.*_test
 
 SERVICES = wonkamaster/wonkamaster
 
@@ -19,12 +19,10 @@ wonkamaster/wonkamaster: $(wildcard wonkamaster/*.go) \
 	$(wildcard wonkamaster/keys/*.go) \
 	$(wildcard wonkamaster/handlers/*.go) \
 	$(wildcard wonkamaster/wonkassh/*.go) \
+	$(wildcard wonkamaster/claims/*.go) \
 	$(wildcard wonkamaster/wonkadb/*.go)
 
 BUILD_LDFLAGS := -X $(PROJECT_ROOT).BuildVersion=$(shell git describe --long --always --dirty 2>/dev/null)
-
-# errcheck results in too many errors right now.
-lint:: staticcheck unused
 
 -include go-build/rules.mk
 
@@ -41,7 +39,9 @@ release: jenkins-with-db
 	./scripts/release
 
 run: $(PROGS)
+	trap 'docker-compose stop && exit' SIGINT && \
 	cd wonkamaster && \
+		docker-compose up -d && sleep 1 && \
 		UBER_ENVIRONMENT=test UBER_CONFIG_DIR=./config ./wonkamaster
 
 HOMEBREW_TARGETS = wonkacli/wonkacli
@@ -61,13 +61,12 @@ DOCKER_CASSANDRA_TAG = 2.2.9
 DOCKER_CASSANDRA_HOST = 127.0.0.1
 CQL_VERSION = 3.3.1
 
-# call-able function to run some command, do some clean-up, then return the original commands exit code
-run-with-cleanup = $(1) && $(2) || (ret=$$?; $(2) && exit $$ret)
-
-# custom jenkins command to setup the db container, run jenkins, and finally cleanup the db container
 .PHONY: jenkins-with-db
-jenkins-with-db: db-install __eval_docker_cassandra_port
-	$(call run-with-cleanup, DOCKER_CASSANDRA_PORT=$(DOCKER_CASSANDRA_PORT) WONKA_INTEGRATION_TEST=1 $(MAKE) jenkins, $(MAKE) db-stop db-tear-down)
+jenkins-with-db: __eval_docker_cassandra_port
+	# $(MAKE) db-install
+	DOCKER_CASSANDRA_PORT="$(DOCKER_CASSANDRA_PORT)" $(MAKE) jenkins
+	# $(MAKE) db-stop
+	# $(MAKE) db-tear-down
 
 # discover the randomly-chosen docker port if we're on jenkins, otherwise use the default
 .PHONY: __eval_docker_cassandra_port
@@ -101,9 +100,6 @@ db-start:
 db-stop:
 	docker stop ${DOCKER_CASSANDRA_NAME}
 
-# call-able function to retry some command 3 times or until it succeeds
-retry = for i in 1 2 3; do $(1) && break; done
-
 .PHONY: db-table-setup
 db-table-setup: __eval_cql_cmd
-	$(call retry, $(CQL_CMD) -f wonkamaster/schema/development.cql)
+	$(CQL_CMD) -f wonkamaster/schema/development.cql

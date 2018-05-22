@@ -3,7 +3,7 @@ package wonkatestdata
 // helper functions for tests.
 
 import (
-	"context"
+	"crypto"
 	"crypto/ecdsa"
 	"crypto/rand"
 	"crypto/rsa"
@@ -17,17 +17,15 @@ import (
 	"math/big"
 	"net"
 	"net/http"
+	"os"
 	"path"
 	"strings"
 	"time"
 
 	"code.uber.internal/engsec/wonka-go.git"
-	"code.uber.internal/engsec/wonka-go.git/internal/keyhelper"
-	"code.uber.internal/engsec/wonka-go.git/internal/rpc"
-	"code.uber.internal/engsec/wonka-go.git/internal/testhelper"
 	"code.uber.internal/engsec/wonka-go.git/internal/xhttp"
-	"code.uber.internal/engsec/wonka-go.git/testdata"
 	"code.uber.internal/engsec/wonka-go.git/wonkamaster/common"
+	"code.uber.internal/engsec/wonka-go.git/wonkamaster/rpc"
 	"code.uber.internal/engsec/wonka-go.git/wonkamaster/wonkadb"
 
 	"github.com/uber-go/tally"
@@ -61,10 +59,10 @@ func ECCKey() *ecdsa.PrivateKey {
 // ECCPublicFromPrivateKey turns an rsa private key into a compressed
 // ecdsa public key on the p256 curve. This is mostly used to make it easier
 // to do things like create test entities.
-// This is part of Wonka's public API so we can't remove it, and we
-// do want to have only one implementation.
-// Deprecated: Users should call testdata.ECCPublicFromPrivateKey instead.
-var ECCPublicFromPrivateKey = testdata.ECCPublicFromPrivateKey
+func ECCPublicFromPrivateKey(k *rsa.PrivateKey) string {
+	eccKey := wonka.ECCFromRSA(k)
+	return wonka.KeyToCompressed(eccKey.PublicKey.X, eccKey.PublicKey.Y)
+}
 
 func key(k string) *rsa.PrivateKey {
 	b, _ := base64.StdEncoding.DecodeString(k)
@@ -87,8 +85,6 @@ func pubkey(k string) *rsa.PublicKey {
 }
 
 // BodyContains retruns true if the http body contains the string
-// Deprecated: Intended for internal testing only, and should never have been
-// made part of Wonka public API. We don't use this anymore internally.
 func BodyContains(body io.ReadCloser, contains string) (string, bool) {
 	b, e := ioutil.ReadAll(body)
 	if e != nil {
@@ -143,20 +139,30 @@ func WithWonkaMaster(_ string, fn func(r common.Router, handlerCfg common.Handle
 
 		eccKey := wonka.ECCFromRSA(rsaKey)
 
-		defer testhelper.SetEnvVar("WONKA_MASTER_HOST", h)()
-		defer testhelper.SetEnvVar("WONKA_MASTER_PORT", p)()
-		defer testhelper.SetEnvVar("WONKA_MASTER_ECC_PUB",
-			wonka.KeyToCompressed(eccKey.PublicKey.X, eccKey.PublicKey.Y))()
+		os.Setenv("WONKA_MASTER_CERTPIN_N", fmt.Sprintf("%X", rsaKey.PublicKey.N))
+		os.Setenv("WONKA_MASTER_CERTPIN_E", fmt.Sprintf("%06X", rsaKey.PublicKey.E))
+		os.Setenv("WONKA_MASTER_PUBKEY_PATH", pubKeyPath)
+		os.Setenv("WONKA_MASTER_HOST", h)
+		os.Setenv("WONKA_MASTER_PORT", p)
+		os.Setenv("WONKA_MASTER_ECC_PUB",
+			wonka.KeyToCompressed(eccKey.PublicKey.X, eccKey.PublicKey.Y))
+		defer os.Unsetenv("WONKA_MASTER_CERTPINT_N")
+		defer os.Unsetenv("WONKA_MASTER_CERTPINT_E")
+		defer os.Unsetenv("WONKA_MASTER_PUBKEY_PATH")
+		defer os.Unsetenv("WONKA_MASTER_HOST")
+		defer os.Unsetenv("WONKA_MASTER_PORT")
+		defer os.Unsetenv("WONKA_MASTER_ECC_PUB")
 
 		router := xhttp.NewRouter()
 
 		go http.Serve(ln, router)
 
 		log.Debug("setting evironment variables for testing",
-			zap.String("WONKA_MASTER_HOST", h),
-			zap.String("WONKA_MASTER_PORT", p),
-			zap.String("WONKA_MASTER_ECC_PUB",
-				wonka.KeyToCompressed(eccKey.PublicKey.X, eccKey.PublicKey.Y)),
+			zap.String("WONKA_MASTER_CERTPIN_N", fmt.Sprintf("%X", rsaKey.PublicKey.N)),
+			zap.String("WONKA_MASTER_CERTPIN_E", fmt.Sprintf("%06X", rsaKey.PublicKey.E)),
+			zap.Any("WONKA_MASTER_PUBKEY_PATH", pubKeyPath),
+			zap.Any("WONKA_MASTER_HOST", h),
+			zap.Any("WONKA_MASTER_PORT", p),
 		)
 
 		err = wonka.InitWonkaMasterECC()
@@ -171,7 +177,7 @@ func WithWonkaMaster(_ string, fn func(r common.Router, handlerCfg common.Handle
 			RSAPrivKey: rsaKey,
 			DB:         wonkadb.NewMockEntityDB(),
 			Metrics:    tally.NoopScope,
-			Pullo:      rpc.NewMockPulloClient(mem, rpc.Logger(log, zap.NewAtomicLevel())),
+			Pullo:      rpc.NewMockPulloClient(mem),
 		}
 
 		fn(router, handlerCfg)
@@ -220,13 +226,18 @@ func withUsshAgent(name string, certType uint32, fn func(string, ssh.PublicKey))
 
 	switch certType {
 	case ssh.UserCert:
-		defer testhelper.SetEnvVar("UBER_OWNER", email)()
+		oldOwner := os.Getenv("UBER_OWNER")
+		defer func() {
+			if oldOwner != "" {
+				os.Setenv("UBER_OWNER", oldOwner)
+			}
+		}()
+		os.Setenv("UBER_OWNER", email)
+		os.Setenv("WONKA_USSH_CA", string(ssh.MarshalAuthorizedKey(signer.PublicKey())))
 	case ssh.HostCert:
-		defer testhelper.SetEnvVar("WONKA_USSH_HOST_CA", fmt.Sprintf("@cert-authority * %s",
-			ssh.MarshalAuthorizedKey(signer.PublicKey())))()
+		os.Setenv("WONKA_USSH_HOST_CA",
+			fmt.Sprintf("@cert-authority * %s", ssh.MarshalAuthorizedKey(signer.PublicKey())))
 	}
-	// since usshCertWithAgent() parses both user and host certs, we set this in both cases
-	defer testhelper.SetEnvVar("WONKA_USSH_CA", string(ssh.MarshalAuthorizedKey(signer.PublicKey())))()
 
 	if err := c.SignCert(rand.Reader, signer); err != nil {
 		log.Fatal("error signing cert", zap.Error(err))
@@ -238,36 +249,27 @@ func withUsshAgent(name string, certType uint32, fn func(string, ssh.PublicKey))
 		log.Fatal("error adding key to keyring", zap.Error(err))
 	}
 
+	oldSock := os.Getenv("SSH_AUTH_SOCK")
+	os.Unsetenv("SSH_AUTH_SOCK")
+	defer os.Setenv("SSH_AUTH_SOCK", oldSock)
+
 	WithTempDir(func(dir string) {
 		newSock := path.Join(dir, "ssh_auth_sock")
-		defer testhelper.SetEnvVar("SSH_AUTH_SOCK", newSock)()
+		os.Setenv("SSH_AUTH_SOCK", newSock)
 		ln, err := net.Listen("unix", newSock)
 		if err != nil {
 			log.Fatal("error listening on new sock", zap.Error(err))
 		}
-		defer func() {
-			if err := ln.Close(); err != nil {
-				panic(err)
+
+		go func() {
+			for {
+				conn, err := ln.Accept()
+				if err != nil {
+					continue
+				}
+				go agent.ServeAgent(a, conn)
 			}
 		}()
-
-		ctx, cancel := context.WithCancel(context.Background())
-		defer cancel()
-
-		go func(ctx context.Context) {
-			for {
-				select {
-				case <-ctx.Done():
-					return
-				default:
-					conn, err := ln.Accept()
-					if err != nil {
-						continue
-					}
-					go agent.ServeAgent(a, conn)
-				}
-			}
-		}(ctx)
 
 		fn(newSock, signer.PublicKey())
 	})
@@ -310,10 +312,23 @@ func GenerateKeys(pubPath, privPath string, k *rsa.PrivateKey) error {
 }
 
 // WithTempDir runs function in an ephemeral directory and cleans up after itself.
-// This is part of Wonka's public API so we can't remove it, and we
-// do want to have only one implementation.
-// Deprecated: Users should call testdata.WithTempDir instead.
-var WithTempDir = testdata.WithTempDir
+func WithTempDir(fn func(dir string)) {
+	dir, err := ioutil.TempDir("", "wonka")
+	if err != nil {
+		panic(err)
+	}
+
+	defer os.RemoveAll(dir)
+	cwd, err := os.Getwd()
+	if err != nil {
+		panic(err)
+	}
+
+	defer os.Chdir(cwd)
+	os.Chdir(dir)
+
+	fn(dir)
+}
 
 // WriteCertificate writes the given private key out to location as an x509 certificate.
 func WriteCertificate(k *rsa.PrivateKey, loc string) error {
@@ -343,13 +358,33 @@ func WriteCertificate(k *rsa.PrivateKey, loc string) error {
 }
 
 // WritePublicKey writes the publickey to loc in pem format.
-// This is part of Wonka's public API so we can't remove it, and we
-// do want to have only one implementation.
-// Deprecated: Users should call testdata.WritePublicKey instead.
-var WritePublicKey = keyhelper.WritePublicKey
+func WritePublicKey(k crypto.PublicKey, loc string) error {
+	b, e := x509.MarshalPKIXPublicKey(k)
+	if e != nil {
+		return e
+	}
 
-// WritePrivateKey writes the given private key to the given file location in
-// pem format. This is part of Wonka's public API so we can't remove it, and we
-// do want to have only one implementation.
-// Deprecated: Users should call testdata.WriteRsaPrivateKey instead.
-var WritePrivateKey = keyhelper.WriteRsaPrivateKey
+	pemBlock := pem.Block{
+		Type:  "PUBLIC KEY",
+		Bytes: b,
+	}
+
+	e = ioutil.WriteFile(loc, pem.EncodeToMemory(&pemBlock), 0660)
+	if e != nil {
+		return e
+	}
+	return nil
+}
+
+// WritePrivateKey writes the given privatekey to the given location as a pem key.
+func WritePrivateKey(k *rsa.PrivateKey, loc string) error {
+	pemBlock := pem.Block{
+		Type:  "RSA PRIVATE KEY",
+		Bytes: x509.MarshalPKCS1PrivateKey(k),
+	}
+	e := ioutil.WriteFile(loc, pem.EncodeToMemory(&pemBlock), 0660)
+	if e != nil {
+		return e
+	}
+	return nil
+}

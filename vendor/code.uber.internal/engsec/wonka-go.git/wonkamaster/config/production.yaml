@@ -18,3 +18,18 @@ cassandra:
   port: 10203
   keyspace: "wonkamaster"
 
+launchers:
+  mesos:
+    launched_by: "^mesos-master\\d{2}-\\w{3}\\d\\.prod\\.uber\\.internal$"
+    launched_on: "^compute\\d{2}-\\w{3}\\d\\.prod\\.uber\\.internal$"
+    taskname: "^[^:]+$"
+  udeploy_classic:
+    launched_by: "^udeploy-master\\d{2}-\\w{3}\\d\\.prod\\.uber\\.internal$"
+    launched_on: "^appdocker\\d{2}-\\w{3}\\d\\.prod\\.uber\\.internal$"
+    taskname: "^[^:]+$"
+
+derelicts:
+  # this will install a 'derelict' service that will be valid until
+  # our 32 bit time_t overflows. this is so we can do a positive
+  # test on IsDerelict
+  libwonka-integration-test: 2038/01/01

@@ -1,3 +1,0 @@
-service Weather {
-		string check()
-}

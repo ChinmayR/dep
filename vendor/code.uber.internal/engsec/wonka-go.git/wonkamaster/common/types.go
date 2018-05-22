@@ -5,57 +5,15 @@ import (
 	"crypto/rsa"
 	"fmt"
 	"regexp"
-	"time"
 
-	"code.uber.internal/engsec/wonka-go.git/internal/rpc"
 	"code.uber.internal/engsec/wonka-go.git/internal/xhttp"
+	"code.uber.internal/engsec/wonka-go.git/wonkamaster/rpc"
 	"code.uber.internal/engsec/wonka-go.git/wonkamaster/wonkadb"
 
 	"github.com/uber-go/tally"
 	"go.uber.org/zap"
 	"golang.org/x/crypto/ssh"
 )
-
-// CertAuthOverride permits configuring overrides for how
-// certificate authentication works.
-type CertAuthOverride struct {
-	Grant AuthGrantOverride
-}
-
-// AuthGrantOverride permits configuring more lenient certificate
-// granting policies.
-type AuthGrantOverride struct {
-	SignedAfter  time.Time `yaml:"signed_after"`
-	SignedBefore time.Time `yaml:"signed_before"`
-	EnforceUntil time.Time `yaml:"enforce_until"`
-}
-
-// UnmarshalYAML allows the YAML to be unmarshalled into time.Time fields.
-func (a *AuthGrantOverride) UnmarshalYAML(unmarshal func(interface{}) error) error {
-	// Unmarshal as strings and then convert
-	type stringStruct struct {
-		SignedAfter  string `yaml:"signed_after"`
-		SignedBefore string `yaml:"signed_before"`
-		EnforceUntil string `yaml:"enforce_until"`
-	}
-
-	temp := new(stringStruct)
-	err := unmarshal(temp)
-	if err != nil {
-		return err
-	}
-
-	a.EnforceUntil, err = time.Parse(time.RFC3339, temp.EnforceUntil)
-	if err != nil {
-		return err
-	}
-	a.SignedAfter, err = time.Parse(time.RFC3339, temp.SignedAfter)
-	if err != nil {
-		return err
-	}
-	a.SignedBefore, err = time.Parse(time.RFC3339, temp.SignedBefore)
-	return err
-}
 
 // HandlerConfig is the list of attributes needed by the various handlers to serve requests.
 type HandlerConfig struct {
@@ -71,10 +29,9 @@ type HandlerConfig struct {
 	Host           string
 	// Derelicts is a map of service name and data (in YYYY/MM/DD format)
 	// of services that are allowed to use old-timey x-uber-source auth.
-	Derelicts                  map[string]string
-	Launchers                  map[string]Launcher
-	HoseCheckInterval          int
-	CertAuthenticationOverride *CertAuthOverride
+	Derelicts         map[string]string
+	Launchers         map[string]Launcher
+	HoseCheckInterval int
 }
 
 // Launcher is an entitiy that is allowed to rqeuest certificates for other tasks.

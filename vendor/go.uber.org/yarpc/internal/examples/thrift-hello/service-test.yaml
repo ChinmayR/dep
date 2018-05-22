@@ -1,4 +1,0 @@
-run:
-  - command: ./hello/hello
-    client_output: |
-      EchoResponse{Message: Hello world, Count: 2}

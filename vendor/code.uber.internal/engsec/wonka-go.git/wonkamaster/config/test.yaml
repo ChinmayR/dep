@@ -24,7 +24,6 @@ nemo:
 pulloconfig:
   ccc@uber.com: ["AD:engineering", "AD:wonka-admins"]
   jesses@uber.com: ["AD:engineering", "AD:wonka-admins"]
-  jianqingz@uber.com: ["AD:engineering", "AD:wonka-admins"]
   jkline@uber.com: ["AD:engineering", "AD:wonka-admins"]
   pmoody@uber.com: ["AD:engineering", "AD:wonka-admins"]
   tjulian@uber.com: ["AD:engineering", "AD:wonka-admins"]

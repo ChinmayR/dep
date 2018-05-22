@@ -1,39 +1,3 @@
-wonka-go (1.5.1) jessie; urgency=medium
-
-  * Fix bug where wonkad would refresh certificates too often.
-
- -- Tyler Julian <tjulian@uber.com> Fri, 22 Dec 2017 00:00:00 +0000
-
-wonka-go (1.5.0) jessie; urgency=medium
-
-  * Claim validation errors now include a reason.
-  * Fixed wonka behavior during and after a global panic/disable event.
-  * Wonka will no longer occasionally start without a private key.
-  * Wonka no longer signs resolve requests with its ussh key.
-  * Wonka correctly uses a host's FQDN in certificate requests
-
- -- Tyler Julian <tjulian@uber.com> Thu, 14 Dec 2017 00:00:00 +0000
-
-wonka-go (1.4.5) jessie; urgency=medium
-
-  * bump to 1.4.5
-
- -- Rauf Rajar <rauf@uber.com> Wed, 30 Nov 2017 00:00:00 +0000
-
-wonka-go (1.4.1) jessie; urgency=medium
-
-  * fix request claim for users
-  * add cookies
-  * fix security flaw in ussh cert checking
-
- -- Jesse Spears <jesses@uber.com> Wed, 08 Nov 2017 00:00:00 +0000
-
-wonka-go (1.3.0) jessie; urgency=medium
-
-  * better errors for wonkad
-
- -- Peter Moody <pmoody@uber.com>  Tue, 17 Oct 2017 00:00:00 +0000
-
 wonka-go (1.0.1) jessie; urgency=medium
 
   * bugfix when checking derelicts.

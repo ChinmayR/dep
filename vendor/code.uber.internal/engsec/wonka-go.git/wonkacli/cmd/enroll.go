@@ -19,11 +19,10 @@ var (
 	enrollMsg = `
 
 enrollment succeeded! you're almost done.
-now you need to add your service keys to langley
-
-  1. add wonka_private (your private key), name it 'wonka_private', and share it with your service
-
-  2. if enrolling more services, delete wonka_private and wonka_public before re-running
+now you need to add your service keys to langley"
+1. add wonka_private (your private key), name it 'wonka_private', and share it with your service
+2. add wonka_public (your public key), name it 'wonka_public', and share it with your service
+3. if enrolling more services, delete wonka_private and wonka_public before re-running
 `
 )
 
@@ -46,20 +45,18 @@ func performEnroll(c CLIContext) error {
 		zap.Any("allowGroups", allowedGroups),
 	)
 
-	w, err := c.NewWonkaClient(DefaultClient)
+	exitMsg := false
+	clientType := DefaultClient
+	if c.Bool("generate-keys") {
+		exitMsg = true
+		logrus.Warn("generating keys can take a few seconds")
+		clientType = EnrollmentClientGenerateKeys
+	}
+
+	w, err := c.NewWonkaClient(clientType)
 	if err != nil {
 		logrus.WithField("error", err).Error("error enrolling")
 		return cli.NewExitError("", 1)
-	}
-
-	exitMsg := false
-	if c.Bool("generate-keys") {
-		logrus.Warn("generating keys can take a few seconds")
-		_, _, err = generateKeys()
-		if err != nil {
-			return cli.NewExitError(err.Error(), 1)
-		}
-		exitMsg = true
 	}
 
 	// helper
@@ -68,7 +65,7 @@ func performEnroll(c CLIContext) error {
 	if privKeyPath == "" {
 		privKeyPath = "wonka_private"
 	}
-	rsaPriv, rsaPub, eccPub, err := kh.RSAAndECCFromFile(privKeyPath)
+	rsaPriv, rsaPub, eccPub, err := kh.RSAAndECC(privKeyPath)
 	if err != nil {
 		logrus.WithField("error", err).Error("error getting keys")
 		return cli.NewExitError("", 1)

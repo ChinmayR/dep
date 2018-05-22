@@ -1,9 +1,0 @@
-.go_tools
-
-# ignore emacs' droppings
-*~
-.#*
-\#*\#
-
-.idea
-

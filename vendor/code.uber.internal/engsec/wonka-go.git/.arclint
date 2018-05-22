@@ -7,8 +7,7 @@
         "(^Godeps/)",
         "(^client/)",
         "(/thrift/)",
-        "(^\\.gen/)",
-        "(.*/mock_.*/)"
+        "(^\\.gen/)"
       ]
     },
     "gofmt": {

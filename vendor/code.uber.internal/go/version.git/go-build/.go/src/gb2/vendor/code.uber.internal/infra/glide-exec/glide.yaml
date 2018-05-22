@@ -1,4 +1,0 @@
-package: code.uber.internal/infra/glide-exec
-import:
-- package: gopkg.in/yaml.v2
-- package: github.com/jessevdk/go-flags

@@ -18,7 +18,7 @@ func SetupHandlers(r common.Router, cfg common.HandlerConfig) {
 	}
 
 	r.AddPatternRoute("/admin", newAdminHandler(cfg))
-	r.AddPatternRoute("/claim/v2", newClaimHandler(cfg))
+	r.AddPatternRoute("/claim", newClaimHandler(cfg))
 	r.AddPatternRoute("/csr", newCSRHandler(cfg))
 	r.AddPatternRoute("/destroy", newDestroyHandler(cfg))
 	r.AddPatternRoute("/enroll", newEnrollHandler(cfg))

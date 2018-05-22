@@ -228,10 +228,6 @@ func main() {
 					Usage: "The launch request siganture to verify. Cannont be used with -sign.",
 				},
 				cli.StringFlag{
-					Name:  "cgc",
-					Usage: "create a certificate-granting cert from this launch request",
-				},
-				cli.StringFlag{
 					Name:  "certificate",
 					Usage: "When signing, this is the certificate with which to sign. When verifying, this is where to place the resulting certificate.",
 				},
