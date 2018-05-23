@@ -160,6 +160,7 @@ func TestUber_Analyze_AddVersion(t *testing.T) {
 		tc := tc
 
 		t.Run(name, func(t *testing.T) {
+			ClearTree()
 			resTree := InitializeResTree(tc.givenRootProj)
 			currentNode := resTree.NodeList[tc.givenRootProj]
 			currentVerCount := len(currentNode.Versions)
