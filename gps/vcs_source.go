@@ -218,7 +218,7 @@ func (s *gitSource) exportRevisionTo(ctx context.Context, rev Revision, to strin
 	// down, the sparse checkout controls, as well as restore the original
 	// index and HEAD.
 	{
-		cmd := commandContext(ctx, "git", "checkout-index", "-a", "--prefix="+to)
+		cmd := commandContext(ctx, "git", "checkout-index", "--force", "-a", "--prefix="+to)
 		cmd.SetDir(r.LocalPath())
 		if out, err := cmd.CombinedOutput(); err != nil {
 			return errors.Wrap(err, string(out))
