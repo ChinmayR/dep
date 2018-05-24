@@ -1,13 +1,6 @@
 package analyze
 
 var (
-	ResolverTreeRoot = &ResolverTree{
-		NodeList: map[string]*TreeNode{
-			RootNode.Name: RootNode,
-		},
-		VersionTree: RootNode,
-	}
-
 	RootNode = &TreeNode{
 		Name:     RootProject,
 		Versions: []string{},
@@ -40,12 +33,19 @@ var (
 		Name: "Unreferenced",
 	}
 
-	NodeWithRedudantDeps = &TreeNode{
+	NodeWithRedundantDeps = &TreeNode{
 		Name: "Redudant Depper Node",
 		Deps: RedundantDeps,
 	}
 
-	SimpleResolverTreeWithDeps = &ResolverTree{
+	TreeWithRootOnly = &ResolverTree{
+		NodeList: map[string]*TreeNode{
+			RootNode.Name: RootNode,
+		},
+		VersionTree: RootNode,
+	}
+
+	TreeWithSimpleDeps = &ResolverTree{
 		NodeList: map[string]*TreeNode{
 			NodeWithDeps.Name:       NodeWithDeps,
 			RootNode.Name:           RootNode,
@@ -59,14 +59,14 @@ var (
 	//to test for 1:1 ratio of nodes to hashed bytes when more than one reference exists
 	TreeWithTwoToOneDepperToDep = &ResolverTree{
 		NodeList: map[string]*TreeNode{
-			NodeWithDeps.Name:         NodeWithDeps,
-			RootNode.Name:             RootNode,
-			DependerNode.Name:         DependerNode,
-			NodeWithVersAndSel.Name:   NodeWithVersAndSel,
-			NodeWithRedudantDeps.Name: NodeWithRedudantDeps,
+			NodeWithDeps.Name:          NodeWithDeps,
+			RootNode.Name:              RootNode,
+			DependerNode.Name:          DependerNode,
+			NodeWithVersAndSel.Name:    NodeWithVersAndSel,
+			NodeWithRedundantDeps.Name: NodeWithRedundantDeps,
 		},
 
-		VersionTree: NodeWithDeps,
+		VersionTree: NodeWithRedundantDeps,
 	}
 
 	// same as simple resolver tree, but with an unreferenced node to test for encoding
@@ -82,8 +82,28 @@ var (
 		VersionTree: NodeWithDeps,
 	}
 
-	Deps          = []*TreeNode{RootNode, DependerNode, NodeWithVersAndSel}
-	RedundantDeps = []*TreeNode{DependerNode, NodeWithVersAndSel, NodeWithDeps}
+	Deps = []*TreeNode{RootNode, DependerNode, NodeWithVersAndSel}
+	// it should not be able to happen that a dep is added twice to a dependency list, but if it does,
+	// it should only appear once in the graph.
+	RedundantDeps = []*TreeNode{DependerNode, DependerNode, NodeWithVersAndSel, NodeWithVersAndSel, NodeWithDeps}
+
+	encodedNodeValues = map[string]uint32{
+		RootNode.Name:              1,
+		DependerNode.Name:          2,
+		NodeWithVersAndSel.Name:    3,
+		NodeWithDeps.Name:          4,
+		UnreferencedNode.Name:      5,
+		NodeWithRedundantDeps.Name: 6,
+	}
+
+	encodedRelationshipsForNodeWithDeps = map[uint32][]uint32{
+		4: {1, 2, 3},
+		1: {},
+		2: {},
+		3: {},
+	}
+
+	encodedDepsOnRedundantDeps = []uint32{2, 3, 4}
 )
 
 const (
@@ -93,3 +113,13 @@ const (
 
 	Project2 = "test project 2"
 )
+
+func encodeTestCaseFromBase(prevEncodedRelationships map[uint32][]uint32, newKey uint32, newVals []uint32) map[uint32][]uint32 {
+	newEncodedRelationships := make(map[uint32][]uint32)
+	newEncodedRelationships[newKey] = newVals
+	for key, val := range prevEncodedRelationships {
+		newEncodedRelationships[key] = val
+	}
+
+	return newEncodedRelationships
+}

@@ -18,7 +18,7 @@ func TestUber_Analyze_InitializeResolverTree(t *testing.T) {
 		"instantiates an empty resolver tree": {
 			givenRootProj: RootProject,
 			expRootProj:   RootProject,
-			expTree:       ResolverTreeRoot,
+			expTree:       TreeWithRootOnly,
 		},
 	}
 
