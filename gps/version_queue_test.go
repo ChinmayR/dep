@@ -7,9 +7,10 @@ package gps
 import (
 	"testing"
 
-	"github.com/pkg/errors"
 	"reflect"
+
 	"github.com/golang/dep/uber"
+	"github.com/pkg/errors"
 )
 
 // just need a listVersions method
@@ -183,7 +184,7 @@ func TestFilterNonDefaultBranches(t *testing.T) {
 	plainVersionConst := plainVersion("2.3")
 	assertVersionListsEquality(t, id, allFakeFilterVl, plainVersionConst, withoutNonDefaultBranchConstVl)
 
-	semverConstraint,_ := NewSemverConstraint("=1.0.0")
+	semverConstraint, _ := NewSemverConstraint("=1.0.0")
 	assertVersionListsEquality(t, id, allFakeFilterVl, semverConstraint, withoutNonDefaultBranchConstVl)
 
 	revisionConst := Revision("branchRevision")
@@ -193,13 +194,13 @@ func TestFilterNonDefaultBranches(t *testing.T) {
 func assertVersionListsEquality(t *testing.T, id ProjectIdentifier, allVersions []Version, constraint Constraint, expected []Version) {
 	actual := filterNonDefaultBranches(allVersions, constraint, id.ProjectRoot)
 	if actual == nil {
-		t.Error("Error - actual version list is nil. Expected=%s Actual=%s", expected, actual)
+		t.Errorf("Error - actual version list is nil. Expected=%v Actual=%v", expected, actual)
 	}
 	if len(actual) != len(expected) {
-		t.Error("Error - atual and expected version lists has different lengths. Actual=%s Expected=%s", len(actual), len(expected))
+		t.Errorf("Error - atual and expected version lists has different lengths. Actual=%v Expected=%v", len(actual), len(expected))
 	}
 	if !reflect.DeepEqual(actual, expected) {
-		t.Error("Expected version list does not equal actual version list. Expected=%s Actual=%s", expected, actual)
+		t.Errorf("Expected version list does not equal actual version list. Expected=%v Actual=%v", expected, actual)
 	}
 }
 

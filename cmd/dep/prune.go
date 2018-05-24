@@ -63,7 +63,7 @@ func (cmd *pruneCommand) Run(ctx *dep.Ctx, args []string) error {
 	if err != nil {
 		return err
 	}
-	sm.UseDefaultSignalHandling()
+	sm.UseDefaultSignalHandling(uber.GetRepoTagFriendlyNameFromCWD(ctx.WorkingDir), cmd.Name())
 	defer sm.Release()
 
 	// While the network churns on ListVersions() requests, statically analyze

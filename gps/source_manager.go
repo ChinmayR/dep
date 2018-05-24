@@ -310,10 +310,10 @@ func (sm *SourceMgr) Cachedir() string {
 
 // UseDefaultSignalHandling sets up typical os.Interrupt signal handling for a
 // SourceMgr.
-func (sm *SourceMgr) UseDefaultSignalHandling() {
+func (sm *SourceMgr) UseDefaultSignalHandling(repo string, cmdName string) {
 	sigch := make(chan os.Signal, 1)
 	signal.Notify(sigch, os.Interrupt)
-	sm.HandleSignals(sigch)
+	sm.HandleSignals(sigch, repo, cmdName)
 }
 
 // HandleSignals sets up logic to handle incoming signals with the goal of
@@ -328,7 +328,7 @@ func (sm *SourceMgr) UseDefaultSignalHandling() {
 //
 // SetUpSigHandling() will set up a handler that is appropriate for most
 // use cases.
-func (sm *SourceMgr) HandleSignals(sigch chan os.Signal) {
+func (sm *SourceMgr) HandleSignals(sigch chan os.Signal, repo string, cmdName string) {
 	sm.sigmut.Lock()
 	// always start by closing the qch, which will lead to any existing signal
 	// handler terminating, and deregistering its sigch.
@@ -338,10 +338,11 @@ func (sm *SourceMgr) HandleSignals(sigch chan os.Signal) {
 	sm.qch = make(chan struct{})
 
 	// Run a new goroutine with the input sigch and the fresh qch
-	go func(sch chan os.Signal, qch <-chan struct{}) {
+	go func(sch chan os.Signal, qch <-chan struct{}, repoStr string, commandName string) {
 		defer signal.Stop(sch)
 		select {
 		case <-sch:
+			uber.ReportInterruptSignalReceivedMetric(repoStr, commandName)
 			// Set up a timer to uninstall the signal handler after three
 			// seconds, so that the user can easily force termination with a
 			// second ctrl-c
@@ -357,7 +358,7 @@ func (sm *SourceMgr) HandleSignals(sigch chan os.Signal) {
 		case <-qch:
 			// quit channel triggered - deregister our sigch and return
 		}
-	}(sigch, sm.qch)
+	}(sigch, sm.qch, repo, cmdName)
 	// Try to ensure handler is blocked in for-select before releasing the mutex
 	runtime.Gosched()
 

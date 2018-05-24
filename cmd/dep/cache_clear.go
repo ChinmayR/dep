@@ -30,7 +30,7 @@ func (cmd *cacheClearCommand) Run(ctx *dep.Ctx, args []string) error {
 	if err != nil {
 		return errors.Wrap(err, "getSourceManager")
 	}
-	sm.UseDefaultSignalHandling()
+	sm.UseDefaultSignalHandling(uber.GetRepoTagFriendlyNameFromCWD(ctx.WorkingDir), cmd.Name())
 	defer sm.Release()
 
 	err = sm.ClearCacheDir()

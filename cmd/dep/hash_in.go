@@ -10,6 +10,7 @@ import (
 	"github.com/golang/dep"
 	"github.com/golang/dep/gps"
 	"github.com/golang/dep/gps/pkgtree"
+	"github.com/golang/dep/uber"
 	"github.com/pkg/errors"
 )
 
@@ -23,7 +24,7 @@ func (cmd *hashinCommand) Register(fs *flag.FlagSet) {}
 
 type hashinCommand struct{}
 
-func (hashinCommand) Run(ctx *dep.Ctx, args []string) error {
+func (hc hashinCommand) Run(ctx *dep.Ctx, args []string) error {
 	p, err := ctx.LoadProject()
 	if err != nil {
 		return err
@@ -33,7 +34,7 @@ func (hashinCommand) Run(ctx *dep.Ctx, args []string) error {
 	if err != nil {
 		return err
 	}
-	sm.UseDefaultSignalHandling()
+	sm.UseDefaultSignalHandling(uber.GetRepoTagFriendlyNameFromCWD(ctx.WorkingDir), hc.Name())
 	defer sm.Release()
 
 	params := p.MakeParams()

@@ -874,7 +874,7 @@ func TestSignalHandling(t *testing.T) {
 	sm, clean := mkNaiveSM(t)
 
 	sigch := make(chan os.Signal)
-	sm.HandleSignals(sigch)
+	sm.HandleSignals(sigch, "UNKNOWN_REPO", "UNKNOWN_COMMAND")
 
 	sigch <- os.Interrupt
 	<-time.After(10 * time.Millisecond)
@@ -887,7 +887,7 @@ func TestSignalHandling(t *testing.T) {
 
 	// Test again, this time with a running call
 	sm, clean = mkNaiveSM(t)
-	sm.HandleSignals(sigch)
+	sm.HandleSignals(sigch, "UNKNOWN_REPO", "UNKNOWN_COMMAND")
 
 	errchan := make(chan error)
 	go func() {
@@ -909,9 +909,9 @@ func TestSignalHandling(t *testing.T) {
 	sm, clean = mkNaiveSM(t)
 	// Ensure that handling also works after stopping and restarting itself,
 	// and that Release happens only once.
-	sm.UseDefaultSignalHandling()
+	sm.UseDefaultSignalHandling("UNKNOWN_REPO", "UNKNOWN_COMMAND")
 	sm.StopSignalHandling()
-	sm.HandleSignals(sigch)
+	sm.HandleSignals(sigch, "UNKNOWN_REPO", "UNKNOWN_COMMAND")
 
 	go func() {
 		_, callerr := sm.DeduceProjectRoot("k8s.io/kubernetes")

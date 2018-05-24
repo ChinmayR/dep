@@ -46,10 +46,10 @@ func (c *multiCache) getManifestAndLock(r Revision, ai ProjectAnalyzerInfo) (Man
 }
 
 func (c *multiCache) setPackageTree(r Revision, ptree pkgtree.PackageTree) {
-	uber.CacheLogger.Printf("executing multi setPackageTree, rev:%v, pkgTree:%v", ptree)
+	uber.CacheLogger.Printf("executing multi setPackageTree, rev:%v, pkgTree:%v", r, ptree)
 	c.mem.setPackageTree(r, ptree)
 	c.disk.setPackageTree(r, ptree)
-	uber.CacheLogger.Printf("successful multi setPackageTree, rev:%v, pkgTree:%v", ptree)
+	uber.CacheLogger.Printf("successful multi setPackageTree, rev:%v, pkgTree:%v", r, ptree)
 }
 
 func (c *multiCache) getPackageTree(r Revision, pr ProjectRoot) (pkgtree.PackageTree, bool) {

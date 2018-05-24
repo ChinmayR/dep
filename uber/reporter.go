@@ -55,6 +55,7 @@ const (
 	FAILURE_METRIC   = "failure"
 	FREQUENCY_METRIC = "frequency"
 	CC_METRIC        = "ccfreq"
+	INT_SIG          = "intsig"
 	//All error metric names are the same as the error types const above
 )
 
@@ -83,7 +84,7 @@ func init() {
 	}
 }
 
-func getRepoTagFriendlyNameFromCWD(cwd string) string {
+func GetRepoTagFriendlyNameFromCWD(cwd string) string {
 	repo := filepath.Base(cwd)
 	// Forbidden characters for tag values in M3, see
 	// https://engdocs.uberinternal.com/m3_and_umonitor/intro/data_model.html#invalid-characters
@@ -107,7 +108,7 @@ func ReportRepoMetrics(cmd string, repoName string, cmdFlags map[string]string) 
 		}
 		defer catchErrors()
 		latency := time.Since(start)
-		repo := getRepoTagFriendlyNameFromCWD(repoName)
+		repo := GetRepoTagFriendlyNameFromCWD(repoName)
 		addLatencyMetric(cmd, repo, latency, cmdFlags)
 		addFailureMetric(cmd, repo)
 		addFrequencyMetric(repo, cmd)
@@ -124,6 +125,17 @@ func ReportClearCacheMetric(cmd string) {
 	defer catchErrors()
 	tags := getCommonTags(cmd)
 	scope.Tagged(tags).Counter(CC_METRIC).Inc(1)
+	if err := scopeCloser.Close(); err != nil {
+		UberLogger.Print(err.Error())
+	}
+}
+
+//report this counter metric when an interrupt signal is received
+//Refer to getVersionedTagMap method more info about the semantic versioning associated tag
+func ReportInterruptSignalReceivedMetric(repo string, cmdName string) {
+	defer catchErrors()
+	tags := getCommonTagsWithRepo(repo, cmdName)
+	scope.Tagged(tags).Counter(INT_SIG).Inc(1)
 	if err := scopeCloser.Close(); err != nil {
 		UberLogger.Print(err.Error())
 	}

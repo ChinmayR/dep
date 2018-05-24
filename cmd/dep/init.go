@@ -122,7 +122,7 @@ func (cmd *initCommand) Run(ctx *dep.Ctx, args []string) error {
 	if err != nil {
 		return errors.Wrap(err, "init failed: unable to create a source manager")
 	}
-	sm.UseDefaultSignalHandling()
+	sm.UseDefaultSignalHandling(uber.GetRepoTagFriendlyNameFromCWD(ctx.WorkingDir), cmd.Name())
 	defer sm.Release()
 
 restart:
