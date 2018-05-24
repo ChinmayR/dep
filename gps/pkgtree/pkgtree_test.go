@@ -35,10 +35,11 @@ func TestWorkmapToReach(t *testing.T) {
 	}
 
 	table := map[string]struct {
-		workmap  map[string]wm
-		rm       ReachMap
-		em       map[string]*ProblemImportError
-		backprop bool
+		workmap      map[string]wm
+		rm           ReachMap
+		em           map[string]*ProblemImportError
+		rootPackages []Package
+		backprop     bool
 	}{
 		"single": {
 			workmap: map[string]wm{
@@ -143,6 +144,72 @@ func TestWorkmapToReach(t *testing.T) {
 				},
 			},
 			backprop: true,
+		},
+		"missing .gen package is okay": {
+			workmap: map[string]wm{
+				"A": {
+					ex: map[string]bool{
+						"B/foo": true,
+					},
+					in: map[string]bool{
+						"A/.gen/baz": true, // missing
+					},
+				},
+			},
+			rm: ReachMap{
+				"A": {
+					Internal: []string{"A/.gen/baz"},
+					External: []string{"B/foo"},
+				},
+				"A/.gen/baz": {
+				},
+			},
+			backprop: true,
+		},
+		"missing package is available in the root": {
+			workmap: map[string]wm{
+				"A": {
+					ex: map[string]bool{
+						"B/foo": true,
+					},
+					in: map[string]bool{
+						"A/bar": true,
+					},
+				},
+			},
+			rm: ReachMap{
+				"A": {
+					Internal: []string{"A/bar"},
+					External: []string{"B/foo"},
+				},
+				"A/bar": {
+				},
+			},
+			rootPackages: []Package{{ImportPath: "A/bar"}},
+			backprop:     true,
+		},
+		"imports from root packages are added to the reach map": {
+			workmap: map[string]wm{
+				"A": {
+					ex: map[string]bool{
+						"B/foo": true,
+					},
+					in: map[string]bool{
+						"A/bar": true,
+					},
+				},
+			},
+			rm: ReachMap{
+				"A": {
+					Internal: []string{"A/bar"},
+					External: []string{"B/foo", "C"}, // C comes from A/bar defined in the root
+				},
+				"A/bar": {
+					External: []string{"C"},
+				},
+			},
+			rootPackages: []Package{{Name: "bar", ImportPath: "A/bar", Imports: []string{"C"}}},
+			backprop:     true,
 		},
 		"transitive missing package is poison": {
 			workmap: map[string]wm{
@@ -440,14 +507,17 @@ func TestWorkmapToReach(t *testing.T) {
 	for name, fix := range table {
 		name, fix := name, fix
 		t.Run(name, func(t *testing.T) {
-			t.Parallel()
-
 			// Avoid erroneous errors by initializing the fixture's error map if
 			// needed
 			if fix.em == nil {
 				fix.em = make(map[string]*ProblemImportError)
 			}
 
+			// Reset package map for each test
+			root.Packages = make(map[string]PackageOrErr)
+			for _, pkg := range fix.rootPackages {
+				root.Packages[pkg.ImportPath] = PackageOrErr{P: pkg}
+			}
 			rm, em := wmToReach(fix.workmap, fix.backprop)
 			if !reflect.DeepEqual(rm, fix.rm) {
 				//t.Error(pretty.Sprintf("wmToReach(%q): Did not get expected reach map:\n\t(GOT): %s\n\t(WNT): %s", name, rm, fix.rm))
