@@ -305,6 +305,8 @@ func (c *Ctx) ImportForAbs(path string) (string, error) {
 	}
 	if isPrefix {
 		if len(path) <= len(srcprefix) {
+			// Upstream version of dep doesn't allow running on the GOPATH/src folder.
+			// We bypass this limitation because we need to execute dep in that location in the monorepo.
 			return "", nil
 		}
 
