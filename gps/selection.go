@@ -96,9 +96,12 @@ func (s *selection) popDep(id ProjectIdentifier) (dep dependency) {
 	if dlen == 1 {
 		delete(s.foldRoots, toFold(string(id.ProjectRoot)))
 	}
-
-	dep, s.deps[id.ProjectRoot] = deps[dlen-1], deps[:dlen-1]
-	return dep
+	if dlen > 0 {
+		dep, s.deps[id.ProjectRoot] = deps[dlen-1], deps[:dlen-1]
+		return dep
+	}
+	// the specified project was not a key for the deps map, so there's nothing to pop back, return an empty dependency
+	return dependency{}
 }
 
 func (s *selection) depperCount(id ProjectIdentifier) int {

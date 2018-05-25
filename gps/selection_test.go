@@ -61,3 +61,17 @@ func TestUnselectedRemoval(t *testing.T) {
 		t.Fatalf("wrong item removed from slice:\n\t(GOT): %v\n\t(WNT): %v", u.sl, want)
 	}
 }
+
+func TestNonexistentPopDep(t *testing.T) {
+	// empty selector, has nothing in deps
+	s := selection{}
+	id := ProjectIdentifier{ProjectRoot: ProjectRoot("testroot"), Source: "testsource"}
+
+	// previously this caused a panic if the id wasn't present in s.deps
+	got := s.popDep(id)
+	want := dependency{}
+
+	if !reflect.DeepEqual(got, want) {
+		t.Fatalf("wrong item popped from deps:\n\t(GOT): %v\n\t(WANT): %v", got, want)
+	}
+}
