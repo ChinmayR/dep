@@ -51,6 +51,7 @@ func LogIfPanic() {
 		DebugLogger.Printf("Message in uChat channel \"Build Platform Support\" and take a look at PR/FAQ linked from there.\n")
 		DebugLogger.Printf("[PANIC] %s\n\n", r)
 		DebugLogger.Printf("%s\n", debug.Stack())
+		ReportPanicMetric()
 		panic(r)
 	}
 }

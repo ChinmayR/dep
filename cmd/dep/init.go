@@ -228,6 +228,8 @@ restart:
 		return errors.Wrap(err, "writing dep maintained glide file")
 	}
 
+	// Divide the total latency by the number of projects
+	uber.LatencyNormFactor(len(p.Lock.Projects()))
 	uber.ReportSuccess()
 	return nil
 }

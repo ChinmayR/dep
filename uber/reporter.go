@@ -19,6 +19,7 @@ var scope tally.Scope
 var scopeCloser io.Closer
 var errorTags map[string]int64
 var runStatus string
+var latencyNormFactor int
 
 //All error types that dep can generate in solve_failures.go
 const (
@@ -51,11 +52,13 @@ const (
 
 //All dep's metric names
 const (
-	LATENCY_METRIC   = "latency"
-	FAILURE_METRIC   = "failure"
-	FREQUENCY_METRIC = "frequency"
-	CC_METRIC        = "ccfreq"
-	INT_SIG          = "intsig"
+	LATENCY_METRIC      = "latency"
+	NORM_LATENCY_METRIC = "normlatency"
+	FAILURE_METRIC      = "failure"
+	FREQUENCY_METRIC    = "frequency"
+	CC_METRIC           = "ccfreq"
+	INT_SIG_METRIC      = "intsig"
+	PANIC_METRIC        = "panic"
 	//All error metric names are the same as the error types const above
 )
 
@@ -110,6 +113,7 @@ func ReportRepoMetrics(cmd string, repoName string, cmdFlags map[string]string) 
 		latency := time.Since(start)
 		repo := GetRepoTagFriendlyNameFromCWD(repoName)
 		addLatencyMetric(cmd, repo, latency, cmdFlags)
+		addNormLatencyMetric(cmd, repo, latency, cmdFlags)
 		addFailureMetric(cmd, repo)
 		addFrequencyMetric(repo, cmd)
 		addErrorMetrics(cmd, repo)
@@ -123,7 +127,7 @@ func ReportRepoMetrics(cmd string, repoName string, cmdFlags map[string]string) 
 //Refer to getVersionedTagMap method more info about the semantic versioning associated tag
 func ReportClearCacheMetric(cmd string) {
 	defer catchErrors()
-	tags := getCommonTags(cmd)
+	tags := getCommonTagsWithCmd(cmd)
 	scope.Tagged(tags).Counter(CC_METRIC).Inc(1)
 	if err := scopeCloser.Close(); err != nil {
 		UberLogger.Print(err.Error())
@@ -131,11 +135,20 @@ func ReportClearCacheMetric(cmd string) {
 }
 
 //report this counter metric when an interrupt signal is received
-//Refer to getVersionedTagMap method more info about the semantic versioning associated tag
 func ReportInterruptSignalReceivedMetric(repo string, cmdName string) {
 	defer catchErrors()
-	tags := getCommonTagsWithRepo(repo, cmdName)
-	scope.Tagged(tags).Counter(INT_SIG).Inc(1)
+	tags := getCommonTagsWithCmdAndRepo(repo, cmdName)
+	scope.Tagged(tags).Counter(INT_SIG_METRIC).Inc(1)
+	if err := scopeCloser.Close(); err != nil {
+		UberLogger.Print(err.Error())
+	}
+}
+
+//report this counter metric when a panic is recovered
+func ReportPanicMetric() {
+	defer catchErrors()
+	tags := getCommonTags()
+	scope.Tagged(tags).Counter(PANIC_METRIC).Inc(1)
 	if err := scopeCloser.Close(); err != nil {
 		UberLogger.Print(err.Error())
 	}
@@ -151,11 +164,16 @@ func ReportSuccess() {
 	runStatus = SUCCESSFUL_RUN
 }
 
+//Only called when there is a factor to divide the latency by
+func LatencyNormFactor(factor int) {
+	latencyNormFactor = factor
+}
+
 //Latency metric measures that time it takes to execute a single dep command. Associated tags are:
 //- status: can be either "success" or "failure" based on whether dep succeeded or failed to resolve dependencies
-//- Other common tags. Refer to getCommonTags method for the rest of associated tags
+//- Other common tags. Refer to getCommonTagsWithCmd method for the rest of associated tags
 func addLatencyMetric(cmd string, repo string, latency time.Duration, cmdFlags map[string]string) {
-	tags := getCommonTagsWithRepo(repo, cmd)
+	tags := getCommonTagsWithCmdAndRepo(repo, cmd)
 	for k, v := range cmdFlags {
 		tags[k] = v
 	}
@@ -163,14 +181,31 @@ func addLatencyMetric(cmd string, repo string, latency time.Duration, cmdFlags m
 	scope.Tagged(tags).Timer(LATENCY_METRIC).Record(latency)
 }
 
+//Norm Latency metric measures that time it takes to execute a single dep command divided by the number of
+//packages it dealt with. Associated tags are:
+//- status: can be either "success" or "failure" based on whether dep succeeded or failed to resolve dependencies
+//- Other common tags. Refer to getCommonTagsWithCmd method for the rest of associated tags
+func addNormLatencyMetric(cmd string, repo string, latency time.Duration, cmdFlags map[string]string) {
+	tags := getCommonTagsWithCmdAndRepo(repo, cmd)
+	for k, v := range cmdFlags {
+		tags[k] = v
+	}
+	tags[STATUS_TAG] = runStatus
+
+	if latencyNormFactor == 0 {
+		latencyNormFactor = 1
+	}
+	scope.Tagged(tags).Timer(NORM_LATENCY_METRIC).Record(latency / time.Duration(latencyNormFactor))
+}
+
 //Failure metric is reported when dep fails to resolve dependencies for a repo with or without retries.
 //Associated tags are:
 //- error: the list of errors that caused the failure. The list is a string of concatenated one or more error types
 //separated by a "."
-//- Other common tags. Refer to getCommonTags method for the rest of associated tags
+//- Other common tags. Refer to getCommonTagsWithCmd method for the rest of associated tags
 func addFailureMetric(cmd string, repo string) {
 	if runStatus == FAILED_RUN {
-		tags := getCommonTagsWithRepo(repo, cmd)
+		tags := getCommonTagsWithCmdAndRepo(repo, cmd)
 		var errorElements []string
 		for k := range errorTags {
 			if errorTags[k] > 0 {
@@ -184,10 +219,10 @@ func addFailureMetric(cmd string, repo string) {
 
 //*Error metrics are all the error types that occurred during a single dep run. Each encountered error is reported
 //as a separate metric. That helps calculate the error count per error type in Grafana.
-//Refer to getCommonTags method for the complete list of associated tags.
+//Refer to getCommonTagsWithCmd method for the complete list of associated tags.
 //* the name of each metric is an error type from the const error list
 func addErrorMetrics(cmd string, repo string) {
-	tags := getCommonTagsWithRepo(repo, cmd)
+	tags := getCommonTagsWithCmdAndRepo(repo, cmd)
 	for errorName, errorCount := range errorTags {
 		if errorCount > 0 {
 			scope.Tagged(tags).Counter(errorName).Inc(errorCount)
@@ -196,37 +231,47 @@ func addErrorMetrics(cmd string, repo string) {
 }
 
 //Frequency metric is reported to calculate dep's adoption and per repo usage.
-//Refer to getCommonTags method for the complete list of associated tags.
+//Refer to getCommonTagsWithCmd method for the complete list of associated tags.
 func addFrequencyMetric(repo string, cmd string) {
-	tags := getCommonTagsWithRepo(repo, cmd)
+	tags := getCommonTagsWithCmdAndRepo(repo, cmd)
 	scope.Tagged(tags).Counter(FREQUENCY_METRIC).Inc(1)
 }
 
 //Creates a string map that contains the tag name/value pairs.
-//This is the common tag list used in repo metrics reporting. The map includes the following tags:
-//- runid: a unique ID for a single dep run. This ID is shared across all metrics reported per run
+//This is the common tag list used in repo metrics reporting.
+//This map includes the following tags along with the common tags:
 //- repo: the name of the repository on which dep ran
 //- command: the command name
-//- semver: the current stable metrics semantic version
-func getCommonTagsWithRepo(repo string, cmd string) map[string]string {
-	tags := getCommonTags(cmd)
+func getCommonTagsWithCmdAndRepo(repo string, cmd string) map[string]string {
+	tags := getCommonTags()
+	tags[COMMAND_TAG] = cmd
 	tags[REPO_TAG] = repo
 	return tags
 }
 
 //Creates a string map that contains the tag name/value pairs.
-//This is the common tag list used in repo metrics reporting. The map includes the following tags:
-//- runid: a unique ID for a single dep run. This ID is shared across all metrics reported per run
+//This is the common tag list used in repo metrics reporting.
+//This map includes the following tags along with the common tags:
 //- command: the command name
+func getCommonTagsWithCmd(cmd string) map[string]string {
+	tags := getCommonTags()
+	tags[COMMAND_TAG] = cmd
+	return tags
+}
+
+//Creates a string map that contains the tag name/value pairs.
+//This is the common tag list used in repo metrics reporting. The map includes the following tags:
+//- user: the username from the golang user package
+//- runid: a unique ID for a single dep run. This ID is shared across all metrics reported per run
 //- semver: the current stable metrics semantic version
-func getCommonTags(cmd string) map[string]string {
+//- depversion: the current stable version of dep
+func getCommonTags() map[string]string {
 	tags := make(map[string]string)
 	curUser, err := user.Current()
 	if err == nil {
 		tags[USER_TAG] = curUser.Username
 	}
 	tags[RUNID_TAG] = RunId
-	tags[COMMAND_TAG] = cmd
 	tags[SEMVER_TAG] = METRICS_STABLE_VERSION
 	tags[DEP_VERSION_TAG] = DEP_VERSION
 	return tags

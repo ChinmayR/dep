@@ -199,6 +199,7 @@ func (c *Config) Run() int {
 			errLogger.Printf("PANIC: EMAIL dep-support-group@uber.com WITH THE LOG FROM %s\n", uber.LogPath)
 			errLogger.Printf("[PANIC] %s\n\n", r)
 			errLogger.Printf("%s\n", debug.Stack())
+			uber.ReportPanicMetric()
 			return errorExitCode
 		}
 		return successExitCode

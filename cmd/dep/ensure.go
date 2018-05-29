@@ -197,7 +197,7 @@ func (cmd *ensureCommand) Run(ctx *dep.Ctx, args []string) error {
 	}
 
 	if cmd.gopath {
-		pkgtree.SetLocator(gopathLocator{ctx:ctx, sm:sm})
+		pkgtree.SetLocator(gopathLocator{ctx: ctx, sm: sm})
 	}
 
 	params := p.MakeParams()
@@ -221,6 +221,8 @@ func (cmd *ensureCommand) Run(ctx *dep.Ctx, args []string) error {
 		if err = SyncManifest(p.AbsRoot); err != nil {
 			return errors.Wrapf(err, "failed to write glide manifest during ensure vendor only run")
 		}
+		// Divide the total latency by the number of projects
+		uber.LatencyNormFactor(len(p.Lock.Projects()))
 		uber.ReportSuccess()
 		return err
 	}
@@ -259,6 +261,8 @@ func (cmd *ensureCommand) Run(ctx *dep.Ctx, args []string) error {
 		if err = SyncManifest(p.AbsRoot); err != nil {
 			return errors.Wrapf(err, "failed to write glide manifest during ensure add run")
 		}
+		// Divide the total latency by the number of projects
+		uber.LatencyNormFactor(len(p.Lock.Projects()))
 		uber.ReportSuccess()
 		return err
 	} else if cmd.update {
@@ -268,6 +272,8 @@ func (cmd *ensureCommand) Run(ctx *dep.Ctx, args []string) error {
 		if err = SyncManifest(p.AbsRoot); err != nil {
 			return errors.Wrapf(err, "failed to write glide manifest during ensure update run")
 		}
+		// Divide the total latency by the number of projects
+		uber.LatencyNormFactor(len(p.Lock.Projects()))
 		uber.ReportSuccess()
 		return err
 	}
@@ -277,6 +283,8 @@ func (cmd *ensureCommand) Run(ctx *dep.Ctx, args []string) error {
 	if err = SyncManifest(p.AbsRoot); err != nil {
 		return errors.Wrapf(err, "failed to write glide manifest during ensure run")
 	}
+	// Divide the total latency by the number of projects
+	uber.LatencyNormFactor(len(p.Lock.Projects()))
 	uber.ReportSuccess()
 	return err
 }
@@ -470,8 +478,8 @@ func (cmd *ensureCommand) runUpdate(ctx *dep.Ctx, args []string, p *dep.Project,
 	return errors.Wrap(sw.Write(p.AbsRoot, sm, false, logger), "grouped write of manifest, lock and vendor")
 }
 
-type gopathLocator struct{
-	sm gps.SourceManager
+type gopathLocator struct {
+	sm  gps.SourceManager
 	ctx *dep.Ctx
 }
 
@@ -500,7 +508,6 @@ func eqOrSlashedPrefix(s, prefix string) bool {
 	prflen, pathlen := len(prefix), len(s)
 	return prflen == pathlen || strings.Index(s[prflen:], "/") == 0
 }
-
 
 func (cmd *ensureCommand) runAdd(ctx *dep.Ctx, args []string, p *dep.Project, sm gps.SourceManager, params gps.SolveParameters) error {
 	if len(args) == 0 {
