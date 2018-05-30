@@ -19,6 +19,7 @@ import (
 	"github.com/golang/dep/gps/pkgtree"
 	"github.com/golang/dep/uber/analyze"
 	"github.com/pkg/errors"
+	"github.com/golang/dep/uber"
 )
 
 var rootRev = Revision("")
@@ -629,7 +630,7 @@ func (s *solver) selectRoot() error {
 
 	// If we're looking for root's deps, get it from opts and local root
 	// analysis, rather than having the sm do it.
-	deps, err := s.intersectConstraintsWithImports(s.rd.combineConstraints(), s.rd.externalImportList(s.stdLibFn))
+	deps, err := s.intersectConstraintsWithImports(s.rd.combineConstraints(), s.rd.externalImportList(s.stdLibFn), false)
 	if err != nil {
 		if contextCanceledOrSMReleased(err) {
 			return err
@@ -657,7 +658,7 @@ func (s *solver) selectRoot() error {
 	return nil
 }
 
-func (s *solver) getImportsAndConstraintsOf(a atomWithPackages) ([]string, []completeDep, error) {
+func (s *solver) getImportsAndConstraintsOf(a atomWithPackages, uberLogging bool) ([]string, []completeDep, error) {
 	var err error
 
 	if s.rd.isRoot(a.a.id.ProjectRoot) {
@@ -732,7 +733,7 @@ func (s *solver) getImportsAndConstraintsOf(a atomWithPackages) ([]string, []com
 	sort.Strings(reach)
 
 	deps := s.rd.ovr.overrideAll(m.DependencyConstraints())
-	cd, err := s.intersectConstraintsWithImports(deps, reach)
+	cd, err := s.intersectConstraintsWithImports(deps, reach, uberLogging)
 	return pl, cd, err
 }
 
@@ -740,7 +741,7 @@ func (s *solver) getImportsAndConstraintsOf(a atomWithPackages) ([]string, []com
 // externally reached packages, and creates a []completeDep that is guaranteed
 // to include all packages named by import reach, using constraints where they
 // are available, or Any() where they are not.
-func (s *solver) intersectConstraintsWithImports(deps []workingConstraint, reach []string) ([]completeDep, error) {
+func (s *solver) intersectConstraintsWithImports(deps []workingConstraint, reach []string, uberLogging bool) ([]completeDep, error) {
 	// Create a radix tree with all the projects we know from the manifest
 	xt := radix.New()
 	for _, dep := range deps {
@@ -749,6 +750,7 @@ func (s *solver) intersectConstraintsWithImports(deps []workingConstraint, reach
 
 	// Step through the reached packages; if they have prefix matches in
 	// the trie, assume (mostly) it's a correct correspondence.
+	matchedDeps := make(map[ProjectRoot]bool)
 	dmap := make(map[ProjectRoot]completeDep)
 	for _, rp := range reach {
 		// If it's a stdlib-shaped package, skip it.
@@ -772,6 +774,7 @@ func (s *solver) intersectConstraintsWithImports(deps []workingConstraint, reach
 					pl:                []string{rp},
 				}
 			}
+			matchedDeps[dep.Ident.ProjectRoot] = true
 			continue
 		}
 
@@ -799,6 +802,12 @@ func (s *solver) intersectConstraintsWithImports(deps []workingConstraint, reach
 	cdeps := make([]completeDep, 0, len(dmap))
 	for _, cdep := range dmap {
 		cdeps = append(cdeps, cdep)
+	}
+
+	for _, cdep := range deps {
+		if _, match := matchedDeps[cdep.Ident.ProjectRoot]; !match && uberLogging {
+			uber.UberLogger.Printf("Ignoring imported constraint %v since it is not a code dependency\n", cdep)
+		}
 	}
 
 	return cdeps, nil
@@ -1270,7 +1279,7 @@ func (s *solver) selectAtom(a atomWithPackages, pkgonly bool) error {
 		pl: a.pl,
 	})
 
-	pl, deps, err := s.getImportsAndConstraintsOf(a)
+	pl, deps, err := s.getImportsAndConstraintsOf(a, true)
 	if err != nil {
 		if contextCanceledOrSMReleased(err) {
 			return err
@@ -1369,7 +1378,7 @@ func (s *solver) unselectLast() (atomWithPackages, bool, error) {
 	awp, first := s.sel.popSelection()
 	heap.Push(s.unsel, bimodalIdentifier{id: awp.a.id, pl: awp.pl})
 
-	_, deps, err := s.getImportsAndConstraintsOf(awp)
+	_, deps, err := s.getImportsAndConstraintsOf(awp, false)
 	if err != nil {
 		if contextCanceledOrSMReleased(err) {
 			return atomWithPackages{}, false, err

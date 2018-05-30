@@ -222,7 +222,9 @@ func (cmd *ensureCommand) Run(ctx *dep.Ctx, args []string) error {
 			return errors.Wrapf(err, "failed to write glide manifest during ensure vendor only run")
 		}
 		// Divide the total latency by the number of projects
-		uber.LatencyNormFactor(len(p.Lock.Projects()))
+		if p.Lock != nil {
+			uber.LatencyNormFactor(len(p.Lock.Projects()))
+		}
 		uber.ReportSuccess()
 		return err
 	}
@@ -262,7 +264,9 @@ func (cmd *ensureCommand) Run(ctx *dep.Ctx, args []string) error {
 			return errors.Wrapf(err, "failed to write glide manifest during ensure add run")
 		}
 		// Divide the total latency by the number of projects
-		uber.LatencyNormFactor(len(p.Lock.Projects()))
+		if p.Lock != nil {
+			uber.LatencyNormFactor(len(p.Lock.Projects()))
+		}
 		uber.ReportSuccess()
 		return err
 	} else if cmd.update {
@@ -273,7 +277,9 @@ func (cmd *ensureCommand) Run(ctx *dep.Ctx, args []string) error {
 			return errors.Wrapf(err, "failed to write glide manifest during ensure update run")
 		}
 		// Divide the total latency by the number of projects
-		uber.LatencyNormFactor(len(p.Lock.Projects()))
+		if p.Lock != nil {
+			uber.LatencyNormFactor(len(p.Lock.Projects()))
+		}
 		uber.ReportSuccess()
 		return err
 	}
@@ -284,7 +290,9 @@ func (cmd *ensureCommand) Run(ctx *dep.Ctx, args []string) error {
 		return errors.Wrapf(err, "failed to write glide manifest during ensure run")
 	}
 	// Divide the total latency by the number of projects
-	uber.LatencyNormFactor(len(p.Lock.Projects()))
+	if p.Lock != nil {
+		uber.LatencyNormFactor(len(p.Lock.Projects()))
+	}
 	uber.ReportSuccess()
 	return err
 }

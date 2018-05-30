@@ -229,7 +229,9 @@ restart:
 	}
 
 	// Divide the total latency by the number of projects
-	uber.LatencyNormFactor(len(p.Lock.Projects()))
+	if p.Lock != nil {
+		uber.LatencyNormFactor(len(p.Lock.Projects()))
+	}
 	uber.ReportSuccess()
 	return nil
 }

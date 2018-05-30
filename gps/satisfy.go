@@ -40,7 +40,7 @@ func (s *solver) check(a atomWithPackages, pkgonly bool) error {
 	}
 
 	var deps []completeDep
-	_, deps, err = s.getImportsAndConstraintsOf(a)
+	_, deps, err = s.getImportsAndConstraintsOf(a, false)
 	if err != nil {
 		// An err here would be from the package fetcher; pass it straight back
 		return err
