@@ -72,8 +72,8 @@ func mkResTree(testData []depspec, selections []interface{}) analyze.ResolverTre
 	}
 
 	resTree := analyze.ResolverTree{
-		map[string]*analyze.TreeNode{rootNode.Name: rootNode},
-		rootNode,
+		NodeList:    map[string]*analyze.TreeNode{rootNode.Name: rootNode},
+		VersionTree: rootNode,
 	}
 
 	return mkDepNodes(testData, selectDeps(resTree, selections))

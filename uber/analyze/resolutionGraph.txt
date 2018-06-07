@@ -1,0 +1,10 @@
+digraph G{ 
+
+ 4 [label="Node With Deps\ntried: bc123314oi3241923h23sdafn, somerevision, v2.0.3, v2.0.3, 2.0.4\nselected: v2.0.3"];
+ 1 [label="code.uber.internal/devexp/test-root-repo.git\ntried: \nselected: "];
+ 2 [label="code.uber.internal/devexp/test-repo.git\ntried: \nselected: "];
+ 3 [label="Node With Vers and Sel\ntried: bc123314oi3241923h23sdafn, somerevision, v2.0.3, v2.0.3, 2.0.4\nselected: v2.0.3"];
+ 4->1;
+ 4->2;
+ 4->3;
+ }

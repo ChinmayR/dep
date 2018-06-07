@@ -1,10 +1,13 @@
 package analyze
 
+import "sync"
+
 // ResolverTree is a struct for holding trees created for projects as versions are explored for fit.
 // NodeList contains pointers to each node in the tree for efficient lookup of TreeNodes
 type ResolverTree struct {
 	NodeList    map[string]*TreeNode
 	VersionTree *TreeNode
+	mtx         sync.Mutex
 }
 
 // TreeNode is struct which holds the current project's name, a list of Versions tried,
@@ -22,8 +25,8 @@ func InitializeResTree(rootName string) *ResolverTree {
 	if resTree == nil {
 		rootNode := newTreeNode(rootName)
 		resTree = &ResolverTree{
-			map[string]*TreeNode{rootName: rootNode},
-			rootNode,
+			NodeList:    map[string]*TreeNode{rootName: rootNode},
+			VersionTree: rootNode,
 		}
 	}
 	return resTree
@@ -31,6 +34,8 @@ func InitializeResTree(rootName string) *ResolverTree {
 
 // Adds a dependency node to a pre-existing project
 func AddDep(depender string, depName string) {
+	resTree.mtx.Lock()
+	defer resTree.mtx.Unlock()
 	dependerNode := resTree.NodeList[depender]
 	var dep *TreeNode
 	if resTree.NodeList[depName] == nil {
@@ -44,11 +49,15 @@ func AddDep(depender string, depName string) {
 }
 
 func AddVersion(nodeName string, version string) {
+	resTree.mtx.Lock()
+	defer resTree.mtx.Unlock()
 	node := resTree.NodeList[nodeName]
 	node.Versions = append(node.Versions, version)
 }
 
 func SelectVersion(nodeName string, version string) {
+	resTree.mtx.Lock()
+	defer resTree.mtx.Unlock()
 	node := resTree.NodeList[nodeName]
 	node.Deps = make([]*TreeNode, 0)
 	node.Selected = version

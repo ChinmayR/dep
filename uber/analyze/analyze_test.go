@@ -117,6 +117,7 @@ func TestUber_Analyze_AddDep(t *testing.T) {
 		tc := tc
 
 		t.Run(name, func(t *testing.T) {
+			ClearTree()
 			resTree := InitializeResTree(tc.givenRootProj)
 			currentNode := resTree.NodeList[tc.givenRootProj]
 			currentDepCount := len(currentNode.Deps)
