@@ -30,6 +30,7 @@ type versionQueue struct {
 }
 
 func newVersionQueue(id ProjectIdentifier, lockv, prefv Version, b sourceBridge, constraint Constraint) (*versionQueue, error) {
+	uber.DebugLogger.Printf("newVersionQueue %v, lockedV: %v, prefV: %v\n", id, lockv, prefv)
 	vq := &versionQueue{
 		id: id,
 		b:  b,

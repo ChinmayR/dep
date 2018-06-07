@@ -608,6 +608,32 @@ var bimodalFixtures = map[string]bimodalFixture{
 			"b 1.0.0 foorev",
 		),
 	},
+	// Preferred version, as derived from a dep's lock is ignored if package is set for change
+	"prefv ignored when change all is true": {
+		ds: []depspec{
+			dsp(mkDepspec("root 0.0.0"),
+				pkg("root", "a")),
+			dsp(mkDepspec("a 1.0.0"),
+				pkg("a", "b")),
+			dsp(mkDepspec("b 1.0.0"),
+				pkg("b", "c")),
+			dsp(mkDepspec("c 1.0.0 foorev"),
+				pkg("c")),
+			dsp(mkDepspec("c 2.0.0 barrev"),
+				pkg("c")),
+		},
+		lm: map[string]fixLock{
+			"b 1.0.0": mklock(
+				"c 1.0.0 foorev",
+			),
+		},
+		r: mksolution(
+			"a 1.0.0",
+			"b 1.0.0",
+			"c 2.0.0 barrev", // this should be set to the latest version with b 1.0.0 prefv ignored
+		),
+		changeall: true,
+	},
 	// Preferred version, as derived from a dep's lock, is attempted first, even
 	// if the root also has a direct dep on it (root doesn't need to use
 	// preferreds, because it has direct control AND because the root lock
@@ -635,6 +661,33 @@ var bimodalFixtures = map[string]bimodalFixture{
 		r: mksolution(
 			"a 1.0.0",
 			"b 1.0.0 foorev",
+		),
+	},
+	"ignore prefv with more than two dependers": {
+		ds: []depspec{
+			dsp(mkDepspec("root 0.0.0"),
+				pkg("root", "a", "b", "c")),
+			dsp(mkDepspec("a 1.0.0"),
+				pkg("a", "c")),
+			dsp(mkDepspec("b 1.0.0"),
+				pkg("b", "c")),
+			dsp(mkDepspec("c 1.0.0 foorev"),
+				pkg("c")),
+			dsp(mkDepspec("c 2.0.0 barrev"),
+				pkg("c")),
+		},
+		lm: map[string]fixLock{
+			"a 1.0.0": mklock(
+				"c 1.0.0 foorev",
+			),
+			"b 1.0.0": mklock(
+				"c 1.0.0 foorev",
+			),
+		},
+		r: mksolution(
+			"a 1.0.0",
+			"b 1.0.0",
+			"c 2.0.0 barrev",
 		),
 	},
 	// Preferred versions can only work if the thing offering it has been
@@ -1461,6 +1514,10 @@ func (sm *bmSourceManager) GetManifestAndLock(id ProjectIdentifier, v Version, a
 
 	// TODO(sdboyer) proper solver-type errors
 	return nil, nil, fmt.Errorf("project %s at version %s could not be found", id, v)
+}
+
+func (sm *bmSourceManager) CompareRevision(id ProjectIdentifier, r1 Revision, r2 Revision) (int, error) {
+	panic("not implemented")
 }
 
 // computeBimodalExternalMap takes a set of depspecs and computes an

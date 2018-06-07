@@ -12,6 +12,7 @@ import (
 	"reflect"
 	"sort"
 	"testing"
+
 	"github.com/golang/dep/uber"
 
 	"github.com/golang/dep/internal/test"

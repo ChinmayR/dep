@@ -121,6 +121,10 @@ func (lb lvFixBridge) GetManifestAndLock(ProjectIdentifier, Version, ProjectAnal
 	panic("not implemented")
 }
 
+func (lb lvFixBridge) CompareRevision(ProjectIdentifier, Revision, Revision) (int, error) {
+	panic("not implemented")
+}
+
 func (lb lvFixBridge) ExportProject(ProjectIdentifier, Version, string) error {
 	panic("not implemented")
 }

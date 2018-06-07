@@ -122,6 +122,10 @@ type SourceManager interface {
 	// InferConstraint tries to puzzle out what kind of version is given in a string -
 	// semver, a revision, or as a fallback, a plain tag
 	InferConstraint(s string, pi ProjectIdentifier) (Constraint, error)
+
+	// CompareVersion compares the two versions passed in and returns -1, 0 or 1 if
+	// r1 is older, same, or later than r2.
+	CompareRevision(id ProjectIdentifier, r1 Revision, r2 Revision) (int, error)
 }
 
 // A ProjectAnalyzer is responsible for analyzing a given path for Manifest and
@@ -619,6 +623,21 @@ func (sm *SourceMgr) InferConstraint(s string, pi ProjectIdentifier) (Constraint
 	}
 
 	return nil, errors.Errorf("%s is not a valid version for the package %s(%s)", s, pi.ProjectRoot, pi.Source)
+}
+
+// CompareVersion compares the two versions passed in and returns -1, 0 or 1 if
+// r1 is older, same, or later than r2.
+func (sm *SourceMgr) CompareRevision(id ProjectIdentifier, r1 Revision, r2 Revision) (int, error) {
+	if atomic.LoadInt32(&sm.releasing) == 1 {
+		return 0, ErrSourceManagerIsReleased
+	}
+
+	srcg, err := sm.srcCoord.getSourceGatewayFor(context.TODO(), id)
+	if err != nil {
+		return 0, err
+	}
+
+	return srcg.src.compareRevision(r1, r2)
 }
 
 // SourceURLsForPath takes an import path and deduces the set of source URLs

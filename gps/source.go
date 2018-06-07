@@ -716,4 +716,7 @@ type source interface {
 	// listVersionsRequiresLocal returns true if calling listVersions first
 	// requires the source to exist locally.
 	listVersionsRequiresLocal() bool
+	// compareVersion compares the two versions passed in and returns -1, 0 or 1 if
+	// r1 is older, same, or later than r2.
+	compareRevision(Revision, Revision) (int, error)
 }

@@ -1337,6 +1337,10 @@ func newdepspecSM(ds []depspec, ignore []string) *depspecSourceManager {
 	}
 }
 
+func (sm *depspecSourceManager) CompareRevision(id ProjectIdentifier, r1 Revision, r2 Revision) (int, error) {
+	panic("not implemented")
+}
+
 func (sm *depspecSourceManager) GetManifestAndLock(id ProjectIdentifier, v Version, an ProjectAnalyzer) (Manifest, Lock, error) {
 	// If the input version is a PairedVersion, look only at its top version,
 	// not the underlying. This is generally consistent with the idea that, for

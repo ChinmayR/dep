@@ -171,6 +171,33 @@ func (bs *baseVCSSource) exportRevisionTo(ctx context.Context, r Revision, to st
 	return fs.CopyDir(bs.repo.LocalPath(), to)
 }
 
+// compareVersion compares the two versions passed in and returns -1, 0 or 1 if
+// r1 is older, same, or later than r2.
+func (bs *baseVCSSource) compareRevision(r1 Revision, r2 Revision) (int, error) {
+	if strings.EqualFold(string(r1), string(r2)) {
+		return 0, nil
+	}
+
+	commitInfo1, err := bs.repo.CommitInfo(r1.String())
+	if err != nil {
+		return 0, err
+	}
+	commitInfo2, err := bs.repo.CommitInfo(r2.String())
+	if err != nil {
+		return 0, err
+	}
+
+	if commitInfo1.Date.Before(commitInfo2.Date) {
+		return -1, nil
+	} else if commitInfo1.Date.Equal(commitInfo2.Date) {
+		return 0, nil
+	} else if commitInfo1.Date.After(commitInfo2.Date) {
+		return 1, nil
+	}
+
+	return 0, errors.Errorf("unknown error while comparing revisions %v and %v", r1, r2)
+}
+
 var (
 	gitHashRE = regexp.MustCompile(`^[a-f0-9]{40}$`)
 )

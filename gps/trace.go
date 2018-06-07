@@ -19,6 +19,10 @@ const (
 	failCharSp    = failChar + " "
 	backChar      = "←"
 	innerIndent   = "  "
+	unknownChar   = "?"
+	upgraded      = "upgraded"
+	downgraded    = "downgraded"
+	unknownStatus = "unknown status"
 )
 
 func (s *solver) traceCheckPkgs(bmi bimodalIdentifier) {
@@ -107,6 +111,54 @@ func (s *solver) traceFinish(sol solution, err error) {
 	} else {
 		s.tl.Printf("%s%s solving failed", innerIndent, failChar)
 	}
+}
+
+// traceSolverSelectedDiff logs the upgraded, downgraded or not supported info for the modified repos
+func (s *solver) traceSolverSelectedDiff(sol solution) {
+	if s.tl == nil {
+		return
+	}
+
+	s.tl.Println("Lock Diff Info:")
+	for _, oldLp := range s.rd.rl.Projects() {
+		for _, newLp := range sol.Projects() {
+			if !strings.EqualFold(string(oldLp.pi.ProjectRoot), string(newLp.pi.ProjectRoot)) {
+				continue
+			}
+			var stateToken string
+			var stateChar string
+
+			val, err := s.b.CompareRevision(newLp.pi, oldLp.r, newLp.r)
+			if err == nil {
+				if val < 0 {
+					stateToken = upgraded
+					stateChar = successChar
+				} else if val == 0 {
+					continue
+				} else if val > 0 {
+					stateToken = downgraded
+					stateChar = failChar
+				}
+			} else {
+				stateToken = unknownStatus
+				stateChar = unknownChar
+			}
+			var oldV string
+			var newV string
+			if oldLp.v != nil {
+				oldV = oldLp.v.String()
+			} else {
+				oldV = string(oldLp.r)
+			}
+			if newLp.v != nil {
+				newV = newLp.v.String()
+			} else {
+				newV = string(newLp.r)
+			}
+			s.tl.Printf("%s %s: Project %s (%v -> %v)", stateChar, stateToken, newLp.pi.ProjectRoot, oldV, newV)
+		}
+	}
+	s.tl.Println()
 }
 
 // traceSelectRoot is called just once, when the root project is selected

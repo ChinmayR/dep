@@ -17,9 +17,9 @@ import (
 	"github.com/armon/go-radix"
 	"github.com/golang/dep/gps/paths"
 	"github.com/golang/dep/gps/pkgtree"
+	"github.com/golang/dep/uber"
 	"github.com/golang/dep/uber/analyze"
 	"github.com/pkg/errors"
-	"github.com/golang/dep/uber"
 )
 
 var rootRev = Revision("")
@@ -478,6 +478,7 @@ func (s *solver) Solve(ctx context.Context) (Solution, error) {
 	if s.tl != nil {
 		s.mtr.dump(s.tl)
 	}
+	s.traceSolverSelectedDiff(soln)
 	return soln, err
 }
 
@@ -806,7 +807,8 @@ func (s *solver) intersectConstraintsWithImports(deps []workingConstraint, reach
 
 	for _, cdep := range deps {
 		if _, match := matchedDeps[cdep.Ident.ProjectRoot]; !match && uberLogging {
-			uber.UberLogger.Printf("Ignoring imported constraint %v since it is not a code dependency\n", cdep)
+			uber.UberLogger.Printf("Ignoring imported constraint %v @ %v since it is not a code dependency, "+
+				"use an override at the root project instead.\n", cdep.Ident, cdep.Constraint)
 		}
 	}
 
@@ -840,6 +842,7 @@ func (s *solver) createVersionQueue(bmi bimodalIdentifier) (*versionQueue, error
 	var lockv Version
 	if len(s.rd.rlm) > 0 {
 		lockv, err = s.getLockVersionIfValid(id)
+		uber.DebugLogger.Printf("For bmi %v found locked version %v\n", bmi.id.ProjectRoot, lockv)
 		if err != nil {
 			// Can only get an error here if an upgrade was expressly requested on
 			// code that exists only in vendor
@@ -849,29 +852,41 @@ func (s *solver) createVersionQueue(bmi bimodalIdentifier) (*versionQueue, error
 
 	var prefv Version
 	if bmi.fromRoot {
+		uber.DebugLogger.Printf("For bmi %v from root\n", bmi.id.ProjectRoot)
 		// If this bmi came from the root, then we want to search through things
 		// with a dependency on it in order to see if any have a lock that might
 		// express a prefv
 		//
 		// TODO(sdboyer) nested loop; prime candidate for a cache somewhere
-		for _, dep := range s.sel.getDependenciesOn(bmi.id) {
-			// Skip the root, of course
-			if s.rd.isRoot(dep.depender.id.ProjectRoot) {
-				continue
-			}
 
-			_, l, err := s.b.GetManifestAndLock(dep.depender.id, dep.depender.v, s.rd.an)
-			if err != nil || l == nil {
-				// err being non-nil really shouldn't be possible, but the lock
-				// being nil is quite likely
-				continue
-			}
+		deps := s.sel.getDependenciesOn(bmi.id)
+		// If there are more than 2 dependers on this bmi (first one being root, whose locked version is already considered)
+		// then there are multiple preferred versions in which case the last depender wins causing weird downgrade issues.
+		// Ignore all preferred versions in this case, which will cause the locked version to be tried first and then
+		// the regular order depending on downgrade/update scenario.
+		if len(deps) <= 2 {
+			for _, dep := range deps {
+				// Skip the root, of course
+				if s.rd.isRoot(dep.depender.id.ProjectRoot) {
+					continue
+				}
 
-			for _, lp := range l.Projects() {
-				if lp.Ident().eq(bmi.id) {
-					prefv = lp.Version()
+				_, l, err := s.b.GetManifestAndLock(dep.depender.id, dep.depender.v, s.rd.an)
+				if err != nil || l == nil {
+					// err being non-nil really shouldn't be possible, but the lock
+					// being nil is quite likely
+					continue
+				}
+
+				for _, lp := range l.Projects() {
+					if lp.Ident().eq(bmi.id) {
+						prefv = lp.Version()
+						uber.DebugLogger.Printf("For bmi %v, setting prefv to %v from dep %v\n", bmi.id.ProjectRoot, prefv, dep.depender.id.ProjectRoot)
+					}
 				}
 			}
+		} else {
+			uber.DebugLogger.Printf("Multiple deps on %v defining preferred versions, so ignoring all of them.\n", bmi.id.ProjectRoot)
 		}
 
 		// OTHER APPROACH - WRONG, BUT MAYBE USEFUL FOR REFERENCE?
@@ -891,6 +906,13 @@ func (s *solver) createVersionQueue(bmi bimodalIdentifier) (*versionQueue, error
 	} else {
 		// Otherwise, just use the preferred version expressed in the bmi
 		prefv = bmi.prefv
+	}
+
+	// if changeAll is true or this package is set to upgrade
+	// then ignore all the preferred versions the same way locked versions are also ignored
+	if _, explicit := s.rd.chng[id.ProjectRoot]; explicit || s.rd.chngall {
+		uber.DebugLogger.Printf("For bmi %v ignored prefv %v since it is set for update\n", bmi.id.ProjectRoot, bmi.prefv)
+		prefv = nil
 	}
 
 	q, err := newVersionQueue(id, lockv, prefv, s.b, s.getCurrProjectConstraint(bmi))
@@ -1362,6 +1384,7 @@ func (s *solver) selectAtom(a atomWithPackages, pkgonly bool) error {
 				// drops in the zero value (nil)
 				prefv: lmap[dep.Ident],
 			}
+			uber.DebugLogger.Printf("Pushed bmi %v with prefv %v\n", bmi.id, bmi.prefv)
 			heap.Push(s.unsel, bmi)
 		}
 	}

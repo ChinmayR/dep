@@ -24,6 +24,9 @@ type sourceBridge interface {
 	GetManifestAndLock(ProjectIdentifier, Version, ProjectAnalyzer) (Manifest, Lock, error)
 	ExportProject(ProjectIdentifier, Version, string) error
 	DeduceProjectRoot(ip string) (ProjectRoot, error)
+	// CompareVersion compares the two versions passed in and returns -1, 0 or 1 if
+	// r1 is older, same, or later than r2.
+	CompareRevision(ProjectIdentifier, Revision, Revision) (int, error)
 
 	listVersions(ProjectIdentifier) ([]Version, error)
 	verifyRootDir(path string) error
@@ -212,4 +215,10 @@ func (b *bridge) SyncSourceFor(id ProjectIdentifier) error {
 	// we don't track metrics here b/c this is often called in its own goroutine
 	// by the solver, and the metrics design is for wall time on a single thread
 	return b.sm.SyncSourceFor(id)
+}
+
+// CompareVersion compares the two versions passed in and returns -1, 0 or 1 if
+// r1 is older, same, or later than r2.
+func (b *bridge) CompareRevision(id ProjectIdentifier, r1 Revision, r2 Revision) (int, error) {
+	return b.sm.CompareRevision(id, r1, r2)
 }

@@ -656,6 +656,78 @@ func TestGitSourceListVersionsNoDupes(t *testing.T) {
 	}
 }
 
+func TestCompareRevision(t *testing.T) {
+	// This test is slowish, skip it on -short
+	if testing.Short() {
+		t.Skip("Skipping git compare revision test in short mode")
+	}
+	requiresBins(t, "git")
+
+	cpath, err := ioutil.TempDir("", "smcache")
+	if err != nil {
+		t.Errorf("Failed to create temp dir: %s", err)
+	}
+	defer func() {
+		if err := os.RemoveAll(cpath); err != nil {
+			t.Errorf("removeAll failed: %s", err)
+		}
+	}()
+	os.Mkdir(filepath.Join(cpath, "sources"), 0777)
+
+	n := "github.com/carolynvs/deptest-importers"
+	un := "https://" + n
+	u, err := url.Parse(un)
+	if err != nil {
+		t.Fatalf("Error parsing URL %s: %s", un, err)
+	}
+	mb := maybeGitSource{
+		url: u,
+	}
+
+	ctx := context.Background()
+	src, err := mb.try(ctx, cpath)
+	if err != nil {
+		t.Fatalf("Unexpected error while setting up gitSource for test repo: %s", err)
+	}
+
+	err = src.initLocal(ctx)
+	if err != nil {
+		t.Fatalf("Error on cloning git repo: %s", err)
+	}
+
+	testcases := []struct {
+		revision1 Revision
+		revision2 Revision
+		expected  int
+	}{
+		{
+			revision1: "44ed7ac7b14c87f49de73179dbbe679f3b16075f", //older
+			revision2: "7913ab26988c6fb1e16225f845a178e8849dd254", //newer
+			expected:  -1,
+		},
+		{
+			revision1: "44ed7ac7b14c87f49de73179dbbe679f3b16075f", //same
+			revision2: "44ed7ac7b14c87f49de73179dbbe679f3b16075f", //same
+			expected:  0,
+		},
+		{
+			revision1: "7913ab26988c6fb1e16225f845a178e8849dd254", //newer
+			revision2: "44ed7ac7b14c87f49de73179dbbe679f3b16075f", //older
+			expected:  1,
+		},
+	}
+
+	for _, tc := range testcases {
+		got, err := src.compareRevision(tc.revision1, tc.revision2)
+		if err != nil {
+			t.Fatalf("Did not expect error")
+		}
+		if got != tc.expected {
+			t.Fatalf("expected %v when comparing %v and %v, but got %v", tc.expected, tc.revision1, tc.revision2, got)
+		}
+	}
+}
+
 func TestGitSourceAdaptiveCleanup(t *testing.T) {
 	// t.Parallel()
 
