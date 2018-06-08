@@ -312,14 +312,23 @@ func (test singleSourceCacheTest) run(t *testing.T) {
 
 		t.Run("getAllVersions", func(t *testing.T) {
 			got, ok := c.getAllVersions()
-			if !ok || len(got) != len(versions) {
-				t.Errorf("unexpected versions:\n\t(GOT): %#v\n\t(WNT): %#v", got, versions)
+			_, isMulti := c.(*multiCache)
+			if test.persistent && isMulti {
+				// the versions should not be retrieved from multi cache, since they can be stale.
+				// only pickup versions from memory or disk cache individually
+				if got != nil || ok {
+					t.Errorf("unexpected versions:\n\t(GOT): %#v\n\t(WNT): %#v", got, versions)
+				}
 			} else {
-				SortPairedForDowngrade(got)
-				for i := range versions {
-					if !versions[i].identical(got[i]) {
-						t.Errorf("unexpected versions:\n\t(GOT): %#v\n\t(WNT): %#v", got, versions)
-						break
+				if !ok || len(got) != len(versions) {
+					t.Errorf("unexpected versions:\n\t(GOT): %#v\n\t(WNT): %#v", got, versions)
+				} else {
+					SortPairedForDowngrade(got)
+					for i := range versions {
+						if !versions[i].identical(got[i]) {
+							t.Errorf("unexpected versions:\n\t(GOT): %#v\n\t(WNT): %#v", got, versions)
+							break
+						}
 					}
 				}
 			}

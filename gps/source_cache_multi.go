@@ -105,13 +105,6 @@ func (c *multiCache) getAllVersions() ([]PairedVersion, bool) {
 		return pvs, true
 	}
 
-	pvs, ok = c.disk.getAllVersions()
-	if ok {
-		uber.CacheLogger.Printf("hit getAllVersions from disk, unpairedVersion:%v", pvs)
-		c.mem.setVersionMap(pvs)
-		return pvs, true
-	}
-
 	uber.CacheLogger.Printf("miss multi getAllVersions")
 	return nil, false
 }
