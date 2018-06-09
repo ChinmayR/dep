@@ -137,9 +137,24 @@ func WriteNewGlideManifest(dir string, overwrite bool, glideManifest glideYaml) 
 // treat as direct semver. So a caret needs to be added to
 // versions that are read from dep by glide
 func getVersionWithImpliedSemverMajorRange(version string) string {
-	if _, err := strconv.Atoi(string(version[0])); err == nil {
-		// first char is a number so there is an implied caret from dep
-		return "^" + version
+	num, err := strconv.Atoi(string(version[0]))
+	if err == nil {
+		// first char is a number so there is an implied caret or tilde from dep
+
+		// if the version is pre 1.0 then we cannot imply a caret by default because of
+		// the bug in glide on how it interprets caret pre 1.0.
+		// For Pre 1.0 versions:
+		//     Dep:   ^0.1.0 is treated as >=0.1.0 <0.2.0
+		//     Glide: ^0.1.0 is treated as >=0.1.0 <1.0.0 (buggy behavior, corrected by making it ~)
+		// For Post 1.0 versions:
+		//     Dep:   ^1.1.0 is treated as >=1.1.0 <2.0.0
+		//     Glide: ^1.1.0 is treated as >=1.1.0 <2.0.0
+		// For pre 1.0 versions, we have to write ~ in glide, when dep has either ^ and ~.
+		if num == 0 {
+			return "~" + version
+		} else {
+			return "^" + version
+		}
 	}
 	return version
 }

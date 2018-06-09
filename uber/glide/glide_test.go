@@ -9,6 +9,55 @@ import (
 	"github.com/golang/dep/gps"
 )
 
+func TestPreV1GlideCaretTildeBug(t *testing.T) {
+	postV1Tilde, _ := gps.NewSemverConstraint("~1.12.0")
+	preV1Tilde, _ := gps.NewSemverConstraint("~0.12.0")
+	postV1Caret, _ := gps.NewSemverConstraint("^1.12.0")
+	preV1Caret, _ := gps.NewSemverConstraint("^0.12.0")
+	depManifest := dep.Manifest{
+		Constraints: map[gps.ProjectRoot]gps.ProjectProperties{
+			gps.ProjectRoot("github.com/golang/mock/foo"): {
+				Constraint: postV1Tilde,
+			},
+			gps.ProjectRoot("github.com/golang/mock/bar"): {
+				Constraint: preV1Tilde,
+			},
+			gps.ProjectRoot("github.com/golang/mock/baz"): {
+				Constraint: postV1Caret,
+			},
+			gps.ProjectRoot("github.com/golang/mock/qux"): {
+				Constraint: preV1Caret,
+			},
+		},
+	}
+	wantGlide := glideYaml{
+		Imports: []glidePackage{
+			glidePackage{
+				Name:      "github.com/golang/mock/bar",
+				Reference: "~0.12.0",
+			},
+			glidePackage{
+				Name:      "github.com/golang/mock/baz",
+				Reference: "^1.12.0",
+			},
+			glidePackage{
+				Name:      "github.com/golang/mock/foo",
+				Reference: "~1.12.0",
+			},
+			glidePackage{
+				Name:      "github.com/golang/mock/qux",
+				Reference: "~0.12.0",
+			},
+		},
+	}
+
+	gotGlide, _ := convertDepToGlide(&depManifest)
+
+	if !reflect.DeepEqual(gotGlide, wantGlide) {
+		t.Error("Glide manifest is not as expected")
+	}
+}
+
 func TestConvertDepToGlide(t *testing.T) {
 	c, _ := gps.NewSemverConstraint("^0.12.0")
 	depManifest := dep.Manifest{
@@ -62,7 +111,7 @@ func TestConvertDepToGlide(t *testing.T) {
 			},
 			glidePackage{
 				Name:      "github.com/golang/mock/bar",
-				Reference: "^0.12.0",
+				Reference: "~0.12.0",
 			},
 			glidePackage{
 				Name: "require/this/package",
