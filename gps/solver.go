@@ -479,6 +479,7 @@ func (s *solver) Solve(ctx context.Context) (Solution, error) {
 		s.mtr.dump(s.tl)
 	}
 	s.traceSolverSelectedDiff(soln)
+	defer analyze.GenerateEncodedGraph()
 	return soln, err
 }
 

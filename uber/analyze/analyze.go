@@ -1,6 +1,8 @@
 package analyze
 
-import "sync"
+import (
+	"sync"
+)
 
 // ResolverTree is a struct for holding trees created for projects as versions are explored for fit.
 // NodeList contains pointers to each node in the tree for efficient lookup of TreeNodes
@@ -71,6 +73,11 @@ func newTreeNode(projectName string) *TreeNode {
 	}
 
 	return node
+}
+
+func GenerateEncodedGraph() {
+	//TODO: Trigger NodeList update here.
+	writeToFile(resTree)
 }
 
 // For testing only
