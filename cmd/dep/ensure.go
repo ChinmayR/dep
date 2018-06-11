@@ -218,9 +218,6 @@ func (cmd *ensureCommand) Run(ctx *dep.Ctx, args []string) error {
 		if err = cmd.runVendorOnly(ctx, args, p, sm, params); err != nil {
 			return err
 		}
-		if err = SyncManifest(p.AbsRoot); err != nil {
-			return errors.Wrapf(err, "failed to write glide manifest during ensure vendor only run")
-		}
 		// Divide the total latency by the number of projects
 		if p.Lock != nil {
 			uber.LatencyNormFactor(len(p.Lock.Projects()))
