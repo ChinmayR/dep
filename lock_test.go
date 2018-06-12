@@ -30,6 +30,7 @@ func TestReadLock(t *testing.T) {
 	want := &Lock{
 		SolveMeta: SolveMeta{
 			InputsDigest: b,
+			DepVersion:   "v0.11.0-UBER",
 		},
 		P: []gps.LockedProject{
 			gps.NewLockedProject(
@@ -81,6 +82,7 @@ func TestWriteLock(t *testing.T) {
 	l := &Lock{
 		SolveMeta: SolveMeta{
 			InputsDigest: memo,
+			DepVersion:   "v0.11.0-UBER",
 		},
 		P: []gps.LockedProject{
 			gps.NewLockedProject(

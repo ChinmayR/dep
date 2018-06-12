@@ -11,6 +11,7 @@ import (
 	"sort"
 
 	"github.com/golang/dep/gps"
+	"github.com/golang/dep/uber"
 	"github.com/pelletier/go-toml"
 	"github.com/pkg/errors"
 )
@@ -31,6 +32,7 @@ type SolveMeta struct {
 	AnalyzerVersion int
 	SolverName      string
 	SolverVersion   int
+	DepVersion      string
 }
 
 type rawLock struct {
@@ -44,6 +46,7 @@ type solveMeta struct {
 	AnalyzerVersion int    `toml:"analyzer-version"`
 	SolverName      string `toml:"solver-name"`
 	SolverVersion   int    `toml:"solver-version"`
+	DepVersion      string `toml:"dep-version,omitempty"`
 }
 
 type rawLockedProject struct {
@@ -86,6 +89,7 @@ func fromRawLock(raw rawLock) (*Lock, error) {
 	l.SolveMeta.AnalyzerVersion = raw.SolveMeta.AnalyzerVersion
 	l.SolveMeta.SolverName = raw.SolveMeta.SolverName
 	l.SolveMeta.SolverVersion = raw.SolveMeta.SolverVersion
+	l.SolveMeta.DepVersion = raw.SolveMeta.DepVersion
 
 	for i, ld := range raw.Projects {
 		r := gps.Revision(ld.Revision)
@@ -145,6 +149,7 @@ func (l *Lock) toRaw() rawLock {
 			AnalyzerVersion: l.SolveMeta.AnalyzerVersion,
 			SolverName:      l.SolveMeta.SolverName,
 			SolverVersion:   l.SolveMeta.SolverVersion,
+			DepVersion:      l.SolveMeta.DepVersion,
 		},
 		Projects: make([]rawLockedProject, len(l.P)),
 	}
@@ -193,6 +198,7 @@ func LockFromSolution(in gps.Solution) *Lock {
 			AnalyzerVersion: in.AnalyzerVersion(),
 			SolverName:      in.SolverName(),
 			SolverVersion:   in.SolverVersion(),
+			DepVersion:      uber.DEP_VERSION,
 		},
 		P: make([]gps.LockedProject, len(p)),
 	}
