@@ -1,6 +1,7 @@
 package uber
 
 import (
+	"reflect"
 	"strings"
 	"testing"
 	"time"
@@ -109,5 +110,43 @@ func Test_IsLatestVersion(t *testing.T) {
 			t.Fatalf("%v: Expected latestVersion %v but got %v", tcName, tc.latestVersion, versionInfo.LatestVersion)
 		}
 		ex.AssertExpectations(t)
+	}
+}
+
+func Test_IsCurrentVersionLaterThanLockVersion(t *testing.T) {
+
+	type testcase struct {
+		depVersion  string
+		lockVersion string
+		errExpected error
+	}
+
+	cases := map[string]testcase{
+		"depVersion is older than locked version": {
+			depVersion:  "v0.11.0-UBER",
+			lockVersion: "v0.12.0-UBER",
+			errExpected: ErrDepVersionOlder,
+		},
+		"depVersion is newer than locked version": {
+			depVersion:  "v0.12.0-UBER",
+			lockVersion: "v0.11.0-UBER",
+			errExpected: nil,
+		},
+		"invalid semver version": {
+			depVersion:  "invalidSemver",
+			lockVersion: "v0.11.0-UBER",
+			errExpected: ErrParsingSemVer,
+		},
+	}
+
+	for tcName, tc := range cases {
+		err := IsCurrentVersionLaterThanLockVersion(tc.lockVersion, tc.depVersion)
+		if tc.errExpected != nil {
+			if !reflect.DeepEqual(tc.errExpected, err) {
+				t.Fatalf("%v: Expected error %v but got %v", tcName, tc.errExpected, err.Error())
+			}
+		} else {
+			assert.Nil(t, err)
+		}
 	}
 }

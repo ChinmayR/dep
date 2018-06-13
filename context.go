@@ -13,6 +13,7 @@ import (
 
 	"github.com/golang/dep/gps"
 	"github.com/golang/dep/internal/fs"
+	"github.com/golang/dep/uber"
 	"github.com/pkg/errors"
 )
 
@@ -186,6 +187,14 @@ func (c *Ctx) LoadProject() (*Project, error) {
 	p.Lock, err = readLock(lf)
 	if err != nil {
 		return nil, errors.Wrapf(err, "error while parsing %s", lp)
+	}
+
+	// check if the current dep version is atleast same or greater than the version the lock file was written with
+	if p.Lock.SolveMeta.DepVersion != "" {
+		err := uber.IsCurrentVersionLaterThanLockVersion(p.Lock.SolveMeta.DepVersion, uber.DEP_VERSION)
+		if err != nil && err != uber.ErrParsingSemVer {
+			return nil, err
+		}
 	}
 
 	return p, nil

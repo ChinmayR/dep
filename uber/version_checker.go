@@ -126,3 +126,25 @@ func WriteCacheClearedVersion(version string, cacheDir string) error {
 
 	return nil
 }
+
+var ErrParsingSemVer = errors.New("Unable to parse semVer")
+var ErrDepVersionOlder = errors.New("dep version is less than the version the lock was written with")
+
+func IsCurrentVersionLaterThanLockVersion(lockVersion string, depVersion string) error {
+	lockSemVer, err := semver.NewVersion(lockVersion)
+	if err != nil {
+		return ErrParsingSemVer
+	}
+	depSemVer, err := semver.NewVersion(depVersion)
+	if err != nil {
+		return ErrParsingSemVer
+	}
+	if depSemVer.LessThan(lockSemVer) {
+		UberLogger.Println("**************************")
+		UberLogger.Printf("Your dep version is %v but the lock file was written with dep version %v\n", DEP_VERSION, lockSemVer)
+		UberLogger.Printf("Please update your dep version to %v or above so the lock is not curropted\n", lockVersion)
+		UberLogger.Println("**************************")
+		return ErrDepVersionOlder
+	}
+	return nil
+}
