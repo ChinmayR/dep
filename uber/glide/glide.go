@@ -19,7 +19,7 @@ const (
 	GlideYamlName       = "glide.yaml"
 	GlideLockName       = "glide.lock"
 	modifiedPrefix      = ".old"
-	glideManifestHeader = `# This glide manifest is generated and kept in sync by dep for backwards compatibility.
+	glideManifestHeader = `# This glide manifest is @` + `generated and kept in sync by dep for backwards compatibility.
 # It is not a full glide manifest and will not work with traditional glide commands.
 `
 )
