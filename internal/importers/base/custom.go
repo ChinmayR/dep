@@ -92,6 +92,16 @@ func WriteCustomConfig(dir string, impPkgs []ImportedPackage, excludeDirs []stri
 	return nil
 }
 
+var ConfigNotExistError = errors.New("config file does not exist")
+
+func RemoveConfig(dir string) error {
+	t := filepath.Join(dir, CustomConfigName)
+	if _, err := os.Stat(t); os.IsNotExist(err) {
+		return ConfigNotExistError
+	}
+	return os.Remove(t)
+}
+
 func convertImpPkgToOveridePkg(impPkgs []ImportedPackage) []overridePackage {
 	var overidePkgs []overridePackage
 	for _, impPkg := range impPkgs {

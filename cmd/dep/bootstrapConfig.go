@@ -6,8 +6,8 @@ import (
 
 	"github.com/golang/dep"
 	"github.com/golang/dep/internal/importers/base"
-	"github.com/pkg/errors"
 	"github.com/golang/dep/uber"
+	"github.com/pkg/errors"
 )
 
 const bootConfigHelp = `Bootstrap the Uber specific default config`
@@ -31,7 +31,7 @@ func (cmd *bootConfigCommand) Run(ctx *dep.Ctx, args []string) error {
 func BootConfig(ctx *dep.Ctx) error {
 	curPkgs, basicExcludeDirs, err := base.ReadCustomConfig(ctx.WorkingDir)
 	if err != nil {
-		return errors.Wrapf(err,"error loading current config")
+		return errors.Wrapf(err, "error loading current config")
 	}
 
 	impPkgs, err := appendBasicOverrides(curPkgs)
@@ -42,7 +42,7 @@ func BootConfig(ctx *dep.Ctx) error {
 			uber.UberLogger.Printf("basic override already exists: %s", err.Error())
 			return nil
 		} else {
-			return errors.Wrapf(err,"error appending basic overrides")
+			return errors.Wrapf(err, "error appending basic overrides")
 		}
 	}
 
@@ -50,7 +50,7 @@ func BootConfig(ctx *dep.Ctx) error {
 		err = base.WriteCustomConfig(ctx.WorkingDir, impPkgs, base.AppendBasicExcludeDirs(basicExcludeDirs),
 			true, ctx.Out)
 		if err != nil {
-			return errors.Wrapf(err,"error writing custom config at %s", ctx.WorkingDir)
+			return errors.Wrapf(err, "error writing custom config at %s", ctx.WorkingDir)
 		}
 	} else {
 		uber.UberLogger.Println("Not writing custom config since nothing to add...")
@@ -66,4 +66,12 @@ func appendBasicOverrides(curPkgs []base.ImportedPackage) ([]base.ImportedPackag
 	}
 
 	return base.AppendBasicOverrides(curPkgs, pkgSeen)
+}
+
+func RemoveConfig(ctx *dep.Ctx) error {
+	err := base.RemoveConfig(ctx.WorkingDir)
+	if err != base.ConfigNotExistError {
+		return err
+	}
+	return nil
 }

@@ -12,7 +12,6 @@ import (
 	"os"
 	"path/filepath"
 	"strconv"
-	"time"
 
 	"github.com/golang/dep"
 	"github.com/golang/dep/gps"
@@ -86,6 +85,7 @@ func (cmd *initCommand) Run(ctx *dep.Ctx, args []string) error {
 		if err != nil {
 			uber.UberLogger.Printf("Failed to boot custom config, run \"dep bootConfig\" manually: %s", err)
 		}
+		defer RemoveConfig(ctx)
 	}
 
 	// this flag controls if external github repos need to be mirrored internally at gitolite
@@ -201,15 +201,6 @@ restart:
 	}
 
 	p.Lock.SolveMeta.InputsDigest = s.HashInputs()
-
-	// Pass timestamp (yyyyMMddHHmmss format) as suffix to backup name.
-	vendorbak, err := dep.BackupVendor(filepath.Join(root, "vendor"), time.Now().Format("20060102150405"))
-	if err != nil {
-		return errors.Wrap(err, "init failed: first backup vendor/, delete it, and then retry the previous command: failed to backup existing vendor directory")
-	}
-	if vendorbak != "" {
-		ctx.Err.Printf("Old vendor backed up to %v", vendorbak)
-	}
 
 	sw, err := dep.NewSafeWriter(p.Manifest, nil, p.Lock, dep.VendorAlways, p.Manifest.PruneOptions)
 	if err != nil {
