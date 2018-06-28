@@ -479,7 +479,7 @@ func (s *solver) Solve(ctx context.Context) (Solution, error) {
 		s.mtr.dump(s.tl)
 	}
 	s.traceSolverSelectedDiff(soln)
-	defer analyze.GenerateEncodedGraph()
+	defer analyze.GenerateEncodedGraph(err)
 	return soln, err
 }
 
@@ -1002,6 +1002,12 @@ func (s *solver) findValidVersion(q *versionQueue, pl []string, bmi bimodalIdent
 
 	if s.sel.depperCount(q.id) > 0 {
 		s.fail(s.sel.getDependenciesOn(q.id)[0].depender.id)
+	}
+
+	// Uber Analyze Patch: Collect failure information for error reporting on Visualization Graph, otherwise inaccessible
+	analyze.ResetLastFailure(q.id.String())
+	for _, fail := range q.fails[faillen:] {
+		analyze.CollectFails(fail.v.String(), fail.f)
 	}
 
 	// Return a compound error of all the new errors encountered during this

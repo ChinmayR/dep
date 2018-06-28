@@ -9,9 +9,10 @@ type analyzeTestCase map[string]struct {
 	givenRootProj, expRootProj, givenName, expName, givenVer, expVer, givenSelected, prevSelected string
 	expDep, givenCurNode                                                                          *TreeNode
 	prevDeps                                                                                      []*TreeNode
-	expTree                                                                                       *ResolverTree
+	givenTree, expTree                                                                                       *ResolverTree
 	givenVers, expVers, prevVers, newVers                                                         []string
-}
+	expNodelist map[string]*TreeNode
+	}
 
 func TestUber_Analyze_InitializeResolverTree(t *testing.T) {
 	cases := analyzeTestCase{
@@ -253,6 +254,49 @@ func TestUber_Analyze_SelectVersion(t *testing.T) {
 			newDepCount := len(currentNode.Deps)
 			if newDepCount != 0 {
 				t.Fatalf("unexpected Dep count \n\t(CASE) %v \n\t(GOT) %v\n\t(WNT) %v", name, newDepCount, 0)
+			}
+		})
+	}
+}
+
+func TestUber_Analyze_syncNodeList(t *testing.T){
+	cases := analyzeTestCase{
+		"obsolete nodes should be removed from the NodeList on sync": {
+			givenTree: TreeWithUnreferencedNode,
+			expNodelist: map[string]*TreeNode{
+				NodeWithDeps.Name:       NodeWithDeps,
+				RootNode.Name:           RootNode,
+				DependerNode.Name:       DependerNode,
+				NodeWithVersAndSel.Name: NodeWithVersAndSel,
+			},
+		},
+	}
+
+	for name, testcase := range cases {
+		name := name
+		tc := testcase
+		t.Run(name, func(t *testing.T){
+			gotNodeList := syncNodeList(tc.givenTree.VersionTree)
+			if len(gotNodeList) != len(tc.expNodelist) {
+				t.Fatalf("Unexpected number of nodes \n\t(CASE) %v \n\t(GOT) %v\n\t(WNT) %v", name, len(gotNodeList), len(tc.expNodelist))
+			}
+
+			for wntName, _ := range tc.expNodelist {
+				found := false
+				for gotName, gotNode := range gotNodeList {
+					if gotName == wntName {
+						found = true
+					}
+
+					if gotName != gotNode.Name {
+						t.Fatalf("Name/Node mismatch in new NodeLists  \n\t(CASE) %v \n\t(GOT) %v\n\t(WNT) %v", name, gotNode.Name, wntName)
+					}
+
+				}
+
+				if found == false {
+					t.Fatalf("Missing node from nodelist \n\t(CASE) %v \n\t(GOT) %v\n\t(WNT) %v", name, "", tc.expNodelist)
+				}
 			}
 		})
 	}

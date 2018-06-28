@@ -16,46 +16,32 @@ func makeEncodedString(name string) string {
 	return strconv.FormatInt(int64(hash.Sum32()), 10)
 }
 
-// uses the ResolverTree to encode Nodes. It returns two maps. The first is a map of encodedRelationships,
+// uses the ResolverTree's root node to encode Nodes. It returns two maps. The first is a map of encodedRelationships,
 // which is a map with key parentNode and value of slice of childNodes (given as strings of encoded values)
 // The second return is a map with key of nodeName and value of nodeEncodedVal, both as strings.
-func mkRelationships(resTree *TreeNode) (map[string][]string, map[string]string) {
-	curLevel := []*TreeNode{resTree}
+func mkRelationships(rootNode *TreeNode) (map[string][]string, map[string]string) {
+	encodeQueue := []*TreeNode{rootNode}
 	encodedRelationships := make(map[string][]string)
 	nameAndEncodedVals := make(map[string]string)
 
-	for len(curLevel) > 0 {
-		nextLevel := make([]*TreeNode, 0)
-		for _, node := range curLevel {
-			checkDups := make(map[string]bool)
+	for len(encodeQueue) > 0 {
+		curNode := encodeQueue[0]
+		encodeQueue = append(encodeQueue[1:])
+		if nameAndEncodedVals[curNode.Name] == "" {
+			encodedNodeVal := makeEncodedString(curNode.Name)
+			nameAndEncodedVals[curNode.Name] = encodedNodeVal
 
-			if nameAndEncodedVals[node.Name] == "" {
-				nameAndEncodedVals[node.Name] = makeEncodedString(node.Name)
-			}
-			nodeEncoded := nameAndEncodedVals[node.Name]
-
-			// if there are already values in the the hash, we've already visited this node.
-			if encodedRelationships[nodeEncoded] == nil {
-				encodedRelationships[nodeEncoded] = make([]string, 0)
-				for _, child := range node.Deps {
-					if nameAndEncodedVals[child.Name] == "" {
-						nameAndEncodedVals[child.Name] = makeEncodedString(child.Name)
-					}
-					encodedChild := nameAndEncodedVals[child.Name]
-					if !checkDups[encodedChild] {
-						// append the hashed child value to the deppers list for the parent node
-						encodedRelationships[nodeEncoded] = append(encodedRelationships[nodeEncoded], encodedChild)
-						// put it in the duplicate map so we don't add it more than once
-						checkDups[encodedChild] = true
-						// add that child to the nextLevel so that we can get its children next
-						nextLevel = append(nextLevel, child)
-					}
+			encodedRelationships[encodedNodeVal] = make([]string, 0)
+			dups := make(map[string]bool)
+			for _, childNode := range curNode.Deps {
+				if !dups[childNode.Name]{
+					encodeQueue = append(encodeQueue, childNode)
+					dups[childNode.Name] = true
+					encodedRelationships[encodedNodeVal] = append(encodedRelationships[encodedNodeVal], makeEncodedString(childNode.Name))
 				}
 			}
 		}
-		curLevel = nextLevel
 	}
-
 	return encodedRelationships, nameAndEncodedVals
 }
 
@@ -63,30 +49,58 @@ func buildGraphVizOutput(tree *ResolverTree) []string {
 	relationships, namesToEncodedVals := mkRelationships(tree.VersionTree)
 	fileInput := make([]string, 0)
 	// write all of the encoded values and their project details
+	failedProject := ""
+	errorOutput := make([]string, 0)
+	if tree.LastError != nil {
+		failedProject = tree.LastError.Pn
+		for _, err := range tree.LastError.Fails {
+			errorOutput = append(errorOutput, err.Err)
+		}
+	}
+
 	for projectName, hashedValue := range namesToEncodedVals {
-		color := "black"
-		curNode := tree.NodeList[projectName]
-		versions := curNode.Versions
-
-		if curNode.Selected == "" && curNode.Name != tree.VersionTree.Name && len(curNode.Versions) != 0 {
-			color = "red"
-		}
-
 		var lineOutput []string
+
+		curNode := tree.NodeList[projectName]
+		nodeLabel := " [label=\""
+		tried :=  "\\ntried: "
+		versions := curNode.Versions
+		allTriedVersions := strings.Join(versions, ", ")
+		selectedLabel := "\\nselected: "
+		selectedVersion := tree.NodeList[projectName].Selected
+		colorLabel := "\" color="
+		color := "black"
+		errLabel := ""
+		reportedError := ""
+
 		if curNode.Name == tree.VersionTree.Name {
-			lineOutput = []string{"\n ", hashedValue, " [label=\" ROOT: \\n", projectName, "\\n\" color=", color, "]; "}
-		} else {
-			lineOutput = []string{"\n ", hashedValue, " [label=\"", projectName, "\\n", "tried: ", strings.Join(versions, ", "), "\\n", "selected: ", tree.NodeList[projectName].Selected, "\" color=", color, "];"}
+			nodeLabel = " [label=\" ROOT: \\n"
+			tried = ""
+			selectedLabel = "\\n"
+			selectedVersion = ""
 		}
 
+		if curNode.Name == failedProject {
+			color = "red"
+			errLabel = "\\n\\n ERROR: "
+			reportedError = strings.Join(errorOutput, "\\n")
+		}
+
+		lineOutput = []string{"\n ", hashedValue, nodeLabel, projectName, tried, allTriedVersions, selectedLabel, selectedVersion, errLabel, reportedError, colorLabel, color, "];"}
 		concatString := strings.Join(lineOutput, "")
 		fileInput = append(fileInput, concatString)
 	}
 
 	// Create the graphviz relationships between nodes
+	failNodeEncoded := makeEncodedString(failedProject)
 	for parent, childList := range relationships {
+		highlightFailedParents := ""
 		for _, child := range childList {
-			lineOutput := []string{"\n ", parent, "->", child, ";"}
+			if child == failNodeEncoded {
+				highlightFailedParents = " [color=\"red\"]"
+			}
+
+			lineOutput := []string{"\n ", parent, "->", child, highlightFailedParents, ";"}
 			concatString := strings.Join(lineOutput, "")
 			fileInput = append(fileInput, concatString)
 		}

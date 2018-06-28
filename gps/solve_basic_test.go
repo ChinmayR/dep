@@ -458,7 +458,7 @@ func (f basicFixture) failure() error {
 
 // A table of basicFixtures, used in the basic solving test set.
 var basicFixtures = map[string]basicFixture{
-	// basic fixtures
+	 // basic fixtures
 	"no dependencies": {
 		ds: []depspec{
 			mkDepspec("root 0.0.0"),
@@ -1269,11 +1269,11 @@ var basicFixtures = map[string]basicFixture{
 }
 
 func init() {
-	// This sets up a hundred versions of foo and bar, 0.0.0 through 9.9.0. Each
-	// version of foo depends on a baz with the same major version. Each version
-	// of bar depends on a baz with the same minor version. There is only one
-	// version of baz, 0.0.0, so only older versions of foo and bar will
-	// satisfy it.
+	 // This sets up a hundred versions of foo and bar, 0.0.0 through 9.9.0. Each
+	 // version of foo depends on a baz with the same major version. Each version
+	 // of bar depends on a baz with the same minor version. There is only one
+	 // version of baz, 0.0.0, so only older versions of foo and bar will
+	 // satisfy it.
 	fix := basicFixture{
 		ds: []depspec{
 			mkDepspec("root 0.0.0", "foo *", "bar *"),
@@ -1297,7 +1297,7 @@ func init() {
 	basicFixtures["complex backtrack"] = fix
 
 	for k, fix := range basicFixtures {
-		// Assign the name into the fixture itself
+		 // Assign the name into the fixture itself
 		fix.n = k
 		basicFixtures[k] = fix
 	}

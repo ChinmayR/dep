@@ -9,6 +9,7 @@ import (
 type ResolverTree struct {
 	NodeList    map[string]*TreeNode
 	VersionTree *TreeNode
+	LastError	*ResTreeSolveError
 	mtx         sync.Mutex
 }
 
@@ -21,6 +22,16 @@ type TreeNode struct {
 	Deps     []*TreeNode
 }
 
+type ResTreeSolveError struct {
+	Pn string
+	Fails []*ResTreeFailedVersion
+}
+
+type ResTreeFailedVersion struct {
+	V string
+	Err string
+}
+
 var resTree *ResolverTree
 
 func InitializeResTree(rootName string) *ResolverTree {
@@ -29,6 +40,10 @@ func InitializeResTree(rootName string) *ResolverTree {
 		resTree = &ResolverTree{
 			NodeList:    map[string]*TreeNode{rootName: rootNode},
 			VersionTree: rootNode,
+			LastError: &ResTreeSolveError{
+				"",
+				make([]*ResTreeFailedVersion, 0),
+			},
 		}
 	}
 	return resTree
@@ -75,8 +90,48 @@ func newTreeNode(projectName string) *TreeNode {
 	return node
 }
 
-func GenerateEncodedGraph() {
-	//TODO: Trigger NodeList update here.
+func ResetLastFailure(projectName string) {
+	resTree.mtx.Lock()
+	defer resTree.mtx.Unlock()
+	resTree.LastError = &ResTreeSolveError{
+		Pn: projectName,
+		Fails: make([]*ResTreeFailedVersion, 0),
+	}
+}
+
+func CollectFails(version string, err error) {
+	resTree.mtx.Lock()
+	defer resTree.mtx.Unlock()
+	failure := &ResTreeFailedVersion{
+		V: version,
+		Err: err.Error(),
+	}
+	resTree.LastError.Fails = append(resTree.LastError.Fails, failure)
+}
+
+func syncNodeList(rootNode *TreeNode) map[string]*TreeNode {
+	syncQueue := []*TreeNode{rootNode}
+	newNodeList := make(map[string]*TreeNode)
+
+	for len(syncQueue) > 0 {
+		curNode := syncQueue[0]
+		syncQueue = append(syncQueue[1:])
+		if newNodeList[curNode.Name] == nil {
+			newNodeList[curNode.Name] = curNode
+
+			for _, childNode := range curNode.Deps {
+				syncQueue = append(syncQueue, childNode)
+			}
+		}
+	}
+	return newNodeList
+}
+
+func GenerateEncodedGraph(err error) {
+	resTree.NodeList = syncNodeList(resTree.VersionTree)
+	if err == nil {
+		resTree.LastError = nil
+	}
 	writeToFile(resTree)
 }
 

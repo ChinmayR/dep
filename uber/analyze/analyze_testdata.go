@@ -116,6 +116,15 @@ var (
 			UnreferencedNode.Name:                   UnreferencedNode,
 		},
 		VersionTree: RootOfVizTesterTree,
+		LastError: &ResTreeSolveError{
+			Pn: "NodeThatFailed",
+			Fails: []*ResTreeFailedVersion{
+				&ResTreeFailedVersion{
+					"2.3.0",
+					"No Version met constraints",
+				},
+			},
+		},
 	}
 
 	Deps = []*TreeNode{RootNode, DependerNode, NodeWithVersAndSel}
@@ -134,11 +143,11 @@ var (
 	}
 
 	TreeToGraphOutput = []string{
-		"\n " + makeEncodedString(RootOfVizTesterTree.Name) + " [label=\" ROOT: \\n" + RootOfVizTesterTree.Name + "\\n\" color=black]; ",
+		"\n " + makeEncodedString(RootOfVizTesterTree.Name) + " [label=\" ROOT: \\n" + RootOfVizTesterTree.Name + "\\n\" color=black];",
 		"\n " + makeEncodedString(RootNode.Name) + " [label=\"" + RootNode.Name + "\\n" + "tried: " + strings.Join(RootNode.Versions, ", ") + "\\n" + "selected: " + RootNode.Selected + "\" color=black];",
 		"\n " + makeEncodedString(DependerNode.Name) + " [label=\"" + DependerNode.Name + "\\ntried: " + strings.Join(DependerNode.Versions, ", ") + "\\nselected: " + DependerNode.Selected + "\" color=black];",
 		"\n " + makeEncodedString(NodeWithVersAndSel.Name) + " [label=\"" + NodeWithVersAndSel.Name + "\\ntried: " + strings.Join(NodeWithVersAndSel.Versions, ", ") + "\\nselected: " + NodeWithVersAndSel.Selected + "\" color=black];",
-		"\n " + makeEncodedString(NodeThatFailed.Name) + " [label=\"" + NodeThatFailed.Name + "\\ntried: " + strings.Join(NodeThatFailed.Versions, ", ") + "\\nselected: " + NodeThatFailed.Selected + "\" color=red];",
+		"\n " + makeEncodedString(NodeThatFailed.Name) + " [label=\"" + NodeThatFailed.Name + "\\ntried: " + strings.Join(NodeThatFailed.Versions, ", ") + "\\nselected: " + NodeThatFailed.Selected + "\\n\\n ERROR: No Version met constraints\" color=red];",
 		"\n " + makeEncodedString(NodeThatWasIntroducedButNeverTried.Name) + " [label=\"" + NodeThatWasIntroducedButNeverTried.Name + "\\ntried: " + strings.Join(NodeThatWasIntroducedButNeverTried.Versions, ", ") + "\\nselected: " + NodeThatWasIntroducedButNeverTried.Selected + "\" color=black];",
 		"\n " + makeEncodedString(NodeWithDeps.Name) + " [label=\"" + NodeWithDeps.Name + "\\ntried: " + strings.Join(NodeWithDeps.Versions, ", ") + "\\nselected: " + NodeWithDeps.Selected + "\" color=black];",
 		"\n " + makeEncodedString(ParentOfNodeThatFailed.Name) + " [label=\"" + ParentOfNodeThatFailed.Name + "\\ntried: " + strings.Join(ParentOfNodeThatFailed.Versions, ", ") + "\\nselected: " + ParentOfNodeThatFailed.Selected + "\" color=black];",
@@ -151,7 +160,7 @@ var (
 		"\n " + makeEncodedString(NodeWithDeps.Name) + "->" + makeEncodedString(RootNode.Name) + ";",
 		"\n " + makeEncodedString(NodeWithDeps.Name) + "->" + makeEncodedString(DependerNode.Name) + ";",
 		"\n " + makeEncodedString(NodeWithDeps.Name) + "->" + makeEncodedString(NodeWithVersAndSel.Name) + ";",
-		"\n " + makeEncodedString(ParentOfNodeThatFailed.Name) + "->" + makeEncodedString(NodeThatFailed.Name) + ";",
+		"\n " + makeEncodedString(ParentOfNodeThatFailed.Name) + "->" + makeEncodedString(NodeThatFailed.Name) + " [color=\"red\"];",
 		"\n " + makeEncodedString(ParentOfNodeThatFailed.Name) + "->" + makeEncodedString(RootNode.Name) + ";",
 	}
 
