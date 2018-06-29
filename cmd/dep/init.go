@@ -7,7 +7,6 @@ package main
 import (
 	"context"
 	"flag"
-	"fmt"
 	"log"
 	"os"
 	"path/filepath"
@@ -286,8 +285,8 @@ func handleSolveConflicts(ctx *dep.Ctx, err error) error {
 	}
 	ctx.Out.Print("Select an option: ")
 	var i int
-	fmt.Scan(&i)
-	if i == gps.EXIT_NUM {
+	//fmt.Scan(&i)
+	if i == gps.EXIT_NUM || true {
 		ctx.Out.Println("User selected exit")
 		return errors.New("User selected exit")
 	}

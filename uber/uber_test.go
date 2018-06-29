@@ -8,6 +8,7 @@ import (
 	"fmt"
 	"net/url"
 
+	"github.com/Masterminds/semver"
 	"github.com/golang/dep/uber/mocks"
 	"github.com/pkg/errors"
 	"github.com/stretchr/testify/assert"
@@ -18,6 +19,19 @@ type repoTestCase struct {
 	given, expUrl, expGpath, expRemote, expGitoliteUrl string
 	redirect                                           bool
 	autocreate                                         bool
+}
+
+func TestRandom(t *testing.T) {
+	c1, _ := semver.NewVersion("v1.0.0-rc9")
+	c2, _ := semver.NewVersion("v1.0.0-rc11")
+
+	if c1.Compare(c2) < 0 {
+		fmt.Printf("%v smaller than %v", c1, c2)
+	} else if c1.Compare(c2) == 0 {
+		fmt.Printf("%v equal to %v", c1, c2)
+	} else {
+		fmt.Printf("%v larger than %v", c1, c2)
+	}
 }
 
 func TestUber_IsGopkg(t *testing.T) {
