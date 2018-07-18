@@ -149,8 +149,9 @@ func TestBaseImporter_ImportProjects(t *testing.T) {
 	}{
 		"tag constraints are skipped": {
 			importertest.TestCase{
-				WantVersion:  importertest.Beta1Tag,
-				WantRevision: importertest.Beta1Rev,
+				WantVersion:    importertest.Beta1Tag,
+				WantRevision:   importertest.Beta1Rev,
+				WantConstraint: importertest.Beta1Tag,
 			},
 			[]ImportedPackage{
 				{
@@ -270,8 +271,9 @@ func TestBaseImporter_ImportProjects(t *testing.T) {
 		},
 		"Revision constraints are skipped": {
 			importertest.TestCase{
-				WantVersion:  importertest.V1Tag,
-				WantRevision: importertest.V1Rev,
+				WantVersion:    importertest.V1Tag,
+				WantRevision:   importertest.V1Rev,
+				WantConstraint: importertest.V1Rev,
 			},
 			[]ImportedPackage{
 				{

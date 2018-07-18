@@ -273,14 +273,6 @@ func (i *Importer) ImportPackages(packages []ImportedPackage, defaultConstraintF
 				}
 			}
 
-			// Ignore pinned constraints
-			if i.isConstraintPinned(pc.Constraint) {
-				if i.Verbose {
-					i.Logger.Printf("  Ignoring pinned constraint %v for %v.\n", pc.Constraint, pc.Ident)
-				}
-				pc.Constraint = gps.Any()
-			}
-
 			// Ignore constraints which conflict with the locked revision, so that
 			// solve doesn't later change the revision to satisfy the constraint.
 			if !i.testConstraint(pc.Constraint, version) {

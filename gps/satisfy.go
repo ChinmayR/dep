@@ -4,6 +4,8 @@
 
 package gps
 
+import "strings"
+
 // check performs constraint checks on the provided atom. The set of checks
 // differ slightly depending on whether the atom is pkgonly, or if it's the
 // entire project being added for the first time.
@@ -229,7 +231,7 @@ func (s *solver) checkIdentMatches(a atomWithPackages, cdep completeDep) error {
 func (s *solver) checkRootCaseConflicts(a atomWithPackages, cdep completeDep) error {
 	pr := cdep.workingConstraint.Ident.ProjectRoot
 	hasConflict, current := s.sel.findCaseConflicts(pr)
-	if !hasConflict {
+	if !hasConflict || isSirupsenLogrusCaseMismatch(pr, current) {
 		return nil
 	}
 
@@ -270,6 +272,11 @@ func (s *solver) checkRootCaseConflicts(a atomWithPackages, cdep completeDep) er
 		current: current,
 		failsib: deps,
 	}
+}
+
+func isSirupsenLogrusCaseMismatch(pr ProjectRoot, pr2 ProjectRoot) bool {
+	return strings.EqualFold(string(pr), "github.com/sirupsen/logrus") &&
+		strings.EqualFold(string(pr2), "github.com/sirupsen/logrus")
 }
 
 // checkPackageImportsFromDepExist ensures that, if the dep is already selected,

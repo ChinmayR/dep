@@ -6,7 +6,6 @@ package gps
 
 import (
 	"fmt"
-	"log"
 	"os"
 	"strings"
 
@@ -80,14 +79,21 @@ func filterNonDefaultBranches(allVersions []Version, constraint Constraint, root
 			if bv.isDefault || (constraint != nil && !isAnyConstraint(constraint) && constraint.Matches(bv)) {
 				filteredVersions = append(filteredVersions, version)
 			}
-		} else {
+		} else if len(filteredVersions) < 10 {
+			// ignore all semver tags with a prerelease tag such as v1.0.0-rc9 or v1.0.0-beta1
+			if version.Type() == IsSemver {
+				sv := version.(versionPair).v.(semVersion)
+				if strings.TrimSpace(sv.sv.Prerelease()) != "" {
+					continue
+				}
+			}
 			filteredVersions = append(filteredVersions, version)
 		}
 	}
 	if len(allVersions) == len(filteredVersions) {
-		log.Printf("No non-default branch versions found. \n\tprojectRoot=[%s] \n\twas=%s \n\tnow=%s", root, allVersions, filteredVersions)
+		uber.UberLogger.Printf("No non-default branch versions found. \n\tprojectRoot=[%s] \n\twas=%s \n\tnow=%s", root, allVersions, filteredVersions)
 	} else {
-		log.Printf("Branch version filtration complete. \n\tprojectRoot=[%s] \n\twas=%s \n\tnow=%s", root, allVersions, filteredVersions)
+		uber.UberLogger.Printf("Branch version filtration complete. \n\tprojectRoot=[%s] \n\twas=%s \n\tnow=%s", root, allVersions, filteredVersions)
 	}
 	return filteredVersions
 }
