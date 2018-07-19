@@ -35,13 +35,33 @@ func HandleErrors(logOut *log.Logger, err error) ([]OverridePackage, error) {
 		logOut.Printf("Error resolution is not supported for type %T", err)
 	}
 
+	// there can be duplicate override options, so filter them out, for ex:
+	// Set an override for blah.git on constraint ^1.0.0
+	// Set an override for blah.git on constraint v1.0.0-rc3
+	// Set an override for blah.git on constraint ^1.0.0
+	// Set an override for blah.git on constraint v1.0.0-rc2
+	var filteredOvrPkgs []OverridePackage
+	for i, ovrPkg := range ovrPkgs {
+		dupFound := false
+		for j := 0; j < i; j++ {
+			if ovrPkg.Name == ovrPkgs[j].Name &&
+				ovrPkg.Constraint == ovrPkgs[j].Constraint &&
+				ovrPkg.Source == ovrPkgs[j].Source {
+				dupFound = true
+			}
+		}
+		if !dupFound {
+			filteredOvrPkgs = append(filteredOvrPkgs, ovrPkg)
+		}
+	}
+
 	var buf bytes.Buffer
 	var optionStr []string
 	nameStr := "%d) Set an override for %s"
 	constraintStr := " on constraint %s"
 	sourceStr := " for source %s"
 	logOut.Printf("%d) Exit", EXIT_NUM)
-	for i, ovrPkg := range ovrPkgs {
+	for i, ovrPkg := range filteredOvrPkgs {
 		if i > 5 {
 			break
 		}
@@ -60,5 +80,5 @@ func HandleErrors(logOut *log.Logger, err error) ([]OverridePackage, error) {
 		logOut.Println(buf.String())
 	}
 
-	return ovrPkgs, nil
+	return filteredOvrPkgs, nil
 }

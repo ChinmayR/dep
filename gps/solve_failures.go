@@ -76,27 +76,7 @@ func (e *noVersionError) FixError(out *log.Logger) ([]OverridePackage, error) {
 		}
 	}
 
-	// there can be duplicate override options, so filter them out, for ex:
-	// Set an override for blah.git on constraint ^1.0.0
-	// Set an override for blah.git on constraint v1.0.0-rc3
-	// Set an override for blah.git on constraint ^1.0.0
-	// Set an override for blah.git on constraint v1.0.0-rc2
-	var filteredOvrPkgs []OverridePackage
-	for i, ovrPkg := range ovrPkgs {
-		dupFound := false
-		for j := 0; j < i; j++ {
-			if ovrPkg.Name == ovrPkgs[j].Name &&
-				ovrPkg.Constraint == ovrPkgs[j].Constraint &&
-				ovrPkg.Source == ovrPkgs[j].Source {
-				dupFound = true
-			}
-		}
-		if !dupFound {
-			filteredOvrPkgs = append(filteredOvrPkgs, ovrPkg)
-		}
-	}
-
-	return filteredOvrPkgs, nil
+	return ovrPkgs, nil
 }
 
 // caseMismatchFailure occurs when there are import paths that differ only by
@@ -207,6 +187,10 @@ type disjointConstraintFailure struct {
 	// c is the current constraint on the target identifier. It is intersection
 	// of all the active dependencies' constraints.
 	c Constraint
+}
+
+func (e *disjointConstraintFailure) FixError(out *log.Logger) ([]OverridePackage, error) {
+	return e.GetOptions(), nil
 }
 
 func (e *disjointConstraintFailure) GetOptions() []OverridePackage {
@@ -331,6 +315,10 @@ type versionNotAllowedFailure struct {
 	c Constraint
 }
 
+func (e *versionNotAllowedFailure) FixError(out *log.Logger) ([]OverridePackage, error) {
+	return e.GetOptions(), nil
+}
+
 func (e *versionNotAllowedFailure) GetOptions() []OverridePackage {
 	var ovrPkgs []OverridePackage
 	// TODO support the other complex cases when failParent > 1 (cases covered in Error())
@@ -414,6 +402,10 @@ type sourceMismatchFailure struct {
 	sel []dependency
 	// The atom with the constraint that has the new, incompatible network source
 	prob atom
+}
+
+func (e *sourceMismatchFailure) FixError(out *log.Logger) ([]OverridePackage, error) {
+	return e.GetOptions(), nil
 }
 
 func (e *sourceMismatchFailure) GetOptions() []OverridePackage {

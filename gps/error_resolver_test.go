@@ -54,6 +54,69 @@ func TestHandleError(t *testing.T) {
 			},
 			wantErr: false,
 		},
+		"disjoint constraint failure": {
+			err: &disjointConstraintFailure{
+				goal:      mkDep("foo 1.0.0", "shared <=2.0.0", "shared"),
+				failsib:   []dependency{mkDep("bar 1.0.0", "shared >3.0.0", "shared")},
+				nofailsib: nil,
+				c:         mkSVC(">3.0.0"),
+			},
+			expected: []OverridePackage{
+				OverridePackage{
+					Name:       "shared",
+					Constraint: "<=2.0.0",
+					Source:     "",
+				},
+				OverridePackage{
+					Name:       "shared",
+					Constraint: ">3.0.0",
+					Source:     "",
+				},
+			},
+			wantErr: false,
+		},
+		"source mismatch failure": {
+			err: &sourceMismatchFailure{
+				shared:   ProjectRoot("baz"),
+				current:  "baz",
+				mismatch: "quux",
+				prob:     mkAtom("bar 2.0.0"),
+				sel:      []dependency{mkDep("foo 1.0.0", "bar 2.0.0", "bar")},
+			},
+			expected: []OverridePackage{
+				OverridePackage{
+					Name:       "baz",
+					Constraint: "",
+					Source:     "baz",
+				},
+				OverridePackage{
+					Name:       "baz",
+					Constraint: "",
+					Source:     "quux",
+				},
+			},
+			wantErr: false,
+		},
+		"version not allowed failure": {
+			err: &versionNotAllowedFailure{
+				goal:       mkAtom("baz 2.0.0"),
+				failparent: []dependency{mkDep("root", "baz 1.0.0", "baz/qux")},
+				c:          NewVersion("1.0.0"),
+			},
+			expected: []OverridePackage{
+				OverridePackage{
+					Name:       "baz",
+					Constraint: "1.0.0",
+					Source:     "",
+				},
+				OverridePackage{
+					Name:       "baz",
+					Constraint: "2.0.0",
+					Source:     "",
+				},
+			},
+			wantErr: false,
+		},
 		"no version matching combined constraint": {
 			err: &noVersionError{
 				pn: mkPI("shared"),
