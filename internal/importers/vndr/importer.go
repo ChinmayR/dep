@@ -36,7 +36,7 @@ func NewImporter(log *log.Logger, verbose bool, sm gps.SourceManager) *Importer 
 func (v *Importer) Name() string { return "vndr" }
 
 // HasDepMetadata checks if a directory contains config that the importer can handle.
-func (v *Importer) HasDepMetadata(dir string) bool {
+func (v *Importer) HasDepMetadata(dir string, importCustomConfig bool) bool {
 	_, err := os.Stat(vndrFile(dir))
 	return err == nil
 }

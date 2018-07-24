@@ -47,7 +47,7 @@ func (g *Importer) Name() string {
 }
 
 // HasDepMetadata checks if a directory contains config that the importer can handle.
-func (g *Importer) HasDepMetadata(dir string) bool {
+func (g *Importer) HasDepMetadata(dir string, importCustomConfig bool) bool {
 	y := filepath.Join(dir, gvtPath)
 	if _, err := os.Stat(y); err != nil {
 		return false

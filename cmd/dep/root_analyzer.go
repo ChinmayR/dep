@@ -11,7 +11,6 @@ import (
 
 	"github.com/golang/dep"
 	"github.com/golang/dep/gps"
-	fb "github.com/golang/dep/internal/feedback"
 	"github.com/golang/dep/internal/importers"
 	"golang.org/x/sync/errgroup"
 )
@@ -112,7 +111,7 @@ func (a *rootAnalyzer) importManifestAndLock(dir string, pr gps.ProjectRoot, sup
 	}
 
 	for _, i := range importers.BuildAll(logger, a.ctx.Verbose, a.sm) {
-		if i.HasDepMetadata(dir) {
+		if i.HasDepMetadata(dir, importCustomConfig) {
 			a.ctx.Err.Printf("Importing configuration from %s. These are only initial constraints, and are further refined during the solve process.", i.Name())
 			m, l, err := i.Import(dir, pr, importCustomConfig)
 			if err != nil {
@@ -169,42 +168,6 @@ func (a *rootAnalyzer) FinalizeRootManifestAndLock(m *dep.Manifest, l *dep.Lock,
 	// Transitive dependencies could sneak into the manifest when other importers are used
 	if !a.skipTools {
 		a.removeTransitiveDependencies(m)
-	}
-
-	// Iterate through the new projects in solved lock and add them to manifest
-	// if they are direct deps and log feedback for all the new projects.
-	diff := gps.DiffLocks(&ol, l)
-	bi := fb.NewBrokenImportFeedback(diff)
-	bi.LogFeedback(a.ctx.Err)
-	for _, y := range l.Projects() {
-		var f *fb.ConstraintFeedback
-		pr := y.Ident().ProjectRoot
-		// New constraints: in new lock and dir dep but not in manifest
-		if _, ok := a.directDeps[pr]; ok {
-			if _, ok := m.Constraints[pr]; !ok {
-				pp := getProjectPropertiesFromVersion(y.Version())
-				if pp.Constraint != nil {
-					m.Constraints[pr] = pp
-					pc := gps.ProjectConstraint{Ident: y.Ident(), Constraint: pp.Constraint}
-					f = fb.NewConstraintFeedback(pc, fb.DepTypeDirect)
-					f.LogFeedback(a.ctx.Err)
-				}
-				f = fb.NewLockedProjectFeedback(y, fb.DepTypeDirect)
-				f.LogFeedback(a.ctx.Err)
-			}
-		} else {
-			// New locked projects: in new lock but not in old lock
-			newProject := true
-			for _, opl := range ol.Projects() {
-				if pr == opl.Ident().ProjectRoot {
-					newProject = false
-				}
-			}
-			if newProject {
-				f = fb.NewLockedProjectFeedback(y, fb.DepTypeTransitive)
-				f.LogFeedback(a.ctx.Err)
-			}
-		}
 	}
 }
 

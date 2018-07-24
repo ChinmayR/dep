@@ -19,9 +19,9 @@ import (
 
 func TestGlideConfig_Convert(t *testing.T) {
 	testCases := map[string]struct {
-		yaml glideYaml
+		yaml              glideYaml
 		customExcludeDirs []string
-		lock glideLock
+		lock              glideLock
 		importertest.TestCase
 	}{
 		"project": {
@@ -166,13 +166,13 @@ func TestGlideConfig_Convert(t *testing.T) {
 		},
 		"basic ignore dirs show up": {
 			glideYaml{},
-			[]string {
+			[]string{
 				".exclude1",
 				"exclude2",
 			},
 			glideLock{},
 			importertest.TestCase{
-				WantIgnored: []string {
+				WantIgnored: []string{
 					importertest.RootProject + "/.exclude1",
 					importertest.RootProject + "/exclude2",
 				},
@@ -180,19 +180,19 @@ func TestGlideConfig_Convert(t *testing.T) {
 		},
 		"overlapping ignore dirs does not duplicate": {
 			glideYaml{
-				ExcludeDirs: []string {
+				ExcludeDirs: []string{
 					".random",
 					".gen",
 				},
 			},
-			[]string {
+			[]string{
 				".exclude1",
 				"exclude2",
 				".random",
 			},
 			glideLock{},
 			importertest.TestCase{
-				WantIgnored: []string {
+				WantIgnored: []string{
 					importertest.RootProject + "/.random",
 					importertest.RootProject + "/.gen",
 					importertest.RootProject + "/.exclude1",
@@ -238,7 +238,7 @@ func TestGlideConfig_Import(t *testing.T) {
 	ctx.Err = log.New(verboseOutput, "", 0)
 
 	g := NewImporter(ctx.Err, false, sm) // Disable verbose so that we don't print values that change each test run
-	if !g.HasDepMetadata(projectRoot) {
+	if !g.HasDepMetadata(projectRoot, false) {
 		t.Fatal("Expected the importer to detect the glide configuration files")
 	}
 
@@ -254,6 +254,53 @@ func TestGlideConfig_Import(t *testing.T) {
 	}
 
 	goldenFile := "golden.txt"
+	got := verboseOutput.String()
+	want := h.GetTestFileString(goldenFile)
+	if want != got {
+		if *test.UpdateGolden {
+			if err := h.WriteTestFile(goldenFile, got); err != nil {
+				t.Fatalf("%+v", errors.Wrapf(err, "Unable to write updated golden file %s", goldenFile))
+			}
+		} else {
+			t.Fatalf("want %s, got %s", want, got)
+		}
+	}
+}
+
+func TestOnlyCustomConfig_Import(t *testing.T) {
+	h := test.NewHelper(t)
+	defer h.Cleanup()
+
+	ctx := importertest.NewTestContext(h)
+	sm, err := ctx.SourceManager()
+	h.Must(err)
+	defer sm.Release()
+
+	h.TempDir(filepath.Join("src", importertest.RootProject))
+	h.TempCopy(filepath.Join(importertest.RootProject, "DepConfig.toml"), "DepConfig.toml")
+	projectRoot := h.Path(importertest.RootProject)
+
+	// Capture stderr so we can verify output
+	verboseOutput := &bytes.Buffer{}
+	ctx.Err = log.New(verboseOutput, "", 0)
+
+	g := NewImporter(ctx.Err, false, sm) // Disable verbose so that we don't print values that change each test run
+	if !g.HasDepMetadata(projectRoot, true) {
+		t.Fatal("Expected the importer to detect the custom config files")
+	}
+
+	m, l, err := g.Import(projectRoot, importertest.RootProject, true)
+	h.Must(err)
+
+	if m == nil {
+		t.Fatal("Expected the manifest to be generated")
+	}
+
+	if l == nil {
+		t.Fatal("Expected the lock to be generated")
+	}
+
+	goldenFile := "goldenCustom.txt"
 	got := verboseOutput.String()
 	want := h.GetTestFileString(goldenFile)
 	if want != got {

@@ -85,7 +85,6 @@ func (cmd *initCommand) Run(ctx *dep.Ctx, args []string) error {
 		if err != nil {
 			uber.UberLogger.Printf("Failed to boot custom config, run \"dep bootConfig\" manually: %s", err)
 		}
-		defer RemoveConfig(ctx)
 	}
 
 	// this flag controls if external github repos need to be mirrored internally at gitolite
@@ -224,6 +223,9 @@ restart:
 		uber.LatencyNormFactor(len(p.Lock.Projects()))
 	}
 	uber.ReportSuccess()
+	// only remove the config at the end if the init run is successful
+	RemoveConfig(ctx)
+
 	return nil
 }
 

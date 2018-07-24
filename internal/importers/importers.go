@@ -28,7 +28,7 @@ type Importer interface {
 	Import(path string, pr gps.ProjectRoot, importCustomConfig bool) (*dep.Manifest, *dep.Lock, error)
 
 	// HasDepMetadata checks if a directory contains config that the importer can handle.
-	HasDepMetadata(dir string) bool
+	HasDepMetadata(dir string, importCustomConfig bool) bool
 }
 
 // BuildAll returns a slice of all the importers.

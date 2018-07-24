@@ -73,10 +73,13 @@ func (g *Importer) Name() string {
 }
 
 // HasDepMetadata checks if a directory contains config that the importer can handle.
-func (g *Importer) HasDepMetadata(dir string) bool {
-	// Only require glide.yaml, the lock is optional
-	y := filepath.Join(dir, glideYamlName)
-	if _, err := os.Stat(y); err != nil {
+func (g *Importer) HasDepMetadata(dir string, importCustomConfig bool) bool {
+	// Only require glide.yaml or dep custom config, the lock is optional
+	_, err1 := os.Stat(filepath.Join(dir, glideYamlName))
+	_, err2 := os.Stat(filepath.Join(dir, base.CustomConfigName))
+	// only does not have dep metadata if there is a glide manifest AND
+	// custom config is meant to be imported (only in root repo) AND it has custom config file
+	if err1 != nil && (importCustomConfig && err2 != nil) {
 		return false
 	}
 
@@ -109,16 +112,18 @@ func (g *Importer) Import(dir string, pr gps.ProjectRoot, importCustomConfig boo
 func (g *Importer) load(projectDir string) error {
 	g.Logger.Println("Detected glide configuration files...")
 	y := filepath.Join(projectDir, glideYamlName)
-	if g.Verbose {
-		g.Logger.Printf("  Loading %s", y)
-	}
-	yb, err := ioutil.ReadFile(y)
-	if err != nil {
-		return errors.Wrapf(err, "unable to read %s", y)
-	}
-	err = yaml.Unmarshal(yb, &g.glideConfig)
-	if err != nil {
-		return errors.Wrapf(err, "unable to parse %s", y)
+	if exists, _ := fs.IsRegular(y); exists {
+		if g.Verbose {
+			g.Logger.Printf("  Loading %s", y)
+		}
+		yb, err := ioutil.ReadFile(y)
+		if err != nil {
+			return errors.Wrapf(err, "unable to read %s", y)
+		}
+		err = yaml.Unmarshal(yb, &g.glideConfig)
+		if err != nil {
+			return errors.Wrapf(err, "unable to parse %s", y)
+		}
 	}
 
 	l := filepath.Join(projectDir, glideLockName)

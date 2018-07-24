@@ -3,6 +3,7 @@ package uber
 import (
 	"fmt"
 	"io"
+	"io/ioutil"
 	"log"
 	"os"
 	"path/filepath"
@@ -37,7 +38,7 @@ func init() {
 	}
 	UberLogger = log.New(io.MultiWriter(os.Stdout, LogFile), UBER_PREFIX, 0)
 	DebugLogger = log.New(LogFile, DEBUG_PREFIX, log.Lmicroseconds|log.LUTC)
-	CacheLogger = log.New(LogFile, CACHE_PREFIX, log.Lmicroseconds|log.LUTC)
+	CacheLogger = log.New(ioutil.Discard, CACHE_PREFIX, log.Lmicroseconds|log.LUTC)
 }
 
 func getLogStoragePath(runId string) string {
