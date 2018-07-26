@@ -4,6 +4,10 @@
 
 package gps
 
+import (
+	"container/heap"
+)
+
 type selection struct {
 	// projects is a stack of the atoms that have currently been selected by the
 	// solver. It can also be thought of as the vertex set of the current
@@ -233,12 +237,7 @@ outer:
 				}
 			}
 
-			if i == len(u.sl)-1 {
-				// if we're on the last element, just pop, no splice
-				u.sl = u.sl[:len(u.sl)-1]
-			} else {
-				u.sl = append(u.sl[:i], u.sl[i+1:]...)
-			}
+			heap.Remove(u, i)
 			break
 		}
 	}

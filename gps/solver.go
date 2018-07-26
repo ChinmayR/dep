@@ -1235,7 +1235,7 @@ func (s *solver) unselectedComparator(i, j int) bool {
 	}
 
 	if iname.eq(jname) {
-		return false
+		return len(ibmi.pl) > len(jbmi.pl)
 	}
 
 	_, ilock := s.rd.rlm[iname.ProjectRoot]

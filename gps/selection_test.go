@@ -24,23 +24,28 @@ func TestUnselectedRemoval(t *testing.T) {
 		id: mkPI("foo"),
 		pl: []string{"foo"},
 	}
+	bmi4 := bimodalIdentifier{
+		id: mkPI("foo"),
+		pl: []string{"foo", "foo2", "foo3", "foo4"},
+	}
 
 	u := &unselected{
-		sl: []bimodalIdentifier{bmi1, bmi2, bmi3},
+		sl: []bimodalIdentifier{bmi1, bmi2, bmi3, bmi4},
 	}
+	u.cmp = u.compa
 
 	u.remove(bimodalIdentifier{
 		id: mkPI("other"),
 		pl: []string{"other"},
 	})
 
-	if len(u.sl) != 3 {
-		t.Fatalf("len of unselected slice should have been 2 after no-op removal, got %v", len(u.sl))
+	if len(u.sl) != 4 {
+		t.Fatalf("len of unselected slice should have been 3 after no-op removal, got %v", len(u.sl))
 	}
 
 	u.remove(bmi3)
-	want := []bimodalIdentifier{bmi1, bmi2}
-	if len(u.sl) != 2 {
+	want := []bimodalIdentifier{bmi4, bmi2, bmi1}
+	if len(u.sl) != 3 {
 		t.Fatalf("removal of matching bmi did not work, slice should have 2 items but has %v", len(u.sl))
 	}
 	if !reflect.DeepEqual(u.sl, want) {
@@ -48,18 +53,22 @@ func TestUnselectedRemoval(t *testing.T) {
 	}
 
 	u.remove(bmi3)
-	if len(u.sl) != 2 {
+	if len(u.sl) != 3 {
 		t.Fatalf("removal of bmi w/non-matching packages should be a no-op but wasn't; slice should have 2 items but has %v", len(u.sl))
 	}
 
 	u.remove(bmi2)
-	want = []bimodalIdentifier{bmi1}
-	if len(u.sl) != 1 {
+	want = []bimodalIdentifier{bmi4, bmi1}
+	if len(u.sl) != 2 {
 		t.Fatalf("removal of matching bmi did not work, slice should have 1 items but has %v", len(u.sl))
 	}
 	if !reflect.DeepEqual(u.sl, want) {
 		t.Fatalf("wrong item removed from slice:\n\t(GOT): %v\n\t(WNT): %v", u.sl, want)
 	}
+}
+
+func (u *unselected) compa(i int, j int) bool {
+	return len(u.sl[i].pl) > len(u.sl[j].pl)
 }
 
 func TestNonexistentPopDep(t *testing.T) {
