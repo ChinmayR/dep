@@ -83,7 +83,8 @@ func filterNonDefaultBranches(allVersions []Version, constraint Constraint, root
 			// ignore all semver tags with a prerelease tag such as v1.0.0-rc9 or v1.0.0-beta1
 			if version.Type() == IsSemver {
 				sv := version.(versionPair).v.(semVersion)
-				if strings.TrimSpace(sv.sv.Prerelease()) != "" {
+				semverMatchesConstraint := constraint != nil && !isAnyConstraint(constraint) && constraint.Matches(sv)
+				if strings.TrimSpace(sv.sv.Prerelease()) != "" && !semverMatchesConstraint {
 					continue
 				}
 			}

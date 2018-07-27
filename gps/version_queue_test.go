@@ -79,6 +79,21 @@ var withoutNonDefaultBranchConstVl = []Version{
 	newDefaultBranch("non-master-default-branch-version").Pair("non-master-default-branch-versionrev"),
 }
 
+var withPrereleaseSemverVl = []Version{
+	NewVersion("v2.0.0").Pair("200rev"),
+	NewVersion("v1.1.1").Pair("111rev"),
+	NewVersion("v2.3").Pair("23rev"),
+	NewVersion("v2.4").Pair("24rev"),
+	NewVersion("v2.4-beta2").Pair("24revbeta2"),
+	NewVersion("v2.5").Pair("25rev"),
+	NewVersion("v2.6").Pair("26rev"),
+	NewVersion("v2.7").Pair("27rev"),
+	NewVersion("v2.8").Pair("28rev"),
+	NewVersion("v2.9").Pair("29rev"),
+	newDefaultBranch("master").Pair("masterrev"),
+	newDefaultBranch("non-master-default-branch-version").Pair("non-master-default-branch-versionrev"),
+}
+
 func init() {
 	SortForUpgrade(fakevl)
 }
@@ -213,6 +228,9 @@ func TestFilterNonDefaultBranches(t *testing.T) {
 
 	revisionConst := Revision("branchRevision")
 	assertVersionListsEquality(t, id, allFakeFilterVl, revisionConst, withoutNonDefaultBranchConstVl)
+
+	prereleaseConstraint, _ := NewSemverConstraint("v2.4-beta2")
+	assertVersionListsEquality(t, id, allFakeFilterVl, prereleaseConstraint, withPrereleaseSemverVl)
 }
 
 func assertVersionListsEquality(t *testing.T, id ProjectIdentifier, allVersions []Version, constraint Constraint, expected []Version) {
