@@ -6,6 +6,7 @@ package gps
 
 import (
 	"fmt"
+	"net/url"
 	"os"
 	"path/filepath"
 	"sync/atomic"
@@ -27,6 +28,11 @@ type sourceBridge interface {
 	// CompareVersion compares the two versions passed in and returns -1, 0 or 1 if
 	// r1 is older, same, or later than r2.
 	CompareRevision(ProjectIdentifier, Revision, Revision) (int, error)
+
+	// SourceURLsForPath takes an import path and deduces the set of source URLs
+	// that may refer to a canonical upstream source.
+	// In general, these URLs differ only by protocol (e.g. https vs. ssh), not path
+	SourceURLsForPath(ip string) ([]*url.URL, error)
 
 	listVersions(ProjectIdentifier) ([]Version, error)
 	verifyRootDir(path string) error
@@ -89,6 +95,10 @@ func (b *bridge) GetManifestAndLock(id ProjectIdentifier, v Version, an ProjectA
 	m, l, e := b.sm.GetManifestAndLock(id, v, an)
 	b.s.mtr.pop()
 	return m, l, e
+}
+
+func (b *bridge) SourceURLsForPath(id string) ([]*url.URL, error) {
+	return b.sm.SourceURLsForPath(id)
 }
 
 func (b *bridge) listVersions(id ProjectIdentifier) ([]Version, error) {

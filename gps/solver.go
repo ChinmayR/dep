@@ -474,6 +474,19 @@ func (s *solver) Solve(ctx context.Context) (Solution, error) {
 		}
 	}
 
+	for i, lockedPkg := range soln.p {
+		urls, err := s.b.SourceURLsForPath(string(lockedPkg.pi.ProjectRoot))
+		if err != nil {
+			return nil, err
+		}
+		if len(urls) > 0 {
+			lockedPkg.sourceUrl = urls[0].String()
+			soln.p[i] = lockedPkg
+		} else {
+			uber.UberLogger.Printf("Found no source URLs for %v", string(lockedPkg.pi.ProjectRoot))
+		}
+	}
+
 	s.traceFinish(soln, err)
 	if s.tl != nil {
 		s.mtr.dump(s.tl)

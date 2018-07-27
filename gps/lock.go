@@ -72,10 +72,11 @@ func sortedLockedProjects(lps []LockedProject) []LockedProject {
 // URI for accessing it, the path at which it should be placed within a vendor
 // directory, and the packages that are used in it.
 type LockedProject struct {
-	pi   ProjectIdentifier
-	v    UnpairedVersion
-	r    Revision
-	pkgs []string
+	pi        ProjectIdentifier
+	v         UnpairedVersion
+	r         Revision
+	pkgs      []string
+	sourceUrl string
 }
 
 // SimpleLock is a helper for tools to easily describe lock data when they know
@@ -152,6 +153,11 @@ func (lp LockedProject) Version() Version {
 	}
 
 	return lp.v.Pair(lp.r)
+}
+
+// Returns the source URL where the locked project can be fetched from.
+func (lp LockedProject) SourceUrl() string {
+	return lp.sourceUrl
 }
 
 // Eq checks if two LockedProject instances are equal.

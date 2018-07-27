@@ -50,12 +50,13 @@ type solveMeta struct {
 }
 
 type rawLockedProject struct {
-	Name     string   `toml:"name"`
-	Branch   string   `toml:"branch,omitempty"`
-	Revision string   `toml:"revision"`
-	Version  string   `toml:"version,omitempty"`
-	Source   string   `toml:"source,omitempty"`
-	Packages []string `toml:"packages"`
+	Name      string   `toml:"name"`
+	Branch    string   `toml:"branch,omitempty"`
+	Revision  string   `toml:"revision"`
+	Version   string   `toml:"version,omitempty"`
+	Source    string   `toml:"source,omitempty"`
+	Packages  []string `toml:"packages"`
+	SourceUrl string   `toml:"sourceUrl,omitempty"`
 }
 
 func readLock(r io.Reader) (*Lock, error) {
@@ -161,9 +162,10 @@ func (l *Lock) toRaw() rawLock {
 	for k, lp := range l.P {
 		id := lp.Ident()
 		ld := rawLockedProject{
-			Name:     string(id.ProjectRoot),
-			Source:   id.Source,
-			Packages: lp.Packages(),
+			Name:      string(id.ProjectRoot),
+			Source:    id.Source,
+			Packages:  lp.Packages(),
+			SourceUrl: lp.SourceUrl(),
 		}
 
 		v := lp.Version()
