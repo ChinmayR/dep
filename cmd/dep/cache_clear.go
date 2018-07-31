@@ -8,8 +8,8 @@ import (
 	"github.com/pkg/errors"
 )
 
-const cacheClearShortHelp = `clear the dep cache at $HOME/.dep-cache/pkg/dep`
-const cacheClearLongHelp = `clear the dep cache at $HOME/.dep-cache/pkg/dep`
+const cacheClearShortHelp = `clear the dep cache at DEPCACHEDIR env var or $HOME/.dep-cache/pkg/dep`
+const cacheClearLongHelp = `clear the dep cache at DEPCACHEDIR env var or $HOME/.dep-cache/pkg/dep`
 
 func (cmd *cacheClearCommand) Name() string      { return "cc" }
 func (cmd *cacheClearCommand) Args() string      { return "" }
@@ -43,7 +43,7 @@ func (cmd *cacheClearCommand) Run(ctx *dep.Ctx, args []string) error {
 	}
 
 	uber.ReportClearCacheMetric(cmd.Name())
-	uber.UberLogger.Println("Cache cleared at $HOME/.dep-cache/pkg/dep")
+	uber.UberLogger.Printf("Cache cleared at %v\n", sm.Cachedir())
 
 	return nil
 }

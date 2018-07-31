@@ -90,6 +90,20 @@ func defaultGOPATH() string {
 // SourceManager produces an instance of gps's built-in SourceManager
 // initialized to log to the receiver's logger.
 func (c *Ctx) SourceManager() (*gps.SourceMgr, error) {
+
+	cachedir, err := c.ResolveCacheDir()
+	if err != nil {
+		return nil, err
+	}
+
+	return gps.NewSourceManager(gps.SourceManagerConfig{
+		Cachedir:       cachedir,
+		Logger:         c.Out,
+		DisableLocking: c.DisableLocking,
+	})
+}
+
+func (c *Ctx) ResolveCacheDir() (string, error) {
 	cachedir := c.Cachedir
 	if cachedir == "" {
 		// When `DEPCACHEDIR` isn't set in the env, use the default - `$GOPATH/pkg/dep`.
@@ -103,17 +117,12 @@ func (c *Ctx) SourceManager() (*gps.SourceMgr, error) {
 		cachedir = filepath.Join(cacheDirPrefix, "pkg", "dep")
 		// Create the default cachedir if it does not exist.
 		if err := os.MkdirAll(cachedir, 0777); err != nil {
-			return nil, errors.Wrap(err, "failed to create default cache directory")
+			return "", errors.Wrap(err, "failed to create default cache directory")
 		}
 	}
 
 	c.Out.Printf("Cache dir is set to %v\n", cachedir)
-
-	return gps.NewSourceManager(gps.SourceManagerConfig{
-		Cachedir:       cachedir,
-		Logger:         c.Out,
-		DisableLocking: c.DisableLocking,
-	})
+	return cachedir, nil
 }
 
 // LoadProject starts from the current working directory and searches up the

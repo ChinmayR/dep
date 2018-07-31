@@ -159,6 +159,59 @@ func TestDepCachedir(t *testing.T) {
 			}
 		}
 	})
+	t.Run("env-honor-cachedirpath", func(t *testing.T) {
+		t.Parallel()
+		testProj := integration.NewTestProject(t, initPath, wd, runMain)
+		defer testProj.Cleanup()
+
+		testProj.TempDir("cachedir")
+		cachedir := testProj.Path("cachedir")
+		testProj.Setenv("DEPCACHEDIR", cachedir)
+
+		// Running `dep ensure` will pull in the dependency into cachedir.
+		err = testProj.DoRun([]string{"ensure"})
+		if err != nil {
+			// Log the error output from running `dep ensure`, could be useful.
+			t.Logf("`dep ensure` error output: \n%s", testProj.GetStderr())
+			t.Errorf("got an unexpected error: %s", err)
+		}
+
+		// Check that the cache was created in the cachedir. Our fixture has the dependency
+		// `github.com/sdboyer/deptest`
+		_, err = os.Stat(testProj.Path("cachedir", "sources", "https---github.com-sdboyer-deptest"))
+		if err != nil {
+			if os.IsNotExist(err) {
+				t.Error("expected cachedir to have been populated but none was found")
+			} else {
+				t.Errorf("got an unexpected error: %s", err)
+			}
+		}
+
+		// rename the default cache clear_cache file  to make the cache look empty
+		err := os.Rename(filepath.Join(os.Getenv("HOME"), ".dep-cache", "pkg", "dep", "cache_clear"),
+			filepath.Join(os.Getenv("HOME"), ".dep-cache", "pkg", "dep", "cache_clear_old"))
+		if err == nil {
+			defer func() {
+				os.Rename(filepath.Join(os.Getenv("HOME"), ".dep-cache", "pkg", "dep", "cache_clear_old"),
+					filepath.Join(os.Getenv("HOME"), ".dep-cache", "pkg", "dep", "cache_clear"))
+			}()
+		}
+
+		// Running `dep ensure` will pull in the dependency into cachedir.
+		err = testProj.DoRun([]string{"ensure", "-update"})
+		if err != nil {
+			// Log the error output from running `dep ensure`, could be useful.
+			t.Logf("`dep ensure` error output: \n%s", testProj.GetStderr())
+			t.Errorf("got an unexpected error: %s", err)
+		}
+
+		wantErr := "Your dep cache is written by a version"
+		stdout := testProj.GetStdout()
+		if strings.Contains(stdout, wantErr) {
+			t.Logf("test run output: \n%s\n%s", testProj.GetStdout(), testProj.GetStderr())
+			t.Error("did not expect error")
+		}
+	})
 
 }
 

@@ -124,7 +124,7 @@ func (c *Config) Run() int {
 		},
 		{
 			"dep cc",
-			"clear the dep cache at $HOME/.dep-cache/pkg/dep",
+			"clear the dep cache at DEPCACHEDIR env var or $HOME/.dep-cache/pkg/dep",
 		},
 	}
 
@@ -288,7 +288,12 @@ func (c *Config) Run() int {
 			ctx.SetPaths(c.WorkingDir, GOPATHS...)
 
 			if cmdName != "cc" {
-				doesCacheNeedToBeCleared, cacheClearedVersion, err := uber.DoesCacheNeedToBeCleared(uber.LATEST_CACHE_ALLOWED_VERSION)
+				cacheDir, err := ctx.ResolveCacheDir()
+				if err != nil {
+					uber.DebugLogger.Println(err)
+					return errorExitCode
+				}
+				doesCacheNeedToBeCleared, cacheClearedVersion, err := uber.DoesCacheNeedToBeCleared(uber.LATEST_CACHE_ALLOWED_VERSION, cacheDir)
 				if err != nil {
 					uber.DebugLogger.Printf("Error checking if cache needs to be cleared: %v", err)
 				}

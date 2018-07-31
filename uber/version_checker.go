@@ -90,8 +90,7 @@ func getLatestVersion() (*semver.Version, error) {
 // DoesCacheNeedToBeCleared reads from the CACHE_CLEAR_FILE_NAME file from pkg/dep cache
 // and if it is older than the minVersionAllowed then the cache is backwards incompatible
 // and needs to be cleared
-func DoesCacheNeedToBeCleared(minVersionAllowed string) (bool, string, error) {
-	cacheDir := filepath.Join(os.Getenv("HOME"), ".dep-cache", "pkg", "dep")
+func DoesCacheNeedToBeCleared(minVersionAllowed string, cacheDir string) (bool, string, error) {
 	clearCachePath := filepath.Join(cacheDir, CACHE_CLEAR_FILE_NAME)
 	clearCacheFileContent, err := ioutil.ReadFile(clearCachePath)
 	if err != nil {
