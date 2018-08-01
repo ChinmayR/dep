@@ -228,6 +228,7 @@ func (s *gitSource) exportRevisionTo(ctx context.Context, rev Revision, to strin
 	{
 		cmd := commandContext(ctx, "git", "read-tree", rev.String())
 		cmd.SetDir(r.LocalPath())
+		cmd.SetEnv(append([]string{"GIT_ASKPASS=", "GIT_TERMINAL_PROMPT=0"}, os.Environ()...))
 		if out, err := cmd.CombinedOutput(); err != nil {
 			return errors.Wrap(err, string(out))
 		}
@@ -246,6 +247,7 @@ func (s *gitSource) exportRevisionTo(ctx context.Context, rev Revision, to strin
 	// index and HEAD.
 	{
 		cmd := commandContext(ctx, "git", "checkout-index", "--force", "-a", "--prefix="+to)
+		cmd.SetEnv(append([]string{"GIT_ASKPASS=", "GIT_TERMINAL_PROMPT=0"}, os.Environ()...))
 		cmd.SetDir(r.LocalPath())
 		if out, err := cmd.CombinedOutput(); err != nil {
 			return errors.Wrap(err, string(out))
@@ -299,8 +301,7 @@ func (s *gitSource) listVersions(ctx context.Context) (vlist []PairedVersion, er
 		cmd.SetDir(filepath.Dir(r.LocalPath()))
 	}
 	// Ensure no prompting for PWs
-	cmd.SetEnv(append([]string{"GIT_ASKPASS=", "GIT_TERMINAL_PROMPT=0"}, os.Environ()...))
-	cmd.SetEnv(append(conRes.GetEnvironmentForCommand(r.Remote()), os.Environ()...))
+	cmd.SetEnv(append([]string{"GIT_ASKPASS=", "GIT_TERMINAL_PROMPT=0"}, append(conRes.GetEnvironmentForCommand(r.Remote()), os.Environ()...)...))
 	out, err := cmd.CombinedOutput()
 	if err != nil {
 		return nil, errors.Wrap(err, string(out))

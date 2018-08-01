@@ -260,7 +260,7 @@ func gitolitePathForGolang(repo string) string {
 // the command completes successfully first.
 func (c *CommandExecutor) ExecCommand(name string, cmdTimeout time.Duration, runInBackground bool, environment []string, arg ...string) (string, string, error) {
 	command := exec.Command(name, arg...)
-	command.Env = append(environment, os.Environ()...)
+	command.Env = append([]string{"GIT_ASKPASS=", "GIT_TERMINAL_PROMPT=0"}, append(environment, os.Environ()...)...)
 
 	DebugLogger.Printf("executing command: %v %v, timeout: %s, environment: %v, background: %t", name, arg, cmdTimeout, environment, runInBackground)
 
