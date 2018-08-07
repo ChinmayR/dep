@@ -62,6 +62,28 @@ func TestBasicSolves(t *testing.T) {
 	}
 }
 
+func TestFilterUnwantedSubpackages(t *testing.T) {
+	s := solver{
+		sel: &selection{
+			deps: map[ProjectRoot][]dependency{
+				"repo1": []dependency{
+					mkDep("repo2 1.0.0", "repo1 ^1.0.0", "foo", "bar", "quuz"),
+					mkDep("repo2 1.0.0", "repo1 ^1.0.0", "qux", "corge"),
+				},
+			},
+		},
+	}
+
+	want := []string{"foo", "qux", "quuz"}
+
+	got := s.filterUnwantedSubpackages(ProjectIdentifier{ProjectRoot: "repo1", Source: "blah.git"},
+		[]string{"foo", "waldo", "qux", "fred", "quuz"})
+
+	if !reflect.DeepEqual(want, got) {
+		t.Fatalf("the filtered subpackges did not match what was expected\nGOT: %v\nWANT: %v", got, want)
+	}
+}
+
 func solveBasicsAndCheck(fix basicFixture, t *testing.T) (res Solution, err error) {
 	sm := newdepspecSM(fix.ds, nil)
 	if fix.broken != "" {

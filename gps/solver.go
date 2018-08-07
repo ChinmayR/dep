@@ -534,7 +534,7 @@ func (s *solver) solve(ctx context.Context) (map[atom]map[string]struct{}, error
 				s.mtr.pop()
 				// Err means a failure somewhere down the line; try backtracking.
 				s.traceStartBacktrack(bmi, err, false)
-				success, berr := s.backtrack(ctx, bmi)
+				success, berr := s.backtrack(ctx)
 				if berr != nil {
 					err = berr
 				} else if success {
@@ -590,7 +590,7 @@ func (s *solver) solve(ctx context.Context) (map[atom]map[string]struct{}, error
 				s.mtr.pop()
 				// Err means a failure somewhere down the line; try backtracking.
 				s.traceStartBacktrack(bmi, err, true)
-				success, berr := s.backtrack(ctx, bmi)
+				success, berr := s.backtrack(ctx)
 				if berr != nil {
 					err = berr
 				} else if success {
@@ -630,6 +630,29 @@ func (s *solver) solve(ctx context.Context) (map[atom]map[string]struct{}, error
 		}
 	}
 	return projs, nil
+}
+
+func (s *solver) filterUnwantedSubpackages(projectId ProjectIdentifier, pl []string) []string {
+	// there is a possibility that one of the packages from pl was deleted
+	// in the version of atom that is passed in. we should only
+	// try to add the packages required by the current selection
+	// projects and filter out the rest.
+	deps := s.sel.getDependenciesOn(projectId)
+	var newpl []string
+outer:
+	for _, existingPkg := range pl {
+		// go through all the deps and see if this pkg is still referenced
+		// by all the projects that have a dependency on it
+		for _, dep := range deps {
+			for _, pkg := range dep.dep.pl {
+				if existingPkg == pkg {
+					newpl = append(newpl, existingPkg)
+					continue outer
+				}
+			}
+		}
+	}
+	return newpl
 }
 
 // selectRoot is a specialized selectAtom, used solely to initially
@@ -733,8 +756,17 @@ func (s *solver) getImportsAndConstraintsOf(a atomWithPackages, uberLogging bool
 				return nil, nil, importErr
 			}
 
+			fp := make(map[string]errDeppers)
 			// Nope, it's actually full-on not there.
-			return nil, nil, fmt.Errorf("package %s does not exist within project %s", pkg, a.a.id)
+			fp[pkg] = errDeppers{
+				err:     nil,
+				deppers: []atom{a.a},
+			}
+			e := &checkeeHasProblemPackagesFailure{
+				goal:    a.a,
+				failpkg: fp,
+			}
+			return nil, nil, e
 		}
 
 		for _, ex := range ie.External {
@@ -822,7 +854,7 @@ func (s *solver) intersectConstraintsWithImports(deps []workingConstraint, reach
 
 	for _, cdep := range deps {
 		if _, match := matchedDeps[cdep.Ident.ProjectRoot]; !match && uberLogging {
-			uber.UberLogger.Printf("Ignoring imported constraint %v @ %v since it is not a code dependency, "+
+			uber.DebugLogger.Printf("Ignoring imported constraint %v @ %v since it is not a code dependency, "+
 				"use an override at the root project instead.\n", cdep.Ident, cdep.Constraint)
 		}
 	}
@@ -834,7 +866,7 @@ func (s *solver) createVersionQueue(bmi bimodalIdentifier) (*versionQueue, error
 	id := bmi.id
 	// If on the root package, there's no queue to make
 	if s.rd.isRoot(id.ProjectRoot) {
-		return newVersionQueue(id, nil, nil, s.b, s.getCurrProjectConstraint(bmi))
+		return newVersionQueue(id, nil, nil, s.b, s.getCurrProjectConstraint(bmi.id.ProjectRoot))
 	}
 
 	exists, err := s.b.SourceExists(id)
@@ -930,7 +962,7 @@ func (s *solver) createVersionQueue(bmi bimodalIdentifier) (*versionQueue, error
 		prefv = nil
 	}
 
-	q, err := newVersionQueue(id, lockv, prefv, s.b, s.getCurrProjectConstraint(bmi))
+	q, err := newVersionQueue(id, lockv, prefv, s.b, s.getCurrProjectConstraint(bmi.id.ProjectRoot))
 	if err != nil {
 		// TODO(sdboyer) this particular err case needs to be improved to be ONLY for cases
 		// where there's absolutely nothing findable about a given project name
@@ -963,15 +995,16 @@ func (s *solver) createVersionQueue(bmi bimodalIdentifier) (*versionQueue, error
 	return q, s.findValidVersion(q, bmi.pl, bmi)
 }
 
-func (s *solver) getCurrProjectConstraint(bmi bimodalIdentifier) Constraint {
+func (s *solver) getCurrProjectConstraint(id ProjectRoot) Constraint {
 	constraints := s.rd.rm.DependencyConstraints()
-	projectRoot := ProjectRoot(bmi.id.ProjectRoot)
-	if currConst, ok := constraints[projectRoot]; !ok {
+	if currConst, ok := constraints[id]; !ok {
 		return nil
 	} else {
 		return currConst.Constraint
 	}
 }
+
+var vqsExhaustedCount = make(map[ProjectRoot]int)
 
 // findValidVersion walks through a versionQueue until it finds a version that
 // satisfies the constraints held in the current state of the solver.
@@ -1004,7 +1037,7 @@ func (s *solver) findValidVersion(q *versionQueue, pl []string, bmi bimodalIdent
 			return nil
 		}
 
-		if q.advance(err, s.getCurrProjectConstraint(bmi), ProjectRoot(bmi.id.ProjectRoot)) != nil {
+		if q.advance(err, s.getCurrProjectConstraint(bmi.id.ProjectRoot), q.id.ProjectRoot) != nil {
 			// Error on advance, have to bail out
 			break
 		}
@@ -1026,6 +1059,7 @@ func (s *solver) findValidVersion(q *versionQueue, pl []string, bmi bimodalIdent
 
 	// Return a compound error of all the new errors encountered during this
 	// attempt to find a new, valid version
+	vqsExhaustedCount[q.id.ProjectRoot]++
 	return &noVersionError{
 		pn:    q.id,
 		fails: q.fails[faillen:],
@@ -1111,9 +1145,16 @@ func (s *solver) getLockVersionIfValid(id ProjectIdentifier) (Version, error) {
 
 // backtrack works backwards from the current failed solution to find the next
 // solution to try.
-func (s *solver) backtrack(ctx context.Context, bmi bimodalIdentifier) (bool, error) {
+func (s *solver) backtrack(ctx context.Context) (bool, error) {
+
 	if len(s.vqs) == 0 {
 		// nothing to backtrack to
+		return false, nil
+	}
+
+	// fail backtracker if it has resulted in the same version queue being exhausted 5 times of more
+	if vqsExhaustedCount[s.vqs[len(s.vqs)-1].id.ProjectRoot] >= 5 {
+		vqsExhaustedCount = make(map[ProjectRoot]int)
 		return false, nil
 	}
 
@@ -1176,9 +1217,10 @@ func (s *solver) backtrack(ctx context.Context, bmi bimodalIdentifier) (bool, er
 			panic("canary - version queue stack and selected project stack are misaligned")
 		}
 
+		bmi := awp.bmi()
 		// Advance the queue past the current version, which we know is bad
 		// TODO(sdboyer) is it feasible to make available the failure reason here?
-		if q.advance(nil, s.getCurrProjectConstraint(bmi), ProjectRoot(bmi.id.ProjectRoot)) == nil && !q.isExhausted() {
+		if q.advance(nil, s.getCurrProjectConstraint(bmi.id.ProjectRoot), q.id.ProjectRoot) == nil && !q.isExhausted() {
 			// Search for another acceptable version of this failed dep in its queue
 			s.traceCheckQueue(q, awp.bmi(), true, 0)
 			if s.findValidVersion(q, awp.pl, bmi) == nil {
@@ -1420,7 +1462,8 @@ func (s *solver) unselectLast() (atomWithPackages, bool, error) {
 	s.mtr.push("unselect")
 	defer s.mtr.pop()
 	awp, first := s.sel.popSelection()
-	heap.Push(s.unsel, bimodalIdentifier{id: awp.a.id, pl: awp.pl})
+	newp := s.filterUnwantedSubpackages(awp.bmi().id, awp.pl)
+	heap.Push(s.unsel, bimodalIdentifier{id: awp.a.id, pl: newp})
 
 	_, deps, err := s.getImportsAndConstraintsOf(awp, false)
 	if err != nil {

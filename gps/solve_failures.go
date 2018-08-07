@@ -72,7 +72,7 @@ func (e *noVersionError) FixError(out *log.Logger) ([]OverridePackage, error) {
 		if te, ok := f.f.(ErrorOptions); ok {
 			ovrPkgs = append(ovrPkgs, te.GetOptions()...)
 		} else {
-			out.Printf("No options for type %T", f.f)
+			uber.DebugLogger.Printf("No options for type %T", f.f)
 		}
 	}
 
@@ -196,18 +196,20 @@ func (e *disjointConstraintFailure) FixError(out *log.Logger) ([]OverridePackage
 func (e *disjointConstraintFailure) GetOptions() []OverridePackage {
 	var ovrPkgs []OverridePackage
 	// TODO support the other complex cases when failsib > 1 and when it is 0 (cases covered in Error())
-	if len(e.failsib) == 1 {
+	if len(e.failsib) >= 1 {
 		ovrPkgs = append(ovrPkgs, OverridePackage{
 			Name:       e.goal.dep.Ident.String(),
 			Constraint: e.goal.dep.Constraint.String(),
 			Source:     "",
 		})
 
-		ovrPkgs = append(ovrPkgs, OverridePackage{
-			Name:       e.goal.dep.Ident.String(),
-			Constraint: e.failsib[0].dep.Constraint.String(),
-			Source:     "",
-		})
+		for _, failib := range e.failsib {
+			ovrPkgs = append(ovrPkgs, OverridePackage{
+				Name:       e.goal.dep.Ident.String(),
+				Constraint: failib.dep.Constraint.String(),
+				Source:     "",
+			})
+		}
 	}
 
 	return ovrPkgs

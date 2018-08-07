@@ -316,7 +316,6 @@ func (i *Importer) ImportPackages(packages []ImportedPackage, defaultConstraintF
 	}
 	wg.Wait()
 
-	//return nil
 }
 
 // git.apache.org/thrift no longer exists, so this avoids importing this

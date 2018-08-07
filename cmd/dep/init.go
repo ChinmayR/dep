@@ -12,6 +12,7 @@ import (
 	"os"
 	"path/filepath"
 	"strconv"
+	"strings"
 
 	"github.com/golang/dep"
 	"github.com/golang/dep/gps"
@@ -289,11 +290,31 @@ func handleSolveConflicts(ctx *dep.Ctx, err error) error {
 	ctx.Out.Print("Select an option: ")
 	var i int
 	fmt.Scan(&i)
+	var ovrPkgSelected gps.OverridePackage
 	if i == gps.EXIT_NUM {
 		ctx.Out.Println("User selected exit")
 		return errors.New("User selected exit")
+	} else if i == gps.CUSTOM_NUM {
+		ctx.Out.Print("Package Name: ")
+		var overName string
+		fmt.Scanln(&overName)
+		overName = strings.Trim(overName, " ")
+		ctx.Out.Print("Override version: ")
+		var overVersion string
+		fmt.Scanln(&overVersion)
+		overVersion = strings.Trim(overVersion, " ")
+		ctx.Out.Print("Override source: ")
+		var overSource string
+		fmt.Scanln(&overSource)
+		overSource = strings.Trim(overSource, " ")
+		ovrPkgSelected = gps.OverridePackage{
+			Name:       overName,
+			Constraint: overVersion,
+			Source:     overSource,
+		}
+	} else {
+		ovrPkgSelected = ovrPkgs[i-2]
 	}
-	ovrPkgSelected := ovrPkgs[i-1]
 	errInternal = base.AddOverrideToConfig(ovrPkgSelected.Name, ovrPkgSelected.Constraint, ovrPkgSelected.Source,
 		ctx.WorkingDir, ctx.Out)
 	if errInternal != nil {

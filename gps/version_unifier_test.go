@@ -5,6 +5,7 @@
 package gps
 
 import (
+	"net/url"
 	"testing"
 
 	"github.com/golang/dep/gps/pkgtree"
@@ -35,6 +36,10 @@ func init() {
 
 func (lb lvFixBridge) listVersions(ProjectIdentifier) ([]Version, error) {
 	return lb, nil
+}
+
+func (lb lvFixBridge) SourceURLsForPath(ip string) ([]*url.URL, error) {
+	return nil, nil
 }
 
 func TestCreateTyepUnion(t *testing.T) {

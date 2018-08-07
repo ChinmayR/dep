@@ -79,7 +79,7 @@ func filterNonDefaultBranches(allVersions []Version, constraint Constraint, root
 			if bv.isDefault || (constraint != nil && !isAnyConstraint(constraint) && constraint.Matches(bv)) {
 				filteredVersions = append(filteredVersions, version)
 			}
-		} else if len(filteredVersions) < 10 {
+		} else if len(filteredVersions) < 5 {
 			// ignore all semver tags with a prerelease tag such as v1.0.0-rc9 or v1.0.0-beta1
 			if version.Type() == IsSemver {
 				sv := version.(versionPair).v.(semVersion)

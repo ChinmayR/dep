@@ -6,6 +6,7 @@ package gps
 
 import (
 	"container/heap"
+	"reflect"
 )
 
 type selection struct {
@@ -27,6 +28,10 @@ type selection struct {
 type selected struct {
 	a     atomWithPackages
 	first bool
+}
+
+func (s *selection) Len() int {
+	return len(s.projects)
 }
 
 func (s *selection) getDependenciesOn(id ProjectIdentifier) []dependency {
@@ -57,6 +62,39 @@ func (s *selection) getIdentFor(pr ProjectRoot) (ProjectIdentifier, bool) {
 // with an indicator as to whether this selection indicates a new project *and*
 // packages, or merely some new packages on a project that was already selected.
 func (s *selection) pushSelection(a atomWithPackages, pkgonly bool) {
+	bmi := a.bmi()
+	if pkgonly {
+		// create a hash map of all the packages that are requested to be added
+		foundPkgs := make(map[string]bool)
+		for _, pkg := range bmi.pl {
+			foundPkgs[pkg] = false
+		}
+
+		// check which packages that need to be added are already added
+		for _, proj := range s.projects {
+			pi := proj.a.bmi()
+			if pi.id.eq(bmi.id) {
+				for _, piPkg := range pi.pl {
+					// if this package is in the foundPkgs and is not set to true, then set it to true
+					if val, has := foundPkgs[piPkg]; has && !val {
+						foundPkgs[piPkg] = true
+					}
+				}
+			}
+		}
+
+		var pkgsToAdd []string
+		for key, val := range foundPkgs {
+			if !val {
+				pkgsToAdd = append(pkgsToAdd, key)
+			}
+		}
+		if len(pkgsToAdd) == 0 {
+			return // all pkgs already exist in the selected queue
+		}
+		a.pl = pkgsToAdd
+	}
+
 	s.projects = append(s.projects, selected{
 		a:     a,
 		first: !pkgonly,
@@ -89,6 +127,12 @@ func (s *selection) pushDep(dep dependency) {
 	deps := s.deps[pr]
 	if len(deps) == 0 {
 		s.foldRoots[toFold(string(pr))] = pr
+	}
+
+	for _, eachDep := range deps {
+		if reflect.DeepEqual(eachDep, dep) {
+			return
+		}
 	}
 
 	s.deps[pr] = append(deps, dep)
@@ -207,6 +251,23 @@ func (u unselected) Swap(i, j int) {
 }
 
 func (u *unselected) Push(x interface{}) {
+	// guard against pushing identical bmis into the unselected queue
+	bmi := x.(bimodalIdentifier)
+	plen := len(bmi.pl)
+outer:
+	for _, pi := range u.sl {
+		if pi.id.eq(bmi.id) && len(pi.pl) == plen {
+			// Simple slice comparison - assume they're both sorted the same
+			for i, pkg := range pi.pl {
+				if bmi.pl[i] != pkg {
+					// found a package that doesn't match, continue looking
+					continue outer
+				}
+			}
+			// if all packages match, return without pushing
+			return
+		}
+	}
 	u.sl = append(u.sl, x.(bimodalIdentifier))
 }
 
@@ -215,8 +276,8 @@ func (u *unselected) Pop() (v interface{}) {
 	return v
 }
 
-// remove takes a bimodalIdentifier out of the priority queue, if present. Only
-// the first matching bmi will be removed.
+// remove takes a bimodalIdentifier out of the priority queue, if present. All
+// the matching bmis will be removed.
 //
 // There are two events that cause this to be called: bmi selection, when the
 // bmi at the front of the queue is removed, and backtracking, when a bmi
@@ -228,17 +289,22 @@ func (u *unselected) Pop() (v interface{}) {
 func (u *unselected) remove(bmi bimodalIdentifier) {
 	plen := len(bmi.pl)
 outer:
-	for i, pi := range u.sl {
-		if pi.id.eq(bmi.id) && len(pi.pl) == plen {
-			// Simple slice comparison - assume they're both sorted the same
-			for i2, pkg := range pi.pl {
-				if bmi.pl[i2] != pkg {
-					continue outer
+	for {
+	inner:
+		for i, pi := range u.sl {
+			if pi.id.eq(bmi.id) && len(pi.pl) == plen {
+				// Simple slice comparison - assume they're both sorted the same
+				for i2, pkg := range pi.pl {
+					if bmi.pl[i2] != pkg {
+						continue inner // go to the next bmi
+					}
 				}
-			}
 
-			heap.Remove(u, i)
-			break
+				heap.Remove(u, i)
+				continue outer //start over
+			}
 		}
+		// all unselected bmis should have been removed by now
+		return
 	}
 }

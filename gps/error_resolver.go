@@ -21,6 +21,7 @@ type OverridePackage struct {
 }
 
 const EXIT_NUM = 0
+const CUSTOM_NUM = 1
 
 func HandleErrors(logOut *log.Logger, err error) ([]OverridePackage, error) {
 	logOut.Println(err)
@@ -61,12 +62,13 @@ func HandleErrors(logOut *log.Logger, err error) ([]OverridePackage, error) {
 	constraintStr := " on constraint %s"
 	sourceStr := " for source %s"
 	logOut.Printf("%d) Exit", EXIT_NUM)
+	logOut.Printf("%d) Custom override", CUSTOM_NUM)
 	for i, ovrPkg := range filteredOvrPkgs {
 		if i > 5 {
 			break
 		}
 		buf.Reset()
-		fmt.Fprintf(&buf, nameStr, i+1, ovrPkg.Name)
+		fmt.Fprintf(&buf, nameStr, i+2, ovrPkg.Name)
 		if ovrPkg.Constraint != "" {
 			fmt.Fprintf(&buf, constraintStr, ovrPkg.Constraint)
 		}
