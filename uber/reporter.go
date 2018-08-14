@@ -52,13 +52,14 @@ const (
 
 //All dep's metric names
 const (
-	LATENCY_METRIC      = "latency"
-	NORM_LATENCY_METRIC = "normlatency"
-	FAILURE_METRIC      = "failure"
-	FREQUENCY_METRIC    = "frequency"
-	CC_METRIC           = "ccfreq"
-	INT_SIG_METRIC      = "intsig"
-	PANIC_METRIC        = "panic"
+	LATENCY_METRIC       = "latency"
+	NORM_LATENCY_METRIC  = "normlatency"
+	FAILURE_METRIC       = "failure"
+	FREQUENCY_METRIC     = "frequency"
+	CC_METRIC            = "ccfreq"
+	INT_SIG_METRIC       = "intsig"
+	VQS_EXHAUSTED_METRIC = "vqsexhausted"
+	PANIC_METRIC         = "panic"
 	//All error metric names are the same as the error types const above
 )
 
@@ -139,6 +140,18 @@ func ReportInterruptSignalReceivedMetric(repo string, cmdName string) {
 	defer catchErrors()
 	tags := getCommonTagsWithCmdAndRepo(repo, cmdName)
 	scope.Tagged(tags).Counter(INT_SIG_METRIC).Inc(1)
+	if err := scopeCloser.Close(); err != nil {
+		UberLogger.Print(err.Error())
+	}
+}
+
+//report this counter metric when we fail solver from too many
+//version queue exhaustions
+func ReportVQSExhaustedLimitReachedMetric(repo string) {
+	defer catchErrors()
+	tags := getCommonTags()
+	tags[REPO_TAG] = repo
+	scope.Tagged(tags).Counter(VQS_EXHAUSTED_METRIC).Inc(1)
 	if err := scopeCloser.Close(); err != nil {
 		UberLogger.Print(err.Error())
 	}

@@ -288,23 +288,19 @@ func (u *unselected) Pop() (v interface{}) {
 // O(1), as we iterate the queue from front to back.
 func (u *unselected) remove(bmi bimodalIdentifier) {
 	plen := len(bmi.pl)
-outer:
-	for {
-	inner:
-		for i, pi := range u.sl {
-			if pi.id.eq(bmi.id) && len(pi.pl) == plen {
-				// Simple slice comparison - assume they're both sorted the same
-				for i2, pkg := range pi.pl {
-					if bmi.pl[i2] != pkg {
-						continue inner // go to the next bmi
-					}
+	numDeleted := 0
+	for i := 0; i < len(u.sl); i++ {
+		pi := u.sl[i-numDeleted]
+		if pi.id.eq(bmi.id) && len(pi.pl) == plen {
+			// Simple slice comparison - assume they're both sorted the same
+			for i2, pkg := range pi.pl {
+				if bmi.pl[i2] != pkg {
+					continue
 				}
-
-				heap.Remove(u, i)
-				continue outer //start over
 			}
+
+			heap.Remove(u, i-numDeleted)
+			numDeleted++
 		}
-		// all unselected bmis should have been removed by now
-		return
 	}
 }

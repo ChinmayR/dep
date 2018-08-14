@@ -637,6 +637,7 @@ func (s *solver) filterUnwantedSubpackages(projectId ProjectIdentifier, pl []str
 	// in the version of atom that is passed in. we should only
 	// try to add the packages required by the current selection
 	// projects and filter out the rest.
+	// Fixes: https://code.uberinternal.com/T1933763
 	deps := s.sel.getDependenciesOn(projectId)
 	var newpl []string
 outer:
@@ -652,6 +653,7 @@ outer:
 			}
 		}
 	}
+	uber.DebugLogger.Printf("Filtered subpackages from %v to %v", pl, newpl)
 	return newpl
 }
 
@@ -987,6 +989,7 @@ func (s *solver) createVersionQueue(bmi bimodalIdentifier) (*versionQueue, error
 		// We know this is the only thing that could possibly match, so put it
 		// in at the front - if it isn't there already.
 		// TODO(sdboyer) existence of the revision is guaranteed by checkRevisionExists(); restore that call.
+		uber.DebugLogger.Printf("Appending rev %v to front of version queue %v for %v", tc, q.pi, bmi.id.ProjectRoot)
 		q.pi = append([]Version{tc}, q.pi...)
 	}
 
@@ -1060,6 +1063,7 @@ func (s *solver) findValidVersion(q *versionQueue, pl []string, bmi bimodalIdent
 	// Return a compound error of all the new errors encountered during this
 	// attempt to find a new, valid version
 	vqsExhaustedCount[q.id.ProjectRoot]++
+	uber.DebugLogger.Printf("Increment vqs exhausted count for %v to %v", q.id.ProjectRoot, vqsExhaustedCount[q.id.ProjectRoot])
 	return &noVersionError{
 		pn:    q.id,
 		fails: q.fails[faillen:],
@@ -1152,10 +1156,22 @@ func (s *solver) backtrack(ctx context.Context) (bool, error) {
 		return false, nil
 	}
 
-	// fail backtracker if it has resulted in the same version queue being exhausted 5 times of more
-	if vqsExhaustedCount[s.vqs[len(s.vqs)-1].id.ProjectRoot] >= 5 {
-		vqsExhaustedCount = make(map[ProjectRoot]int)
-		return false, nil
+	// fail backtracker if it has resulted in the same version queue being exhausted 10 times of more
+	// the version queue for a package is exhausted each time all the versions are tried and rejected
+	// due to constraint mismatch. this results in backtracking and trying the next version of the
+	// parent. A package can have only master to try (if not following semver, most non-libraries),
+	// or it can have 5 versions to try at max. This 10 allows the backtracker to go upto 10 levels deep
+	// to find a solution.
+	MAX_VQS_FAILURE := 10
+	for k, v := range vqsExhaustedCount {
+		uber.DebugLogger.Printf("Checking for queue exhaustion for %v and found %v", k, v)
+		if v >= MAX_VQS_FAILURE {
+			vqsExhaustedCount = make(map[ProjectRoot]int)
+			uber.DebugLogger.Printf("Aborting backtracking algorithm due to version queue "+
+				"exhaustion for repo %v", k)
+			uber.ReportVQSExhaustedLimitReachedMetric(string(s.rd.rootAtom().bmi().id.ProjectRoot))
+			return false, nil
+		}
 	}
 
 	donechan := ctx.Done()

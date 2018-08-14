@@ -294,7 +294,7 @@ func handleSolveConflicts(ctx *dep.Ctx, err error) error {
 	if i == gps.EXIT_NUM {
 		ctx.Out.Println("User selected exit")
 		return errors.New("User selected exit")
-	} else if i == gps.CUSTOM_NUM {
+	} else if i == gps.CUSTOM_NUM { //provide an option to set a custom override not in the recommendation list
 		ctx.Out.Print("Package Name: ")
 		var overName string
 		fmt.Scanln(&overName)

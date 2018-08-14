@@ -60,6 +60,7 @@ func newVersionQueue(id ProjectIdentifier, lockv, prefv Version, b sourceBridge,
 		vq.allLoaded = true
 	}
 
+	uber.DebugLogger.Printf("Version queue created for %v is %v", vq.id.ProjectRoot, vq.pi)
 	return vq, nil
 }
 
