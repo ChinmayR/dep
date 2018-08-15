@@ -58,8 +58,10 @@ type maybeGitoliteSource struct {
 
 func (m maybeGitoliteSource) try(ctx context.Context, cachedir string) (source, error) {
 	var ustr string
+	remoteChosen := false
 	if strings.TrimSpace(m.remote) != "" {
 		ustr = m.remote
+		remoteChosen = true
 	} else {
 		ustr = m.url.String()
 	}
@@ -82,26 +84,35 @@ func (m maybeGitoliteSource) try(ctx context.Context, cachedir string) (source, 
 		},
 	}
 
-	// Check and mirror repo in the background and continue to make calls to the github path, we still need to
-	// mirror in the background. Incase github goes down in the future, the will fall back to the gitolite mirror
-	go func() { uber.CheckAndMirrorRepo(new(uber.CommandExecutor), m.gpath, m.remote, m.gitoliteURL) }()
+	// if this source has a remote github URL then clone it on gitolite in a go routine and
+	// check if github is up. if github is down then fall back to gitolite (which is slower)
+	// there are two cases for a gitoliteSource
+	// 		1. for mirrors of github repos such as github.com/golang/dep
+	// 		2. for uber internal repos such as code.uber.internal/infra/uns
+	// this path is only run in case 1, and not necessary for case 2
+	if remoteChosen {
+		// Check and mirror repo in the background and continue to make calls to the github path, we still need to
+		// mirror in the background. Incase github goes down in the future, the will fall back to the gitolite mirror
+		go func() { uber.CheckAndMirrorRepo(new(uber.CommandExecutor), m.gpath, m.remote, m.gitoliteURL) }()
 
-	if existsUpstream := src.existsUpstream(ctx); !existsUpstream {
-		// if the call to remote url failed, then it means remote server is down so fall back to gitolite
-		ustr = m.url.String()
-		r, err := vcs.NewGitRepo(ustr, path)
-		if err != nil {
-			os.RemoveAll(path)
-			r, err = vcs.NewGitRepo(ustr, path)
+		// pings the upstream github path to see if it is exists
+		if existsUpstream := src.existsUpstream(ctx); !existsUpstream {
+			// if the call to remote url failed, then it means remote server is down so fall back to the gitolite mirror
+			ustr = m.url.String()
+			r, err := vcs.NewGitRepo(ustr, path)
 			if err != nil {
-				return nil, unwrapVcsErr(err)
+				os.RemoveAll(path)
+				r, err = vcs.NewGitRepo(ustr, path)
+				if err != nil {
+					return nil, unwrapVcsErr(err)
+				}
 			}
-		}
-		src = &gitSource{
-			baseVCSSource: baseVCSSource{
-				repo:        &gitRepo{sync.Mutex{}, r},
-				upstreamUrl: m.url.String(),
-			},
+			src = &gitSource{
+				baseVCSSource: baseVCSSource{
+					repo:        &gitRepo{sync.Mutex{}, r},
+					upstreamUrl: m.url.String(),
+				},
+			}
 		}
 	}
 

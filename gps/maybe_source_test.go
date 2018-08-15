@@ -8,6 +8,7 @@ import (
 	"archive/tar"
 	"compress/gzip"
 	"context"
+	"fmt"
 	"io"
 	"io/ioutil"
 	"net/url"
@@ -40,6 +41,85 @@ func TestMaybeGitSource_try(t *testing.T) {
 	_, err = ms.try(context.Background(), tempDir)
 	if err != nil {
 		t.Fatal(err)
+	}
+}
+
+func TestMaybeGitoliteSource_try_remoteDoesNotExist(t *testing.T) {
+	t.Parallel()
+
+	tempDir, err := ioutil.TempDir("", "go-try-gitolite-no-remote-test")
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer func() {
+		err = os.RemoveAll(tempDir)
+		if err != nil {
+			t.Error(err)
+		}
+	}()
+
+	gitoliteRepo := "ssh://gitolite@code.uber.internal/infra/uns"
+	url, err := url.Parse(gitoliteRepo)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var ms maybeSource = maybeGitoliteSource{url: url}
+	gotSource, err := ms.try(context.Background(), tempDir)
+	fmt.Println(gotSource)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	wantSourceUrl := gitoliteRepo
+	gotSourceUrl := (gotSource.(*gitSource)).repo.Remote()
+	if gotSourceUrl != wantSourceUrl {
+		t.Fatalf("Expected source URL %v but got %v", wantSourceUrl, gotSourceUrl)
+	}
+
+	wantUpstreamUrl := gitoliteRepo
+	gotUpstreamUrl := gotSource.upstreamURL()
+	if gotUpstreamUrl != wantUpstreamUrl {
+		t.Fatalf("Expected remote URL %v but got %v", wantUpstreamUrl, gotUpstreamUrl)
+	}
+}
+
+func TestMaybeGitoliteSource_try_remoteExists(t *testing.T) {
+	t.Parallel()
+
+	tempDir, err := ioutil.TempDir("", "go-try-gitolite-yes-remote-test")
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer func() {
+		err = os.RemoveAll(tempDir)
+		if err != nil {
+			t.Error(err)
+		}
+	}()
+
+	gitoliteRepoRemote := "https://github.com/golang/dep"
+	gitoliteRepo := "ssh://gitolite@code.uber.internal/github/golang/dep"
+	url, err := url.Parse(gitoliteRepo)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var ms maybeSource = maybeGitoliteSource{url: url, remote: gitoliteRepoRemote}
+	gotSource, err := ms.try(context.Background(), tempDir)
+	fmt.Println(gotSource)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	wantSourceUrl := gitoliteRepoRemote
+	gotSourceUrl := (gotSource.(*gitSource)).repo.Remote()
+	if gotSourceUrl != wantSourceUrl {
+		t.Fatalf("Expected source URL %v but got %v", wantSourceUrl, gotSourceUrl)
+	}
+
+	wantUpstreamUrl := gitoliteRepo
+	gotUpstreamUrl := gotSource.upstreamURL()
+	if gotUpstreamUrl != wantUpstreamUrl {
+		t.Fatalf("Expected remote URL %v but got %v", wantUpstreamUrl, gotUpstreamUrl)
 	}
 }
 
