@@ -19,7 +19,7 @@ func TestUnselected(t *testing.T) {
 	}
 	bmi2 := bimodalIdentifier{
 		id: mkPI("foo"),
-		pl: []string{"foo", "bar", "baz"},
+		pl: []string{"foo", "bar", "baz", "baz4"},
 	}
 	bmi3 := bimodalIdentifier{
 		id: mkPI("foo"),
@@ -69,6 +69,44 @@ func TestUnselected(t *testing.T) {
 
 	u.remove(bmi2)
 	want = []bimodalIdentifier{bmi4, bmi1}
+	if len(u.sl) != 2 {
+		t.Fatalf("removal of matching bmi did not remove all occurances, slice should have 2 items but has %v", len(u.sl))
+	}
+	if !reflect.DeepEqual(u.sl, want) {
+		t.Fatalf("wrong item removed from slice:\n\t(GOT): %v\n\t(WNT): %v", u.sl, want)
+	}
+}
+
+func TestRemoval(t *testing.T) {
+	// We don't need a comparison function for this test
+	bmi1 := bimodalIdentifier{
+		id: mkPI("foo"),
+		pl: []string{"foo1", "foo2", "foo3", "foo4"},
+	}
+	bmi2 := bimodalIdentifier{
+		id: mkPI("foo"),
+		pl: []string{"bar1", "bar2", "bar3", "bar4"},
+	}
+
+	u := &unselected{
+		sl: []bimodalIdentifier{bmi1, bmi2, bmi2, bmi1, bmi2},
+	}
+	u.cmp = u.compa
+
+	u.remove(bimodalIdentifier{
+		id: mkPI("foo"),
+		pl: []string{"bar1", "bar2", "bar3", "bar5"},
+	})
+	want := []bimodalIdentifier{bmi1, bmi1}
+	if len(u.sl) != 5 {
+		t.Fatalf("removal of matching bmi did not remove all occurances, slice should have 5 items but has %v", len(u.sl))
+	}
+
+	u.remove(bimodalIdentifier{
+		id: mkPI("foo"),
+		pl: []string{"bar1", "bar2", "bar3", "bar4"},
+	})
+	want = []bimodalIdentifier{bmi1, bmi1}
 	if len(u.sl) != 2 {
 		t.Fatalf("removal of matching bmi did not remove all occurances, slice should have 2 items but has %v", len(u.sl))
 	}

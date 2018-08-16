@@ -289,13 +289,14 @@ func (u *unselected) Pop() (v interface{}) {
 func (u *unselected) remove(bmi bimodalIdentifier) {
 	plen := len(bmi.pl)
 	numDeleted := 0
-	for i := 0; i < len(u.sl); i++ {
+outer:
+	for i := 0; i-numDeleted < len(u.sl); i++ {
 		pi := u.sl[i-numDeleted]
 		if pi.id.eq(bmi.id) && len(pi.pl) == plen {
 			// Simple slice comparison - assume they're both sorted the same
 			for i2, pkg := range pi.pl {
 				if bmi.pl[i2] != pkg {
-					continue
+					continue outer
 				}
 			}
 
