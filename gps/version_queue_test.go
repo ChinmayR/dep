@@ -40,7 +40,7 @@ var allFakeFilterVl = []Version{
 	NewVersion("v2.8").Pair("28rev"),
 	NewVersion("v2.9").Pair("29rev"),
 	NewVersion("v3.1").Pair("31rev"),
-	NewVersion("v3.2").Pair("32rev"), // should be ignored (reached max limit of 10)
+	NewVersion("v3.2").Pair("32rev"),
 	NewBranch("non-default-branch-version-2").Pair("non-default-branch-version-2rev"),
 	NewBranch("non-default-branch-version-3").Pair("non-default-branch-version-3rev"),
 	NewBranch("non-default-branch-version-1").Pair("non-default-branch-version-1rev"),
@@ -354,4 +354,33 @@ func TestVersionQueueAdvance(t *testing.T) {
 		t.Error("err should be stored for reuse on any subsequent calls")
 	}
 
+}
+
+func TestConstraintRangeOutsideLimitHonored(t *testing.T) {
+	versions := []Version{
+		NewVersion("v1.5.0").Pair("rev1"),
+		NewVersion("v1.4.0").Pair("rev2"),
+		NewVersion("v1.3.0").Pair("rev3"),
+		NewVersion("v1.2.0").Pair("rev4"),
+		NewVersion("v1.1.0").Pair("rev5"),
+		NewVersion("v1.0.0").Pair("rev6"), // should be removed
+		NewVersion("v0.2.1").Pair("rev7"),
+		NewVersion("v0.2.0").Pair("rev8"),
+		NewVersion("v0.1.0").Pair("rev9"), // should be removed
+	}
+
+	constraint, _ := NewSemverConstraint("^0.2.0")
+	got := filterNonDefaultBranches(versions, constraint, ProjectRoot("projectFoo"))
+	want := []Version{
+		NewVersion("v1.5.0").Pair("rev1"),
+		NewVersion("v1.4.0").Pair("rev2"),
+		NewVersion("v1.3.0").Pair("rev3"),
+		NewVersion("v1.2.0").Pair("rev4"),
+		NewVersion("v1.1.0").Pair("rev5"),
+		NewVersion("v0.2.1").Pair("rev7"),
+		NewVersion("v0.2.0").Pair("rev8"),
+	}
+	if !reflect.DeepEqual(got, want) {
+		t.Fatalf("Wanted \n%v\n but got \n%v\n", want, got)
+	}
 }

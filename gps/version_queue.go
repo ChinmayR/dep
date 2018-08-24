@@ -64,15 +64,18 @@ func newVersionQueue(id ProjectIdentifier, lockv, prefv Version, b sourceBridge,
 	return vq, nil
 }
 
-//This function filters non-default branch versions according to these criteria:
-//1. The version is a branch version
-//2. The version is not a default branch version – a default branch version has a hash that matches that of HEAD's
-//3. There is not constraint defined on that branch version and the constraint must not be of type anyConstraint
-// – a catch-all constraint, especially when a glide file exists and is translated into dep
+//This function filters versions according to these criteria:
+//1. The version is a branch version that is not a default branch version – a default branch version has a hash that matches that of HEAD's
+//2. There is not a constraint defined on either the branch or the semver version
+//3. The semver version does not have a prerelease tag associated with it
+//4. More than 5 versions have already been chosen
 func filterNonDefaultBranches(allVersions []Version, constraint Constraint, root ProjectRoot) []Version {
 	if os.Getenv(uber.UseNonDefaultVersionBranches) == "yes" {
 		return allVersions
 	}
+
+	const VERSION_QUEUE_MAX_LIMIT = 5
+
 	var filteredVersions []Version
 	for _, version := range allVersions {
 		if version.Type() == IsBranch {
@@ -80,16 +83,13 @@ func filterNonDefaultBranches(allVersions []Version, constraint Constraint, root
 			if bv.isDefault || (constraint != nil && !isAnyConstraint(constraint) && constraint.Matches(bv)) {
 				filteredVersions = append(filteredVersions, version)
 			}
-		} else if len(filteredVersions) < 5 {
+		} else if version.Type() == IsSemver {
 			// ignore all semver tags with a prerelease tag such as v1.0.0-rc9 or v1.0.0-beta1
-			if version.Type() == IsSemver {
-				sv := version.(versionPair).v.(semVersion)
-				semverMatchesConstraint := constraint != nil && !isAnyConstraint(constraint) && constraint.Matches(sv)
-				if strings.TrimSpace(sv.sv.Prerelease()) != "" && !semverMatchesConstraint {
-					continue
-				}
+			sv := version.(versionPair).v.(semVersion)
+			semverMatchesConstraint := constraint != nil && !isAnyConstraint(constraint) && constraint.Matches(sv)
+			if semverMatchesConstraint || (len(filteredVersions) < VERSION_QUEUE_MAX_LIMIT && strings.TrimSpace(sv.sv.Prerelease()) == "") {
+				filteredVersions = append(filteredVersions, version)
 			}
-			filteredVersions = append(filteredVersions, version)
 		}
 	}
 	if len(allVersions) == len(filteredVersions) {
