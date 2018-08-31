@@ -817,6 +817,24 @@ var pathDeductionFixtures = map[string][]pathDeductionFixture{
 			},
 		},
 	},
+	"honnef.co": {
+		{
+			in:   "honnef.co/go/tools",
+			root: "honnef.co/go/tools",
+			mb: maybeSources{
+				maybeGitoliteSource{url: mkurl("ssh://gitolite@code.uber.internal/github/dominikh/go-tools"),
+					gpath: "github/dominikh/go-tools", remote: "https://github.com/dominikh/go-tools", gitoliteURL: mkurl("ssh://gitolite@code.uber.internal/github/dominikh/go-tools")},
+			},
+		},
+		{
+			in:   "honnef.co/go/tools/cmd/staticcheck",
+			root: "honnef.co/go/tools",
+			mb: maybeSources{
+				maybeGitoliteSource{url: mkurl("ssh://gitolite@code.uber.internal/github/dominikh/go-tools"),
+					gpath: "github/dominikh/go-tools", remote: "https://github.com/dominikh/go-tools", gitoliteURL: mkurl("ssh://gitolite@code.uber.internal/github/dominikh/go-tools")},
+			},
+		},
+	},
 }
 
 func TestDeduceFromPath(t *testing.T) {
@@ -845,6 +863,8 @@ func TestDeduceFromPath(t *testing.T) {
 				deducer = gitoliteDeducer{}
 			case "golang.org":
 				deducer = golangDeducer{regexp: golangRegex}
+			case "honnef.co":
+				deducer = honnefcoDeducer{regexp: honnefcoRegex}
 			default:
 				// Should just be the vanity imports, which we do elsewhere
 				t.Log("skipping")

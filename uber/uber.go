@@ -60,6 +60,11 @@ type CommandExecutor struct {
 }
 
 var hostnameRewrites = map[string]internalRewriter{
+	"honnef.co": {
+		log:     true,
+		pattern: regexp.MustCompile(`^honnef.co/go/([^/]+)`),
+		fn:      rewriteHonnefCo,
+	},
 	"github.com": {
 		log:     true,
 		pattern: regexp.MustCompile("^github.com/(?P<user>[^/]+)/(?P<repo>[^/]+)"),
@@ -126,6 +131,27 @@ func GetGitoliteRoot(path string) string {
 func rewriteGitolite(match []string, ex ExecutorInterface) (*url.URL, string, string, *url.URL, error) {
 	gitoliteURL := getGitoliteUrlWithPath(strings.TrimPrefix(GetGitoliteRoot(match[0]), "code.uber.internal/"))
 	return gitoliteURL, "", "", gitoliteURL, nil
+}
+
+// u, gpath, remote, gitoliteURL
+func rewriteHonnefCo(match []string, ex ExecutorInterface) (*url.URL, string, string, *url.URL, error) {
+	// The rewrite pattern is
+	// honnef.co/go/$name => https://github.com/dominikh/go-$name
+
+	// Known bug: This won't work for honnef.co/go/js/dom because that maps to
+	// dominikh/go-js-dom. We can't just replace all '/'s with '-'s because
+	// the query we'll usually see is honnef.co/go/tools/cmd/staticcheck,
+	// which would become go-tools-cmd-staticcheck. We will have to drop
+	// path elements and query GitHub repeatedly until we find a valid
+	// repository. The performance hit isn't worth it since we really just use
+	// go-tools at Uber.
+	user := "dominikh"
+	repo := "go-" + match[1]
+
+	gpath := gitolitePathForGithub(user, repo)
+	remote := getGithubRemoteFromUserAndRepo(user, repo)
+	gitoliteURL := getGitoliteUrlWithPath(gpath)
+	return gitoliteURL, gpath, remote, gitoliteURL, nil
 }
 
 // rewriteGithub returns a rewritten URL for a GitHub package, using a Gitolite

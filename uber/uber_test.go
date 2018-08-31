@@ -179,6 +179,42 @@ func TestUber_IsGitoliteForGithub(t *testing.T) {
 	}
 }
 
+func TestUber_IsGitoliteForHonnefco(t *testing.T) {
+	cases := []repoTestCase{
+		{
+			given:          "honnef.co/go/tools",
+			expUrl:         "ssh://gitolite@code.uber.internal/github/dominikh/go-tools",
+			expGpath:       "github/dominikh/go-tools",
+			expRemote:      "https://github.com/dominikh/go-tools",
+			expGitoliteUrl: "ssh://gitolite@code.uber.internal/github/dominikh/go-tools",
+			autocreate:     true,
+		},
+		{
+			given:          "honnef.co/go/irc",
+			expUrl:         "ssh://gitolite@code.uber.internal/github/dominikh/go-irc",
+			expGpath:       "github/dominikh/go-irc",
+			expRemote:      "https://github.com/dominikh/go-irc",
+			expGitoliteUrl: "ssh://gitolite@code.uber.internal/github/dominikh/go-irc",
+			autocreate:     true,
+		},
+	}
+
+	for _, c := range cases {
+		func(c repoTestCase) {
+			if !c.autocreate {
+				defer SetAndUnsetEnvVar(UberDisableGitoliteAutocreation, "yes")()
+			}
+			gotUrl, gotGpath, gotRemote, gotGitoliteURL, err := GetGitoliteUrlForRewriter(c.given, "honnef.co")
+
+			assert.Nil(t, err)
+			assert.Equal(t, c.expUrl, gotUrl.String(), "Expected URL: ")
+			assert.Equal(t, c.expGpath, gotGpath, "Expected Gpath: ")
+			assert.Equal(t, c.expRemote, gotRemote, "Expected remote: ")
+			assert.Equal(t, c.expGitoliteUrl, gotGitoliteURL.String(), "Expected gitoliteURL: ")
+		}(c)
+	}
+}
+
 func TestUber_MirrorsToGitolite(t *testing.T) {
 
 	type mirrorTestCase struct {

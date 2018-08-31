@@ -86,6 +86,7 @@ var (
 	vcsExtensionRegex = regexp.MustCompile(`^(?P<root>([a-z0-9.\-]+\.)+[a-z0-9.\-]+(:[0-9]+)?/[A-Za-z0-9_.\-/~]*?\.(?P<vcs>bzr|git|hg|svn))((?:/[A-Za-z0-9_.\-]+)*)$`)
 	golangRegex       = regexp.MustCompile("^golang.org/x/([^/]+)")
 	googlesourceRegex = regexp.MustCompile("^go.googlesource.com/([^/]+)")
+	honnefcoRegex     = regexp.MustCompile(`^honnef.co/go/([^/]+)`)
 )
 
 // Other helper regexes
@@ -107,6 +108,7 @@ func pathDeducerTrie() *deducerTrie {
 	dxt.Insert("code.uber.internal/", gitoliteDeducer{})
 	dxt.Insert("golang.org/", golangDeducer{regexp: golangRegex})
 	dxt.Insert("go.googlesource.com/", golangDeducer{regexp: googlesourceRegex})
+	dxt.Insert("honnef.co/", honnefcoDeducer{regexp: honnefcoRegex})
 
 	return dxt
 }
@@ -120,6 +122,27 @@ type pathDeducer interface {
 	// "github.com/some-user/some-package"
 	deduceRoot(string) (string, error)
 	deduceSource(string, *url.URL) (maybeSources, error)
+}
+
+type honnefcoDeducer struct {
+	regexp *regexp.Regexp
+}
+
+func (m honnefcoDeducer) deduceRoot(path string) (string, error) {
+	v := m.regexp.FindStringSubmatch(path)
+	if v == nil {
+		return "", fmt.Errorf("%s is not a valid path for a source on honnef.co", path)
+	}
+
+	return "honnef.co/go/" + v[1], nil
+}
+
+func (m honnefcoDeducer) deduceSource(path string, u *url.URL) (maybeSources, error) {
+	u, gpath, remote, gitoliteURL, err := uber.GetGitoliteUrlForRewriter(path, "honnef.co")
+	if err != nil {
+		return nil, err
+	}
+	return maybeSources{maybeGitoliteSource{url: u, gpath: gpath, remote: remote, gitoliteURL: gitoliteURL}}, nil
 }
 
 type gitoliteDeducer struct{}
