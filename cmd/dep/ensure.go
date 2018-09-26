@@ -19,6 +19,7 @@ import (
 	"sync"
 
 	"github.com/golang/dep/uber"
+	"github.com/golang/dep/uber/conflict_resolution"
 
 	"github.com/golang/dep"
 	"github.com/golang/dep/gps"
@@ -143,6 +144,7 @@ func (cmd *ensureCommand) Register(fs *flag.FlagSet) {
 	fs.BoolVar(&cmd.dryRun, "dry-run", false, "only report the changes that would be made")
 	fs.BoolVar(&cmd.withMirror, "withMirror", false, "enable github mirroring internally in gitolite")
 	fs.BoolVar(&cmd.gopath, "gopath", false, "search in GOPATH for dependencies")
+	fs.BoolVar(&cmd.automated, "automated", false, "turn off override recommendations options in automated mode")
 }
 
 type ensureCommand struct {
@@ -154,7 +156,10 @@ type ensureCommand struct {
 	dryRun     bool
 	withMirror bool
 	gopath     bool
+	automated  bool // set this flag when running ensure in CI to disable user interaction in cases of override recommendations
 }
+
+var restartRunError = errors.New("root project updated, restart the ensure run")
 
 func (cmd *ensureCommand) Run(ctx *dep.Ctx, args []string) error {
 	if cmd.examples {
@@ -192,6 +197,7 @@ func (cmd *ensureCommand) Run(ctx *dep.Ctx, args []string) error {
 	sm.UseDefaultSignalHandling(uber.GetRepoTagFriendlyNameFromCWD(ctx.WorkingDir), cmd.Name())
 	defer sm.Release()
 
+restart:
 	if err := dep.ValidateProjectRoots(ctx, p.Manifest, sm); err != nil {
 		return err
 	}
@@ -255,6 +261,9 @@ func (cmd *ensureCommand) Run(ctx *dep.Ctx, args []string) error {
 
 	if cmd.add {
 		if err = cmd.runAdd(ctx, args, p, sm, params); err != nil {
+			if err == restartRunError {
+				goto restart
+			}
 			return err
 		}
 		if err = SyncManifest(p.AbsRoot); err != nil {
@@ -268,6 +277,9 @@ func (cmd *ensureCommand) Run(ctx *dep.Ctx, args []string) error {
 		return err
 	} else if cmd.update {
 		if err = cmd.runUpdate(ctx, args, p, sm, params); err != nil {
+			if err == restartRunError {
+				goto restart
+			}
 			return err
 		}
 		if err = SyncManifest(p.AbsRoot); err != nil {
@@ -281,6 +293,9 @@ func (cmd *ensureCommand) Run(ctx *dep.Ctx, args []string) error {
 		return err
 	}
 	if err = cmd.runDefault(ctx, args, p, sm, params); err != nil {
+		if err == restartRunError {
+			goto restart
+		}
 		return err
 	}
 	if err = SyncManifest(p.AbsRoot); err != nil {
@@ -375,7 +390,18 @@ func (cmd *ensureCommand) runDefault(ctx *dep.Ctx, args []string, p *dep.Project
 
 	solution, err := solver.Solve(context.TODO())
 	if err != nil {
+		if !cmd.automated {
+			errInternal := conflict_resolution.HandleSolveConflicts(ctx, p.Manifest, conflict_resolution.NORMAL_MODE, err)
+			if errInternal != nil {
+				return errors.Wrap(err, "failed to handle solve conflicts")
+			}
+			return restartRunError
+		}
 		return handleAllTheFailuresOfTheWorld(err)
+	}
+
+	if err = writeAppendedManifest(ctx, p.AbsRoot, p.Manifest); err != nil {
+		return errors.Wrap(err, "failed to append to the current manifest")
 	}
 
 	sw, err := dep.NewSafeWriter(nil, p.Lock, dep.LockFromSolution(solution), cmd.vendorBehavior(), p.Manifest.PruneOptions)
@@ -391,6 +417,35 @@ func (cmd *ensureCommand) runDefault(ctx *dep.Ctx, args []string, p *dep.Project
 		logger = ctx.Err
 	}
 	return errors.Wrap(sw.Write(p.AbsRoot, sm, false, logger), "grouped write of manifest, lock and vendor")
+}
+
+func writeAppendedManifest(ctx *dep.Ctx, root string, newManifest *dep.Manifest) error {
+	curManifest, _, err := ctx.ReadManifestAndLock(root)
+	if err != nil {
+		return errors.Wrap(err, "failed to append to the current manifest")
+	}
+	mpath := filepath.Join(root, dep.ManifestName)
+	f, err := os.OpenFile(mpath, os.O_APPEND|os.O_WRONLY, 0666)
+	if err != nil {
+		return errors.Wrap(err, "failed to open root manifest")
+	}
+	// it is fine to do a one way diff since overrides can only be added
+	// and never removed currently to help resolve successfully
+	for k, v := range newManifest.Ovr {
+		if _, ok := curManifest.Ovr[k]; !ok {
+			tempMan := dep.NewManifest()
+			tempMan.Ovr[k] = v
+			tb, err := tempMan.MarshalTOML()
+			if err != nil {
+				return errors.Wrap(err, "failed to marshal temp manifest to toml")
+			}
+			if _, err := f.Write(tb); err != nil {
+				f.Close()
+				return errors.Wrap(err, "failed to append to root manifest")
+			}
+		}
+	}
+	return nil
 }
 
 func (cmd *ensureCommand) runVendorOnly(ctx *dep.Ctx, args []string, p *dep.Project, sm gps.SourceManager, params gps.SolveParameters) error {
@@ -465,7 +520,18 @@ func (cmd *ensureCommand) runUpdate(ctx *dep.Ctx, args []string, p *dep.Project,
 		// TODO(sdboyer) special handling for warning cases as described in spec
 		// - e.g., named projects did not upgrade even though newer versions
 		// were available.
+		if !cmd.automated {
+			errInternal := conflict_resolution.HandleSolveConflicts(ctx, p.Manifest, conflict_resolution.NORMAL_MODE, err)
+			if errInternal != nil {
+				return errors.Wrap(err, "failed to handle solve conflicts")
+			}
+			return restartRunError
+		}
 		return handleAllTheFailuresOfTheWorld(err)
+	}
+
+	if err = writeAppendedManifest(ctx, p.AbsRoot, p.Manifest); err != nil {
+		return errors.Wrap(err, "failed to append to the current manifest")
 	}
 
 	sw, err := dep.NewSafeWriter(nil, p.Lock, dep.LockFromSolution(solution), cmd.vendorBehavior(), p.Manifest.PruneOptions)
@@ -755,6 +821,13 @@ func (cmd *ensureCommand) runAdd(ctx *dep.Ctx, args []string, p *dep.Project, sm
 	solution, err := solver.Solve(context.TODO())
 	if err != nil {
 		// TODO(sdboyer) detect if the failure was specifically about some of the -add arguments
+		if !cmd.automated {
+			errInternal := conflict_resolution.HandleSolveConflicts(ctx, p.Manifest, conflict_resolution.NORMAL_MODE, err)
+			if errInternal != nil {
+				return errors.Wrap(err, "failed to handle solve conflicts")
+			}
+			return restartRunError
+		}
 		return handleAllTheFailuresOfTheWorld(err)
 	}
 
@@ -824,6 +897,10 @@ func (cmd *ensureCommand) runAdd(ctx *dep.Ctx, args []string, p *dep.Project, sm
 	if _, err := f.Write(extra); err != nil {
 		f.Close()
 		return errors.Wrapf(err, "writing to %s failed", dep.ManifestName)
+	}
+
+	if err = writeAppendedManifest(ctx, p.AbsRoot, p.Manifest); err != nil {
+		return errors.Wrap(err, "failed to append to the current manifest")
 	}
 
 	switch len(reqlist) {

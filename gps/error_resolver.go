@@ -17,7 +17,7 @@ type ErrorOptions interface {
 type OverridePackage struct {
 	Name       string
 	Source     string
-	Constraint string
+	Constraint Constraint
 }
 
 const EXIT_NUM = 0
@@ -46,7 +46,7 @@ func HandleErrors(logOut *log.Logger, err error) ([]OverridePackage, error) {
 		dupFound := false
 		for j := 0; j < i; j++ {
 			if ovrPkg.Name == ovrPkgs[j].Name &&
-				ovrPkg.Constraint == ovrPkgs[j].Constraint &&
+				ovrPkg.Constraint.String() == ovrPkgs[j].Constraint.String() &&
 				ovrPkg.Source == ovrPkgs[j].Source {
 				dupFound = true
 			}
@@ -69,7 +69,7 @@ func HandleErrors(logOut *log.Logger, err error) ([]OverridePackage, error) {
 		}
 		buf.Reset()
 		fmt.Fprintf(&buf, nameStr, i+2, ovrPkg.Name)
-		if ovrPkg.Constraint != "" {
+		if ovrPkg.Constraint.String() != "" {
 			fmt.Fprintf(&buf, constraintStr, ovrPkg.Constraint)
 		}
 		if ovrPkg.Source != "" {

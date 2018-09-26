@@ -7,18 +7,16 @@ package main
 import (
 	"context"
 	"flag"
-	"fmt"
 	"log"
 	"os"
 	"path/filepath"
 	"strconv"
-	"strings"
 
 	"github.com/golang/dep"
 	"github.com/golang/dep/gps"
 	"github.com/golang/dep/internal/fs"
-	"github.com/golang/dep/internal/importers/base"
 	"github.com/golang/dep/uber"
+	"github.com/golang/dep/uber/conflict_resolution"
 	"github.com/golang/dep/uber/glide"
 	"github.com/pkg/errors"
 )
@@ -183,9 +181,9 @@ restart:
 	soln, err := s.Solve(context.TODO())
 	if err != nil {
 		handleAllTheFailuresOfTheWorld(err)
-		errInternal := handleSolveConflicts(ctx, err)
+		errInternal := conflict_resolution.HandleSolveConflicts(ctx, p.Manifest, conflict_resolution.MIGRATE_MODE, err)
 		if errInternal != nil {
-			return err
+			return errors.Wrap(err, "failed to handle solve conflicts")
 		}
 		goto restart
 	}
@@ -276,50 +274,4 @@ func (cmd *initCommand) establishProjectAt(root string, ctx *dep.Ctx) (*dep.Proj
 	p.ImportRoot = gps.ProjectRoot(ip)
 
 	return p, nil
-}
-
-func handleSolveConflicts(ctx *dep.Ctx, err error) error {
-	ovrPkgs, errInternal := gps.HandleErrors(ctx.Out, err)
-	if errInternal != nil {
-		ctx.Err.Println(errInternal)
-		return errInternal
-	}
-	if len(ovrPkgs) == 0 {
-		return errors.New("No resolution options to provide")
-	}
-	ctx.Out.Print("Select an option: ")
-	var i int
-	fmt.Scan(&i)
-	var ovrPkgSelected gps.OverridePackage
-	if i == gps.EXIT_NUM {
-		ctx.Out.Println("User selected exit")
-		return errors.New("User selected exit")
-	} else if i == gps.CUSTOM_NUM { //provide an option to set a custom override not in the recommendation list
-		ctx.Out.Print("Package Name: ")
-		var overName string
-		fmt.Scanln(&overName)
-		overName = strings.Trim(overName, " ")
-		ctx.Out.Print("Override version: ")
-		var overVersion string
-		fmt.Scanln(&overVersion)
-		overVersion = strings.Trim(overVersion, " ")
-		ctx.Out.Print("Override source: ")
-		var overSource string
-		fmt.Scanln(&overSource)
-		overSource = strings.Trim(overSource, " ")
-		ovrPkgSelected = gps.OverridePackage{
-			Name:       overName,
-			Constraint: overVersion,
-			Source:     overSource,
-		}
-	} else {
-		ovrPkgSelected = ovrPkgs[i-2]
-	}
-	errInternal = base.AddOverrideToConfig(ovrPkgSelected.Name, ovrPkgSelected.Constraint, ovrPkgSelected.Source,
-		ctx.WorkingDir, ctx.Out)
-	if errInternal != nil {
-		ctx.Err.Println(errInternal)
-		return errInternal
-	}
-	return nil
 }

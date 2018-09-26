@@ -199,14 +199,14 @@ func (e *disjointConstraintFailure) GetOptions() []OverridePackage {
 	if len(e.failsib) >= 1 {
 		ovrPkgs = append(ovrPkgs, OverridePackage{
 			Name:       e.goal.dep.Ident.String(),
-			Constraint: e.goal.dep.Constraint.String(),
+			Constraint: e.goal.dep.Constraint,
 			Source:     "",
 		})
 
 		for _, failib := range e.failsib {
 			ovrPkgs = append(ovrPkgs, OverridePackage{
 				Name:       e.goal.dep.Ident.String(),
-				Constraint: failib.dep.Constraint.String(),
+				Constraint: failib.dep.Constraint,
 				Source:     "",
 			})
 		}
@@ -327,13 +327,13 @@ func (e *versionNotAllowedFailure) GetOptions() []OverridePackage {
 	if len(e.failparent) == 1 {
 		ovrPkgs = append(ovrPkgs, OverridePackage{
 			Name:       e.goal.id.String(),
-			Constraint: e.failparent[0].dep.Constraint.String(),
+			Constraint: e.failparent[0].dep.Constraint,
 			Source:     "",
 		})
 
 		ovrPkgs = append(ovrPkgs, OverridePackage{
 			Name:       e.goal.id.String(),
-			Constraint: e.goal.v.String(),
+			Constraint: e.goal.v,
 			Source:     "",
 		})
 	}
@@ -414,13 +414,13 @@ func (e *sourceMismatchFailure) GetOptions() []OverridePackage {
 	var ovrPkgs []OverridePackage
 	ovrPkgs = append(ovrPkgs, OverridePackage{
 		Name:       string(e.shared),
-		Constraint: "",
+		Constraint: Any(),
 		Source:     e.current,
 	})
 
 	ovrPkgs = append(ovrPkgs, OverridePackage{
 		Name:       string(e.shared),
-		Constraint: "",
+		Constraint: Any(),
 		Source:     e.mismatch,
 	})
 
