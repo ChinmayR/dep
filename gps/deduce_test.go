@@ -834,6 +834,14 @@ var pathDeductionFixtures = map[string][]pathDeductionFixture{
 					gpath: "github/dominikh/go-tools", remote: "https://github.com/dominikh/go-tools", gitoliteURL: mkurl("ssh://gitolite@code.uber.internal/github/dominikh/go-tools")},
 			},
 		},
+		{
+			in:   "honnef.co/go/js/dom/test_pkg/blah",
+			root: "honnef.co/go/js/dom",
+			mb: maybeSources{
+				maybeGitoliteSource{url: mkurl("ssh://gitolite@code.uber.internal/github/dominikh/go-js-dom"),
+					gpath: "github/dominikh/go-js-dom", remote: "https://github.com/dominikh/go-js-dom", gitoliteURL: mkurl("ssh://gitolite@code.uber.internal/github/dominikh/go-js-dom")},
+			},
+		},
 	},
 }
 

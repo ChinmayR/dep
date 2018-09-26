@@ -86,7 +86,7 @@ var (
 	vcsExtensionRegex = regexp.MustCompile(`^(?P<root>([a-z0-9.\-]+\.)+[a-z0-9.\-]+(:[0-9]+)?/[A-Za-z0-9_.\-/~]*?\.(?P<vcs>bzr|git|hg|svn))((?:/[A-Za-z0-9_.\-]+)*)$`)
 	golangRegex       = regexp.MustCompile("^golang.org/x/([^/]+)")
 	googlesourceRegex = regexp.MustCompile("^go.googlesource.com/([^/]+)")
-	honnefcoRegex     = regexp.MustCompile(`^honnef.co/go/([^/]+)`)
+	honnefcoRegex     = regexp.MustCompile(`^honnef.co/go/(.*)$`)
 )
 
 // Other helper regexes
@@ -134,7 +134,23 @@ func (m honnefcoDeducer) deduceRoot(path string) (string, error) {
 		return "", fmt.Errorf("%s is not a valid path for a source on honnef.co", path)
 	}
 
-	return "honnef.co/go/" + v[1], nil
+	// The rewrite pattern is
+	// honnef.co/go/$name => https://github.com/dominikh/go-$name
+	// we have special cased js/dom here but this will not protect us from
+	// all the future repos created that do not follow this pattern
+
+	matchedStr := v[1]
+	if matchedStr == "js/dom" || strings.HasPrefix(matchedStr, "js/dom/") {
+		// honnef.co/go/js/dom doesn't follow the same pattern
+		// as the rest of Dominik's projects.
+		// honnef.co/go/js/dom => github.com/dominikh/go-js-dom
+		return "honnef.co/go/js/dom", nil
+	}
+
+	if idx := strings.Index(matchedStr, "/"); idx > 0 {
+		matchedStr = matchedStr[:idx]
+	}
+	return "honnef.co/go/" + matchedStr, nil
 }
 
 func (m honnefcoDeducer) deduceSource(path string, u *url.URL) (maybeSources, error) {

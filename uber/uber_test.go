@@ -182,7 +182,7 @@ func TestUber_IsGitoliteForGithub(t *testing.T) {
 func TestUber_IsGitoliteForHonnefco(t *testing.T) {
 	cases := []repoTestCase{
 		{
-			given:          "honnef.co/go/tools",
+			given:          "honnef.co/go/tools/staticcheck",
 			expUrl:         "ssh://gitolite@code.uber.internal/github/dominikh/go-tools",
 			expGpath:       "github/dominikh/go-tools",
 			expRemote:      "https://github.com/dominikh/go-tools",
@@ -195,6 +195,14 @@ func TestUber_IsGitoliteForHonnefco(t *testing.T) {
 			expGpath:       "github/dominikh/go-irc",
 			expRemote:      "https://github.com/dominikh/go-irc",
 			expGitoliteUrl: "ssh://gitolite@code.uber.internal/github/dominikh/go-irc",
+			autocreate:     true,
+		},
+		{
+			given:          "honnef.co/go/js/dom/blah_pkg",
+			expUrl:         "ssh://gitolite@code.uber.internal/github/dominikh/go-js-dom",
+			expGpath:       "github/dominikh/go-js-dom",
+			expRemote:      "https://github.com/dominikh/go-js-dom",
+			expGitoliteUrl: "ssh://gitolite@code.uber.internal/github/dominikh/go-js-dom",
 			autocreate:     true,
 		},
 	}

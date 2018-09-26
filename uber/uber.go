@@ -62,7 +62,7 @@ type CommandExecutor struct {
 var hostnameRewrites = map[string]internalRewriter{
 	"honnef.co": {
 		log:     true,
-		pattern: regexp.MustCompile(`^honnef.co/go/([^/]+)`),
+		pattern: regexp.MustCompile(`^honnef.co/go/(.*)$`),
 		fn:      rewriteHonnefCo,
 	},
 	"github.com": {
@@ -137,16 +137,22 @@ func rewriteGitolite(match []string, ex ExecutorInterface) (*url.URL, string, st
 func rewriteHonnefCo(match []string, ex ExecutorInterface) (*url.URL, string, string, *url.URL, error) {
 	// The rewrite pattern is
 	// honnef.co/go/$name => https://github.com/dominikh/go-$name
+	// we have special cased js/dom here but this will not protect us from
+	// all the future repos created that do not follow this pattern
 
-	// Known bug: This won't work for honnef.co/go/js/dom because that maps to
-	// dominikh/go-js-dom. We can't just replace all '/'s with '-'s because
-	// the query we'll usually see is honnef.co/go/tools/cmd/staticcheck,
-	// which would become go-tools-cmd-staticcheck. We will have to drop
-	// path elements and query GitHub repeatedly until we find a valid
-	// repository. The performance hit isn't worth it since we really just use
-	// go-tools at Uber.
 	user := "dominikh"
-	repo := "go-" + match[1]
+	repo := match[1]
+	if repo == "js/dom" || strings.HasPrefix(repo, "js/dom/") {
+		// honnef.co/go/js/dom doesn't follow the same pattern
+		// as the rest of Dominik's projects.
+		// honnef.co/go/js/dom => github.com/dominikh/go-js-dom
+		repo = "go-js-dom"
+	} else {
+		if idx := strings.Index(repo, "/"); idx > 0 {
+			repo = repo[:idx]
+		}
+		repo = "go-" + repo
+	}
 
 	gpath := gitolitePathForGithub(user, repo)
 	remote := getGithubRemoteFromUserAndRepo(user, repo)
