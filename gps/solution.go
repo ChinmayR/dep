@@ -64,7 +64,7 @@ func (p WriteProgress) String() string {
 	return fmt.Sprintf("(%d/%d) %s %s@%s", p.Count, p.Total, msg, p.LP.Ident(), p.LP.Version())
 }
 
-const concurrentWriters = 25
+var ConcurrentWriters int
 
 // WriteDepTree takes a basedir, a Lock and a RootPruneOptions and exports all
 // the projects listed in the lock to the appropriate target location within basedir.
@@ -87,7 +87,7 @@ func WriteDepTree(basedir string, l Lock, sm SourceManager, co CascadingPruneOpt
 
 	g, ctx := errgroup.WithContext(context.TODO())
 	lps := l.Projects()
-	sem := make(chan struct{}, concurrentWriters)
+	sem := make(chan struct{}, ConcurrentWriters)
 	var cnt struct {
 		sync.Mutex
 		i int

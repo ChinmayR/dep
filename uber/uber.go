@@ -41,7 +41,7 @@ const (
 	TurnOffMetricsReporting = "TURN_OFF_METRICS_REPORTING"
 )
 
-const DEP_VERSION = "v1.2.0-UBER"
+const DEP_VERSION = "v1.2.1-UBER"
 const LATEST_CACHE_ALLOWED_VERSION = "v0.11.0-UBER"
 
 type rewriteFn func([]string, ExecutorInterface) (*url.URL, string, string, *url.URL, error)

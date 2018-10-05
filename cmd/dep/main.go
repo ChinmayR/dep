@@ -17,12 +17,14 @@ import (
 	"runtime"
 	"runtime/debug"
 	"runtime/pprof"
+	"strconv"
 
 	"strings"
 	"text/tabwriter"
 	"time"
 
 	"github.com/golang/dep"
+	"github.com/golang/dep/gps"
 	"github.com/golang/dep/internal/fs"
 	"github.com/golang/dep/uber"
 )
@@ -162,6 +164,10 @@ func (c *Config) Run() int {
 		usage(errWriter)
 		return errorExitCode
 	}
+
+	maxThreads := getMaxThreadsFromEnvVar()
+	uber.InitConnectionPool(maxThreads)
+	gps.ConcurrentWriters = maxThreads
 
 	uber.UberLogger.Println("DEP VERSION: " + uber.DEP_VERSION)
 	uber.UberLogger.Printf("RUNNING COMMAND: %v\n", c.Args)
@@ -321,6 +327,21 @@ func (c *Config) Run() int {
 	errLogger.Printf("dep: %s: no such command\n", cmdName)
 	usage(errWriter)
 	return errorExitCode
+}
+
+const MaxThreadsEnvVar = "MAX_THREADS"
+
+var defaultMaxThreads = 10
+
+func getMaxThreadsFromEnvVar() int {
+	envVar := os.Getenv(MaxThreadsEnvVar)
+	i, err := strconv.Atoi(envVar)
+	if envVar == "" || err != nil {
+		uber.DebugLogger.Printf("leaving max threads at default %v\n", defaultMaxThreads)
+		return defaultMaxThreads
+	}
+	uber.DebugLogger.Printf("max threads changed to: %v\n", i)
+	return i
 }
 
 func resetUsage(logger *log.Logger, fs *flag.FlagSet, name, args, longHelp string) {

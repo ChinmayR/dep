@@ -15,19 +15,18 @@ const (
 	FILE_PATTERN = "GIT_SSH_COMMAND=ssh -oControlMaster=auto -oControlPath=%s/%d-%%r@%%h:%%p -oControlPersist=60s"
 )
 
-const (
-	numThreadsAllowed = 20
-)
-
-var threadSema = make(chan ConResource, numThreadsAllowed)
+var threadSema chan ConResource
 
 type ConResource struct {
 	threadNum    int
 	cacheEnabled bool
 }
 
-func init() {
-	for i := 1; i <= numThreadsAllowed; i++ {
+// InitConnectionPool creates the threads and adds them to threadSema channel as a resource needed
+// to run a git operation
+func InitConnectionPool(maxThreads int) {
+	threadSema = make(chan ConResource, maxThreads)
+	for i := 1; i <= maxThreads; i++ {
 		go func(localIter int) {
 			conRes := ConResource{threadNum: localIter, cacheEnabled: false}
 			// attempting to cache the ssh connection is best effort and so we continue in case of failure
