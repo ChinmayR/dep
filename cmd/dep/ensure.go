@@ -871,7 +871,7 @@ func (cmd *ensureCommand) runAdd(ctx *dep.Ctx, args []string, p *dep.Project, sm
 	}
 	sort.Strings(reqlist)
 
-	sw, err := dep.NewSafeWriter(nil, p.Lock, dep.LockFromSolution(solution), dep.VendorOnChanged, p.Manifest.PruneOptions)
+	sw, err := dep.NewSafeWriter(nil, p.Lock, dep.LockFromSolution(solution), cmd.vendorBehavior(), p.Manifest.PruneOptions)
 	if err != nil {
 		return err
 	}
