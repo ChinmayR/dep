@@ -173,6 +173,11 @@ func (g *Importer) convert(impPkgs []base.ImportedPackage, customExcludeDirs []s
 			continue
 		}
 
+		if pkg.Name == string(pr) {
+			g.Logger.Printf("  Warning: Skipping project %v. Invalid glide configuration, Name matches repo being imported", pkg.Name)
+			continue
+		}
+
 		// Warn
 		if g.Verbose {
 			if pkg.OS != "" {
@@ -196,6 +201,11 @@ func (g *Importer) convert(impPkgs []base.ImportedPackage, customExcludeDirs []s
 		// Validate
 		if pkg.Name == "" {
 			g.Logger.Println("  Warning: Skipping project. Invalid glide lock, Name is required")
+			continue
+		}
+
+		if pkg.Name == string(pr) {
+			g.Logger.Printf("  Warning: Skipping project %v. Invalid glide configuration, Name matches repo being imported", pkg.Name)
 			continue
 		}
 

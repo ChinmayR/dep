@@ -1454,6 +1454,10 @@ func newbmSM(bmf bimodalFixture) *bmSourceManager {
 	return sm
 }
 
+func (sm *bmSourceManager) GetUpstreamUrl(id ProjectIdentifier) (string, error) {
+	return "", nil
+}
+
 func (sm *bmSourceManager) ListPackages(id ProjectIdentifier, v Version) (pkgtree.PackageTree, error) {
 	// Deal with address-based root-switching with both case folding and
 	// alternate sources.

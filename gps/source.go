@@ -10,7 +10,6 @@ import (
 	"fmt"
 	"log"
 	"sync"
-
 	"time"
 
 	"flag"
@@ -443,6 +442,10 @@ func (sg *sourceGateway) getManifestAndLock(ctx context.Context, pr ProjectRoot,
 
 	sg.cache.setManifestAndLock(r, an.Info(), m, l)
 	return m, l, nil
+}
+
+func (sg *sourceGateway) getUpstreamUrl() string {
+	return sg.src.upstreamURL()
 }
 
 func (sg *sourceGateway) listPackages(ctx context.Context, pr ProjectRoot, v Version) (pkgtree.PackageTree, error) {

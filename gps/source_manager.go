@@ -101,6 +101,9 @@ type SourceManager interface {
 	// repository root.
 	GetManifestAndLock(ProjectIdentifier, Version, ProjectAnalyzer) (Manifest, Lock, error)
 
+	// GetUpstreamUrl exposes the upstream url used by this source manager
+	GetUpstreamUrl(id ProjectIdentifier) (string, error)
+
 	// ExportProject writes out the tree of the provided import path, at the
 	// provided version, to the provided directory.
 	ExportProject(context.Context, ProjectIdentifier, Version, string) error
@@ -436,6 +439,19 @@ func (sm *SourceMgr) GetManifestAndLock(id ProjectIdentifier, v Version, an Proj
 	}
 
 	return srcg.getManifestAndLock(context.TODO(), id.ProjectRoot, v, an)
+}
+
+func (sm *SourceMgr) GetUpstreamUrl(id ProjectIdentifier) (string, error) {
+	if atomic.LoadInt32(&sm.releasing) == 1 {
+		return "", ErrSourceManagerIsReleased
+	}
+
+	srcg, err := sm.srcCoord.getSourceGatewayFor(context.TODO(), id)
+	if err != nil {
+		return "", err
+	}
+
+	return srcg.getUpstreamUrl(), nil
 }
 
 // ListPackages parses the tree of the Go packages at and below the ProjectRoot

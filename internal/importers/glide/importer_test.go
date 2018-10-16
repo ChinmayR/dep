@@ -136,6 +136,32 @@ func TestGlideConfig_Convert(t *testing.T) {
 				WantWarning: "Warning: Skipping project. Invalid glide configuration, Name is required",
 			},
 		},
+		"duplicate package name in manifest": {
+			glideYaml{
+				Imports: []glidePackage{{Name: importertest.RootProject}},
+			},
+			nil,
+			glideLock{},
+			importertest.TestCase{
+				WantWarning: "Warning: Skipping project github.com/golang/notexist. Invalid glide configuration, Name matches repo being imported",
+			},
+		},
+		"duplicate package name in lock": {
+			glideYaml{},
+			nil,
+			glideLock{
+				Imports: []glideLockedPackage{
+					{
+						Name:       importertest.RootProject,
+						Repository: importertest.ProjectSrc,
+						Revision:   importertest.V2PatchRev,
+					},
+				},
+			},
+			importertest.TestCase{
+				WantWarning: "Warning: Skipping project github.com/golang/notexist. Invalid glide configuration, Name matches repo being imported",
+			},
+		},
 		"warn unused os field": {
 			glideYaml{
 				Imports: []glidePackage{
