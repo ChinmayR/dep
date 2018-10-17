@@ -718,6 +718,91 @@ var bimodalFixtures = map[string]bimodalFixture{
 			"b 2.0.0 barrev",
 		),
 	},
+	"version queue should include versions matching transitive constraints": {
+		ds: []depspec{
+			dsp(mkDepspec("root 0.0.0"), pkg("root", "a", "b", "c")),
+
+			dsp(mkDepspec("a 1.0.0", "c >1.0.0, <=1.3.0"), pkg("a", "c")),
+
+			dsp(mkDepspec("b 1.0.0", "c ^1.1.0"), pkg("b", "c")),
+
+			dsp(mkDepspec("c 2.7.0"), pkg("c")),
+			dsp(mkDepspec("c 2.6.0"), pkg("c")),
+			dsp(mkDepspec("c 2.5.0"), pkg("c")),
+			dsp(mkDepspec("c 2.4.0"), pkg("c")),
+			dsp(mkDepspec("c 2.3.0"), pkg("c")),
+			dsp(mkDepspec("c 2.2.0"), pkg("c")), // should not be tried
+			dsp(mkDepspec("c 2.1.0"), pkg("c")), // should not be tried
+			dsp(mkDepspec("c 2.0.0"), pkg("c")), // should not be tried
+			dsp(mkDepspec("c 1.4.0"), pkg("c")), // tried, but not selected since doesn't meet both constraints
+			dsp(mkDepspec("c 1.3.1"), pkg("c")), // tried, but not selected since doesn't meet both constraints
+			dsp(mkDepspec("c 1.3.0"), pkg("c")), // should be tried and selected
+			dsp(mkDepspec("c 1.2.4"), pkg("c")),
+			dsp(mkDepspec("c 1.2.0"), pkg("c")),
+			dsp(mkDepspec("c 1.1.0"), pkg("c")),
+		},
+		r: mksolution(
+			"a 1.0.0",
+			"b 1.0.0",
+			"c 1.3.0",
+		),
+	},
+	// this test first selects [a 2.0.0, b 3.0.0, c 1.3.0] and then fails because c 1.3.0
+	// depends on d 14.0.0 which doesn't exist. Then c, b and a end up backtracking till
+	// [a 1.0.0, b 2.0.0] are selected. The version queue for c at this point correctly
+	// needs to be updated to also try 2.1.0 if the solution is to succeed. Then
+	// [c 2.1.0, d 13.0.0] would be selected as part of the final solution.
+	"version queue should include new versions as backtracking changes constraints": {
+		ds: []depspec{
+			dsp(mkDepspec("root 0.0.0"), pkg("root", "a", "b", "c", "d")),
+
+			dsp(mkDepspec("a 2.0.0", "c >1.0.0, <=1.3.0"), pkg("a", "c")),
+			dsp(mkDepspec("a 1.0.0", "c =2.1.0"), pkg("a", "c")),
+
+			dsp(mkDepspec("b 3.0.0", "c ^1.3.0"), pkg("b", "c")),
+			dsp(mkDepspec("b 2.0.0", "c =2.1.0"), pkg("b", "c")),
+			dsp(mkDepspec("b 1.0.0", "c ^1.4.0"), pkg("b", "c")),
+
+			dsp(mkDepspec("c 2.7.0"), pkg("c")),
+			dsp(mkDepspec("c 2.6.0"), pkg("c")),
+			dsp(mkDepspec("c 2.5.0"), pkg("c")),
+			dsp(mkDepspec("c 2.4.0"), pkg("c")),
+			dsp(mkDepspec("c 2.3.0"), pkg("c")),
+			// should not be tried either run
+			dsp(mkDepspec("c 2.2.0"), pkg("c")),
+			// should not be tried the first run, but needs to be tried and selected the second run
+			dsp(mkDepspec("c 2.1.0"), pkg("c")),
+			// tried, but not selected since doesn't meet both constraints
+			dsp(mkDepspec("c 1.4.0"), pkg("c")),
+			// tried, but not selected since doesn't meet both constraints
+			dsp(mkDepspec("c 1.3.1"), pkg("c")),
+			// should be tried and selected the first run
+			dsp(mkDepspec("c 1.3.0", "d =14.0.0"), pkg("c", "d")),
+			dsp(mkDepspec("c 1.2.4"), pkg("c")),
+			dsp(mkDepspec("c 1.2.0"), pkg("c")),
+
+			// need more versions than that of c so c is tried first by the solver
+			dsp(mkDepspec("d 13.0.0"), pkg("d")),
+			dsp(mkDepspec("d 12.0.0"), pkg("d")),
+			dsp(mkDepspec("d 11.0.0"), pkg("d")),
+			dsp(mkDepspec("d 10.0.0"), pkg("d")),
+			dsp(mkDepspec("d 9.0.0"), pkg("d")),
+			dsp(mkDepspec("d 8.0.0"), pkg("d")),
+			dsp(mkDepspec("d 7.0.0"), pkg("d")),
+			dsp(mkDepspec("d 6.0.0"), pkg("d")),
+			dsp(mkDepspec("d 5.0.0"), pkg("d")),
+			dsp(mkDepspec("d 4.0.0"), pkg("d")),
+			dsp(mkDepspec("d 3.0.0"), pkg("d")),
+			dsp(mkDepspec("d 2.0.0"), pkg("d")),
+			dsp(mkDepspec("d 1.0.0"), pkg("d")),
+		},
+		r: mksolution(
+			"a 1.0.0",
+			"b 2.0.0",
+			"c 2.1.0",
+			"d 13.0.0",
+		),
+	},
 	"override unconstrained root import": {
 		ds: []depspec{
 			dsp(mkDepspec("root 0.0.0"),

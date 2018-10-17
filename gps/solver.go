@@ -868,7 +868,7 @@ func (s *solver) createVersionQueue(bmi bimodalIdentifier) (*versionQueue, error
 	id := bmi.id
 	// If on the root package, there's no queue to make
 	if s.rd.isRoot(id.ProjectRoot) {
-		return newVersionQueue(id, nil, nil, s.b, s.getCurrProjectConstraint(bmi.id.ProjectRoot))
+		return newVersionQueue(id, nil, nil, s.b, s.getAllConstraintsForBmi(bmi))
 	}
 
 	exists, err := s.b.SourceExists(id)
@@ -964,7 +964,7 @@ func (s *solver) createVersionQueue(bmi bimodalIdentifier) (*versionQueue, error
 		prefv = nil
 	}
 
-	q, err := newVersionQueue(id, lockv, prefv, s.b, s.getCurrProjectConstraint(bmi.id.ProjectRoot))
+	q, err := newVersionQueue(id, lockv, prefv, s.b, s.getAllConstraintsForBmi(bmi))
 	if err != nil {
 		// TODO(sdboyer) this particular err case needs to be improved to be ONLY for cases
 		// where there's absolutely nothing findable about a given project name
@@ -998,13 +998,25 @@ func (s *solver) createVersionQueue(bmi bimodalIdentifier) (*versionQueue, error
 	return q, s.findValidVersion(q, bmi.pl, bmi)
 }
 
-func (s *solver) getCurrProjectConstraint(id ProjectRoot) Constraint {
-	constraints := s.rd.rm.DependencyConstraints()
-	if currConst, ok := constraints[id]; !ok {
-		return nil
-	} else {
-		return currConst.Constraint
+// getAllConstraintsForBmi gets all the constraints from the already selected
+// atoms from the solver. It gets constraints on the bmi from the root package,
+// as well as all the atoms that have a dependency on this bmi.
+func (s *solver) getAllConstraintsForBmi(bmi bimodalIdentifier) []Constraint {
+	var allConstraints []Constraint
+
+	// get the constraint from the root repo for this bmi if there is any
+	rootConstraint := s.rd.rm.DependencyConstraints()
+	if currConst, ok := rootConstraint[bmi.id.ProjectRoot]; ok {
+		allConstraints = append(allConstraints, currConst.Constraint)
 	}
+
+	// get all the inbound edges to this bmi and extract the constraints
+	deps := s.sel.getDependenciesOn(bmi.id)
+	for _, dep := range deps {
+		allConstraints = append(allConstraints, dep.dep.Constraint)
+	}
+
+	return allConstraints
 }
 
 var vqsExhaustedCount = make(map[ProjectRoot]int)
@@ -1040,7 +1052,7 @@ func (s *solver) findValidVersion(q *versionQueue, pl []string, bmi bimodalIdent
 			return nil
 		}
 
-		if q.advance(err, s.getCurrProjectConstraint(bmi.id.ProjectRoot), q.id.ProjectRoot) != nil {
+		if q.advance(err, s.getAllConstraintsForBmi(bmi), q.id.ProjectRoot) != nil {
 			// Error on advance, have to bail out
 			break
 		}
@@ -1236,7 +1248,7 @@ func (s *solver) backtrack(ctx context.Context) (bool, error) {
 		bmi := awp.bmi()
 		// Advance the queue past the current version, which we know is bad
 		// TODO(sdboyer) is it feasible to make available the failure reason here?
-		if q.advance(nil, s.getCurrProjectConstraint(bmi.id.ProjectRoot), q.id.ProjectRoot) == nil && !q.isExhausted() {
+		if q.advance(nil, s.getAllConstraintsForBmi(bmi), q.id.ProjectRoot) == nil && !q.isExhausted() {
 			// Search for another acceptable version of this failed dep in its queue
 			s.traceCheckQueue(q, awp.bmi(), true, 0)
 			if s.findValidVersion(q, awp.pl, bmi) == nil {

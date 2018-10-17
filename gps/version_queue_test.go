@@ -219,7 +219,7 @@ func TestFilterNonDefaultBranches(t *testing.T) {
 }
 
 func assertVersionListsEquality(t *testing.T, id ProjectIdentifier, allVersions []Version, constraint Constraint, expected []Version) {
-	actual := filterNonDefaultBranches(allVersions, constraint, id.ProjectRoot)
+	actual := filterNonDefaultBranches(allVersions, []Constraint{constraint}, id.ProjectRoot)
 	if actual == nil {
 		t.Errorf("Error - actual version list is nil. Expected=%v Actual=%v", expected, actual)
 	}
@@ -356,29 +356,34 @@ func TestVersionQueueAdvance(t *testing.T) {
 
 }
 
-func TestConstraintRangeOutsideLimitHonored(t *testing.T) {
+func TestMultipleConstraintsOutsideLimitHonored(t *testing.T) {
 	versions := []Version{
+		newDefaultBranch("master").Pair("masterrev"),
 		NewVersion("v1.5.0").Pair("rev1"),
 		NewVersion("v1.4.0").Pair("rev2"),
 		NewVersion("v1.3.0").Pair("rev3"),
 		NewVersion("v1.2.0").Pair("rev4"),
-		NewVersion("v1.1.0").Pair("rev5"),
+		NewVersion("v1.1.0").Pair("rev5"), // should be removed
 		NewVersion("v1.0.0").Pair("rev6"), // should be removed
-		NewVersion("v0.2.1").Pair("rev7"),
-		NewVersion("v0.2.0").Pair("rev8"),
-		NewVersion("v0.1.0").Pair("rev9"), // should be removed
+		NewVersion("v0.3.1").Pair("rev7"), // should be honored by constraint1
+		NewVersion("v0.3.0").Pair("rev8"), // should be honored by constraint1
+		NewVersion("v0.2.4").Pair("rev9"),
+		NewVersion("v0.2.0").Pair("rev10"),
+		NewVersion("v0.1.0").Pair("rev9"), // should be honored by constraint2
 	}
 
-	constraint, _ := NewSemverConstraint("^0.2.0")
-	got := filterNonDefaultBranches(versions, constraint, ProjectRoot("projectFoo"))
+	constraint1, _ := NewSemverConstraint("^0.3.0")
+	constraint2, _ := NewSemverConstraint("^0.1.0")
+	got := filterNonDefaultBranches(versions, []Constraint{constraint1, constraint2}, ProjectRoot("projectFoo"))
 	want := []Version{
+		newDefaultBranch("master").Pair("masterrev"),
 		NewVersion("v1.5.0").Pair("rev1"),
 		NewVersion("v1.4.0").Pair("rev2"),
 		NewVersion("v1.3.0").Pair("rev3"),
 		NewVersion("v1.2.0").Pair("rev4"),
-		NewVersion("v1.1.0").Pair("rev5"),
-		NewVersion("v0.2.1").Pair("rev7"),
-		NewVersion("v0.2.0").Pair("rev8"),
+		NewVersion("v0.3.1").Pair("rev7"),
+		NewVersion("v0.3.0").Pair("rev8"),
+		NewVersion("v0.1.0").Pair("rev9"),
 	}
 	if !reflect.DeepEqual(got, want) {
 		t.Fatalf("Wanted \n%v\n but got \n%v\n", want, got)

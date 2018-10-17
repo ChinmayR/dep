@@ -28,7 +28,7 @@ type versionQueue struct {
 	adverr       error
 }
 
-func newVersionQueue(id ProjectIdentifier, lockv, prefv Version, b sourceBridge, constraint Constraint) (*versionQueue, error) {
+func newVersionQueue(id ProjectIdentifier, lockv, prefv Version, b sourceBridge, constraints []Constraint) (*versionQueue, error) {
 	uber.DebugLogger.Printf("newVersionQueue %v, lockedV: %v, prefV: %v\n", id, lockv, prefv)
 	vq := &versionQueue{
 		id: id,
@@ -56,7 +56,7 @@ func newVersionQueue(id ProjectIdentifier, lockv, prefv Version, b sourceBridge,
 			// network.
 			return nil, err
 		}
-		vq.pi = filterNonDefaultBranches(allVersions, constraint, vq.id.ProjectRoot)
+		vq.pi = filterNonDefaultBranches(allVersions, constraints, vq.id.ProjectRoot)
 		vq.allLoaded = true
 	}
 
@@ -69,7 +69,7 @@ func newVersionQueue(id ProjectIdentifier, lockv, prefv Version, b sourceBridge,
 //2. There is not a constraint defined on either the branch or the semver version
 //3. The semver version does not have a prerelease tag associated with it
 //4. More than 5 versions have already been chosen
-func filterNonDefaultBranches(allVersions []Version, constraint Constraint, root ProjectRoot) []Version {
+func filterNonDefaultBranches(allVersions []Version, constraints []Constraint, root ProjectRoot) []Version {
 	if os.Getenv(uber.UseNonDefaultVersionBranches) == "yes" {
 		return allVersions
 	}
@@ -78,17 +78,30 @@ func filterNonDefaultBranches(allVersions []Version, constraint Constraint, root
 
 	var filteredVersions []Version
 	for _, version := range allVersions {
+
+		matchesAnyConstraint := false
+		for _, constraint := range constraints {
+			if constraint != nil && !isAnyConstraint(constraint) && constraint.Matches(version) {
+				matchesAnyConstraint = true
+				break
+			}
+		}
+
+		initialVersion := version
+		if _, ok := version.(versionPair); ok {
+			version = version.(versionPair).v
+		}
+
 		if version.Type() == IsBranch {
-			bv := version.(versionPair).v.(branchVersion)
-			if bv.isDefault || (constraint != nil && !isAnyConstraint(constraint) && constraint.Matches(bv)) {
-				filteredVersions = append(filteredVersions, version)
+			bv := version.(branchVersion)
+			if bv.isDefault || matchesAnyConstraint {
+				filteredVersions = append(filteredVersions, initialVersion)
 			}
 		} else if version.Type() == IsSemver {
 			// ignore all semver tags with a prerelease tag such as v1.0.0-rc9 or v1.0.0-beta1
-			sv := version.(versionPair).v.(semVersion)
-			semverMatchesConstraint := constraint != nil && !isAnyConstraint(constraint) && constraint.Matches(sv)
-			if semverMatchesConstraint || (len(filteredVersions) < VERSION_QUEUE_MAX_LIMIT && strings.TrimSpace(sv.sv.Prerelease()) == "") {
-				filteredVersions = append(filteredVersions, version)
+			sv := version.(semVersion)
+			if matchesAnyConstraint || (len(filteredVersions) < VERSION_QUEUE_MAX_LIMIT && strings.TrimSpace(sv.sv.Prerelease()) == "") {
+				filteredVersions = append(filteredVersions, initialVersion)
 			}
 		}
 	}
@@ -115,7 +128,7 @@ func (vq *versionQueue) current() Version {
 
 // advance moves the versionQueue forward to the next available version,
 // recording the failure that eliminated the current version.
-func (vq *versionQueue) advance(fail error, constraint Constraint, root ProjectRoot) error {
+func (vq *versionQueue) advance(fail error, constraints []Constraint, root ProjectRoot) error {
 	// Nothing in the queue means...nothing in the queue, nicely enough
 	if vq.adverr != nil || len(vq.pi) == 0 { // should be a redundant check, but just in case
 		return vq.adverr
@@ -142,7 +155,7 @@ func (vq *versionQueue) advance(fail error, constraint Constraint, root ProjectR
 		if vq.adverr != nil {
 			return vq.adverr
 		}
-		vltmp = filterNonDefaultBranches(vltmp, constraint, root)
+		vltmp = filterNonDefaultBranches(vltmp, constraints, root)
 
 		// defensive copy - calling listVersions here means slice contents may
 		// be modified when removing prefv/lockv.
