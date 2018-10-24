@@ -161,8 +161,7 @@ func TestWorkmapToReach(t *testing.T) {
 					Internal: []string{"A/.gen/baz"},
 					External: []string{"B/foo"},
 				},
-				"A/.gen/baz": {
-				},
+				"A/.gen/baz": {},
 			},
 			backprop: true,
 		},
@@ -182,8 +181,7 @@ func TestWorkmapToReach(t *testing.T) {
 					Internal: []string{"A/bar"},
 					External: []string{"B/foo"},
 				},
-				"A/bar": {
-				},
+				"A/bar": {},
 			},
 			rootPackages: []Package{{ImportPath: "A/bar"}},
 			backprop:     true,
@@ -665,6 +663,32 @@ func TestListPackages(t *testing.T) {
 								"sort",
 							},
 							TestImports: []string{
+								"math/rand",
+								"strconv",
+							},
+						},
+					},
+				},
+			},
+		},
+		"logrus import rewrite": {
+			fileRoot:   j("logrus"),
+			importRoot: "logrus",
+			out: PackageTree{
+				ImportRoot: "logrus",
+				Packages: map[string]PackageOrErr{
+					"logrus": {
+						P: Package{
+							ImportPath:  "logrus",
+							CommentPath: "",
+							Name:        "logrus",
+							Imports: []string{
+								"github.com/sirupsen/logrus",
+								"github.com/golang/dep/gps",
+								"sort",
+							},
+							TestImports: []string{
+								"github.com/sirupsen/logrus",
 								"math/rand",
 								"strconv",
 							},

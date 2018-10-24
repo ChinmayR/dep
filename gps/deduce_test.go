@@ -49,6 +49,44 @@ var pathDeductionFixtures = map[string][]pathDeductionFixture{
 			},
 		},
 		{
+			in:   "github.com/Sirupsen/logrus/randomPkg",
+			root: "github.com/sirupsen/logrus",
+			mb: maybeSources{
+				maybeGitSource{url: mkurl("https://github.com/sirupsen/logrus")},
+				maybeGitSource{url: mkurl("ssh://git@github.com/sirupsen/logrus")},
+				maybeGitSource{url: mkurl("git://github.com/sirupsen/logrus")},
+				maybeGitSource{url: mkurl("http://github.com/sirupsen/logrus")},
+			},
+		},
+		{
+			in:   "github.com/sirupsen/logrus/randomPkg",
+			root: "github.com/sirupsen/logrus",
+			mb: maybeSources{
+				maybeGitSource{url: mkurl("https://github.com/sirupsen/logrus")},
+				maybeGitSource{url: mkurl("ssh://git@github.com/sirupsen/logrus")},
+				maybeGitSource{url: mkurl("git://github.com/sirupsen/logrus")},
+				maybeGitSource{url: mkurl("http://github.com/sirupsen/logrus")},
+			},
+		},
+		{
+			in:   "github.com/Sirupsen/logrus/randomPkg",
+			root: "github.com/sirupsen/logrus",
+			mb: maybeSources{
+				maybeGitoliteSource{url: mkurl("ssh://gitolite@code.uber.internal/github/sirupsen/logrus"),
+					gpath: "github/sirupsen/logrus", remote: "https://github.com/sirupsen/logrus", gitoliteURL: mkurl("ssh://gitolite@code.uber.internal/github/sirupsen/logrus")},
+			},
+			runUberLogic: true,
+		},
+		{
+			in:   "github.com/sirupsen/logrus/randomPkg",
+			root: "github.com/sirupsen/logrus",
+			mb: maybeSources{
+				maybeGitoliteSource{url: mkurl("ssh://gitolite@code.uber.internal/github/sirupsen/logrus"),
+					gpath: "github/sirupsen/logrus", remote: "https://github.com/sirupsen/logrus", gitoliteURL: mkurl("ssh://gitolite@code.uber.internal/github/sirupsen/logrus")},
+			},
+			runUberLogic: true,
+		},
+		{
 			in:   "github.com/sdboyer/gps",
 			root: "github.com/sdboyer/gps",
 			mb: maybeSources{

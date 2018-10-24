@@ -18,6 +18,8 @@ import (
 	"strconv"
 	"strings"
 	"unicode"
+
+	"github.com/golang/dep/uber"
 )
 
 // Package represents a Go package. It contains a subset of the information
@@ -315,9 +317,17 @@ func fillPackage(p *build.Package) error {
 	}
 	imports = uniq(imports)
 	testImports = uniq(testImports)
-	p.Imports = imports
-	p.TestImports = testImports
+	p.Imports = rewriteSirupsenImports(imports)
+	p.TestImports = rewriteSirupsenImports(testImports)
 	return nil
+}
+
+func rewriteSirupsenImports(imports []string) []string {
+	var newImports []string
+	for _, imp := range imports {
+		newImports = append(newImports, uber.RewriteSirupsenImports(imp))
+	}
+	return newImports
 }
 
 var (

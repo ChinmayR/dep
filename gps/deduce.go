@@ -222,6 +222,8 @@ type githubDeducer struct {
 }
 
 func (m githubDeducer) deduceRoot(path string) (string, error) {
+	path = uber.RewriteSirupsenImports(path)
+
 	v := m.regexp.FindStringSubmatch(path)
 	if v == nil {
 		return "", fmt.Errorf("%s is not a valid path for a source on github.com", path)
@@ -231,6 +233,8 @@ func (m githubDeducer) deduceRoot(path string) (string, error) {
 }
 
 func (m githubDeducer) deduceSource(path string, u *url.URL) (maybeSources, error) {
+	path = uber.RewriteSirupsenImports(path)
+
 	v := m.regexp.FindStringSubmatch(path)
 	if v == nil {
 		return nil, fmt.Errorf("%s is not a valid path for a source on github.com", path)
