@@ -6,6 +6,7 @@ package dep
 
 import (
 	"bytes"
+	"encoding/hex"
 	"fmt"
 	"io/ioutil"
 	"log"
@@ -280,6 +281,13 @@ func (sw *SafeWriter) Write(root string, sm gps.SourceManager, examples bool, lo
 		return nil
 	}
 
+	// if the separate lock digest exists then flag that it needs to be updated
+	writeSeparateDigest := false
+	ldpath := filepath.Join(root, LockDigest)
+	if _, err := os.Stat(ldpath); err == nil {
+		writeSeparateDigest = true
+	}
+
 	mpath := filepath.Join(root, ManifestName)
 	lpath := filepath.Join(root, LockName)
 	vpath := filepath.Join(root, "vendor")
@@ -310,13 +318,19 @@ func (sw *SafeWriter) Write(root string, sm gps.SourceManager, examples bool, lo
 	}
 
 	if sw.writeLock {
-		l, err := sw.lock.MarshalTOML()
+		l, err := sw.lock.MarshalTOML(!writeSeparateDigest)
 		if err != nil {
 			return errors.Wrap(err, "failed to marshal lock to TOML")
 		}
 
 		if err = ioutil.WriteFile(filepath.Join(td, LockName), append(lockFileComment, l...), 0666); err != nil {
 			return errors.Wrap(err, "failed to write lock file to temp dir")
+		}
+
+		if writeSeparateDigest {
+			if err = ioutil.WriteFile(filepath.Join(td, LockDigest), []byte(hex.EncodeToString(sw.lock.SolveMeta.InputsDigest)), 0666); err != nil {
+				return errors.Wrap(err, "failed to write lock digest file to temp dir")
+			}
 		}
 	}
 
@@ -385,6 +399,28 @@ func (sw *SafeWriter) Write(root string, sm gps.SourceManager, examples bool, lo
 		if failerr != nil {
 			goto fail
 		}
+
+		// this moves the existing file to the temp dir while the new one is
+		// put in the repo dir. the code provides a fail safe mechanism and
+		// rolling back incase of an error
+		if writeSeparateDigest {
+			if _, err := os.Stat(ldpath); err == nil {
+				// Move out the old one.
+				tmploc := filepath.Join(td, LockDigest+".orig")
+
+				failerr = fs.RenameWithFallback(ldpath, tmploc)
+				if failerr != nil {
+					goto fail
+				}
+				restore = append(restore, pathpair{from: tmploc, to: ldpath})
+			}
+
+			// Move in the new one.
+			failerr = fs.RenameWithFallback(filepath.Join(td, LockDigest), ldpath)
+			if failerr != nil {
+				goto fail
+			}
+		}
 	}
 
 	if sw.writeVendor {
@@ -448,7 +484,7 @@ func (sw *SafeWriter) PrintPreparedActions(output *log.Logger, verbose bool) err
 	if sw.writeLock {
 		if sw.lockDiff == nil {
 			if verbose {
-				l, err := sw.lock.MarshalTOML()
+				l, err := sw.lock.MarshalTOML(true)
 				if err != nil {
 					return errors.Wrap(err, "ensure DryRun cannot serialize lock")
 				}

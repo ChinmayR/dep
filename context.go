@@ -193,7 +193,7 @@ func (c *Ctx) LoadProject() (*Project, error) {
 	}
 	defer lf.Close()
 
-	p.Lock, err = readLock(lf)
+	p.Lock, err = readLock(lf, p.AbsRoot)
 	if err != nil {
 		return nil, errors.Wrapf(err, "error while parsing %s", lp)
 	}
@@ -243,7 +243,7 @@ func (c *Ctx) ReadManifestAndLock(path string) (*Manifest, *Lock, error) {
 	}
 	defer lf.Close()
 
-	lock, err := readLock(lf)
+	lock, err := readLock(lf, path)
 	if err != nil {
 		return nil, nil, errors.Wrapf(err, "error while parsing %s", lp)
 	}

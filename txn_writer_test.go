@@ -8,6 +8,7 @@ import (
 	"io/ioutil"
 	"os"
 	"path/filepath"
+	"reflect"
 	"strings"
 	"testing"
 
@@ -19,6 +20,7 @@ import (
 const safeWriterProject = "safewritertest"
 const safeWriterGoldenManifest = "txn_writer/expected_manifest.toml"
 const safeWriterGoldenLock = "txn_writer/expected_lock.toml"
+const safeWriterGoldenLockWithoutDigest = "txn_writer/expected_lock_without_digest.toml"
 
 func defaultCascadingPruneOptions() gps.CascadingPruneOptions {
 	return gps.CascadingPruneOptions{
@@ -166,6 +168,9 @@ func TestSafeWriter_Manifest(t *testing.T) {
 	if err := pc.VendorShouldNotExist(); err != nil {
 		t.Fatal(err)
 	}
+	if err := pc.LockDigestFileShouldNotExist(); err != nil {
+		t.Fatal(err)
+	}
 }
 
 func TestSafeWriter_ManifestAndUnmodifiedLock(t *testing.T) {
@@ -209,6 +214,9 @@ func TestSafeWriter_ManifestAndUnmodifiedLock(t *testing.T) {
 		t.Fatal(err)
 	}
 	if err := pc.VendorShouldNotExist(); err != nil {
+		t.Fatal(err)
+	}
+	if err := pc.LockDigestFileShouldNotExist(); err != nil {
 		t.Fatal(err)
 	}
 }
@@ -257,6 +265,9 @@ func TestSafeWriter_ManifestAndUnmodifiedLockWithForceVendor(t *testing.T) {
 		t.Fatal(err)
 	}
 	if err := pc.VendorFileShouldExist("github.com/sdboyer/dep-test"); err != nil {
+		t.Fatal(err)
+	}
+	if err := pc.LockDigestFileShouldNotExist(); err != nil {
 		t.Fatal(err)
 	}
 }
@@ -309,6 +320,9 @@ func TestSafeWriter_ModifiedLock(t *testing.T) {
 	if err := pc.VendorFileShouldExist("github.com/sdboyer/dep-test"); err != nil {
 		t.Fatal(err)
 	}
+	if err := pc.LockDigestFileShouldNotExist(); err != nil {
+		t.Fatal(err)
+	}
 }
 
 func TestSafeWriter_ModifiedLockSkipVendor(t *testing.T) {
@@ -354,6 +368,9 @@ func TestSafeWriter_ModifiedLockSkipVendor(t *testing.T) {
 		t.Fatal(err)
 	}
 	if err := pc.VendorShouldNotExist(); err != nil {
+		t.Fatal(err)
+	}
+	if err := pc.LockDigestFileShouldNotExist(); err != nil {
 		t.Fatal(err)
 	}
 }
@@ -405,6 +422,9 @@ func TestSafeWriter_ForceVendorWhenVendorAlreadyExists(t *testing.T) {
 	if err := pc.VendorFileShouldExist("github.com/sdboyer/dep-test"); err != nil {
 		t.Fatal(err)
 	}
+	if err := pc.LockDigestFileShouldNotExist(); err != nil {
+		t.Fatal(err)
+	}
 }
 
 func TestSafeWriter_NewLock(t *testing.T) {
@@ -420,7 +440,7 @@ func TestSafeWriter_NewLock(t *testing.T) {
 
 	lf := h.GetTestFile(safeWriterGoldenLock)
 	defer lf.Close()
-	newLock, err := readLock(lf)
+	newLock, err := readLock(lf, "")
 	h.Must(err)
 	sw, _ := NewSafeWriter(nil, nil, newLock, VendorOnChanged, defaultCascadingPruneOptions())
 
@@ -452,6 +472,70 @@ func TestSafeWriter_NewLock(t *testing.T) {
 	if err := pc.VendorShouldExist(); err != nil {
 		t.Fatal(err)
 	}
+	if err := pc.LockDigestFileShouldNotExist(); err != nil {
+		t.Fatal(err)
+	}
+}
+
+func TestSafeWriter_NewLockWithSeparateDigestFile(t *testing.T) {
+	test.NeedsExternalNetwork(t)
+	test.NeedsGit(t)
+
+	h := test.NewHelper(t)
+	defer h.Cleanup()
+
+	pc := NewTestProjectContext(h, safeWriterProject)
+	defer pc.Release()
+	pc.Load()
+
+	lf := h.GetTestFile(safeWriterGoldenLock)
+	defer lf.Close()
+	newLock, err := readLock(lf, h.GetTestDir())
+	h.Must(err)
+	sw, _ := NewSafeWriter(nil, nil, newLock, VendorOnChanged, defaultCascadingPruneOptions())
+
+	// Verify prepared actions
+	if sw.HasManifest() {
+		t.Fatal("Did not expect the payload to contain the manifest")
+	}
+	if !sw.HasLock() {
+		t.Fatal("Expected the payload to contain the lock")
+	}
+	if !sw.writeLock {
+		t.Fatal("Expected that the writer should plan to write the lock")
+	}
+	if !sw.writeVendor {
+		t.Fatal("Expected the payload to contain the vendor directory")
+	}
+
+	lockDigest := "0123456789abcdef"
+	// write the digest file so the lock that is written finally does not include the digest
+	err = ioutil.WriteFile(filepath.Join(pc.Project.AbsRoot, LockDigest), []byte(lockDigest), 0666)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	// Write changes
+	err = sw.Write(pc.Project.AbsRoot, pc.SourceManager, true, nil)
+	h.Must(errors.Wrap(err, "SafeWriter.Write failed"))
+
+	// Verify file system changes
+	if err := pc.ManifestShouldNotExist(); err != nil {
+		t.Fatal(err)
+	}
+	if err := pc.LockShouldMatchGolden(safeWriterGoldenLockWithoutDigest); err != nil {
+		t.Fatal(err)
+	}
+	if err := pc.VendorShouldExist(); err != nil {
+		t.Fatal(err)
+	}
+	lockDigestContent, err := ioutil.ReadFile(filepath.Join(pc.Project.AbsRoot, LockDigest))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if reflect.DeepEqual(lockDigestContent, newLock.SolveMeta.InputsDigest) {
+		t.Fatal("locks did not equal")
+	}
 }
 
 func TestSafeWriter_NewLockSkipVendor(t *testing.T) {
@@ -467,7 +551,7 @@ func TestSafeWriter_NewLockSkipVendor(t *testing.T) {
 
 	lf := h.GetTestFile(safeWriterGoldenLock)
 	defer lf.Close()
-	newLock, err := readLock(lf)
+	newLock, err := readLock(lf, "")
 	h.Must(err)
 	sw, _ := NewSafeWriter(nil, nil, newLock, VendorNever, defaultCascadingPruneOptions())
 
@@ -499,6 +583,9 @@ func TestSafeWriter_NewLockSkipVendor(t *testing.T) {
 	if err := pc.VendorShouldNotExist(); err != nil {
 		t.Fatal(err)
 	}
+	if err := pc.LockDigestFileShouldNotExist(); err != nil {
+		t.Fatal(err)
+	}
 }
 
 func TestSafeWriter_DiffLocks(t *testing.T) {
@@ -515,7 +602,7 @@ func TestSafeWriter_DiffLocks(t *testing.T) {
 
 	ulf := h.GetTestFile("txn_writer/updated_lock.toml")
 	defer ulf.Close()
-	updatedLock, err := readLock(ulf)
+	updatedLock, err := readLock(ulf, "")
 	h.Must(err)
 
 	sw, _ := NewSafeWriter(nil, pc.Project.Lock, updatedLock, VendorOnChanged, defaultCascadingPruneOptions())
@@ -530,6 +617,9 @@ func TestSafeWriter_DiffLocks(t *testing.T) {
 	h.Must(err)
 	goldenOutput := "txn_writer/expected_diff_output.txt"
 	if err = pc.ShouldMatchGolden(goldenOutput, output); err != nil {
+		t.Fatal(err)
+	}
+	if err := pc.LockDigestFileShouldNotExist(); err != nil {
 		t.Fatal(err)
 	}
 }
@@ -596,6 +686,9 @@ func TestSafeWriter_VendorDotGitPreservedWithForceVendor(t *testing.T) {
 		t.Fatal(err)
 	}
 	if err := pc.VendorFileShouldExist(".git/badinput_fileroot"); err != nil {
+		t.Fatal(err)
+	}
+	if err := pc.LockDigestFileShouldNotExist(); err != nil {
 		t.Fatal(err)
 	}
 }

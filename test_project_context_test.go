@@ -77,7 +77,7 @@ func (pc *TestProjectContext) Load() {
 	if pc.h.Exist(lp) {
 		lf := pc.h.GetFile(lp)
 		defer lf.Close()
-		l, err = readLock(lf)
+		l, err = readLock(lf, "")
 		pc.h.Must(errors.Wrapf(err, "Unable to read lock at %s", lp))
 	}
 	pc.Project.Manifest = m
@@ -87,6 +87,11 @@ func (pc *TestProjectContext) Load() {
 // GetLockPath returns the full path to the lock
 func (pc *TestProjectContext) getLockPath() string {
 	return filepath.Join(pc.Project.AbsRoot, LockName)
+}
+
+// getLockDigestPath returns the full path to the lock
+func (pc *TestProjectContext) getLockDigestPath() string {
+	return filepath.Join(pc.Project.AbsRoot, LockDigest)
 }
 
 // GetManifestPath returns the full path to the manifest
@@ -110,6 +115,11 @@ func (pc *TestProjectContext) LockShouldMatchGolden(goldenLockPath string) error
 // LockShouldNotExist returns an error when the lock exists.
 func (pc *TestProjectContext) LockShouldNotExist() error {
 	return pc.h.ShouldNotExist(pc.getLockPath())
+}
+
+// LockDigestFileShouldNotExist returns an error when the lock exists.
+func (pc *TestProjectContext) LockDigestFileShouldNotExist() error {
+	return pc.h.ShouldNotExist(pc.getLockDigestPath())
 }
 
 // ManifestShouldMatchGolden returns an error when the manifest does not match the golden manifest.

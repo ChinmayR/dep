@@ -20,6 +20,8 @@ import (
 	"sync"
 	"testing"
 
+	"github.com/golang/dep/gps"
+	"github.com/golang/dep/uber"
 	"github.com/pkg/errors"
 )
 
@@ -245,6 +247,9 @@ func NeedsExternalNetwork(t *testing.T) {
 	if testing.Short() {
 		t.Skip("skipping test: no external network in -short mode")
 	}
+	maxThreads := 1
+	uber.InitConnectionPool(maxThreads)
+	gps.ConcurrentWriters = maxThreads
 }
 
 // NeedsGit will make sure the tests that require git will be skipped if the
@@ -463,6 +468,11 @@ func (h *Helper) GetFile(path string) io.ReadCloser {
 func (h *Helper) GetTestFile(src string) io.ReadCloser {
 	fullPath := filepath.Join(h.origWd, "testdata", src)
 	return h.GetFile(fullPath)
+}
+
+// GetTestDir returns the default testdata directory
+func (h *Helper) GetTestDir() string {
+	return filepath.Join(h.origWd, "testdata")
 }
 
 // GetTestFileString reads a file from the testdata directory into memory.  src is

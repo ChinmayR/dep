@@ -8,7 +8,11 @@ import (
 	"bytes"
 	"encoding/hex"
 	"io"
+	"io/ioutil"
+	"os"
+	"path/filepath"
 	"sort"
+	"strings"
 
 	"github.com/golang/dep/gps"
 	"github.com/golang/dep/uber"
@@ -18,6 +22,7 @@ import (
 
 // LockName is the lock file name used by dep.
 const LockName = "Gopkg.lock"
+const LockDigest = ".gopkg.digest"
 
 // Lock holds lock file data and implements gps.Lock.
 type Lock struct {
@@ -41,7 +46,7 @@ type rawLock struct {
 }
 
 type solveMeta struct {
-	InputsDigest    string `toml:"inputs-digest"`
+	InputsDigest    string `toml:"inputs-digest,omitempty"`
 	AnalyzerName    string `toml:"analyzer-name"`
 	AnalyzerVersion int    `toml:"analyzer-version"`
 	SolverName      string `toml:"solver-name"`
@@ -59,7 +64,7 @@ type rawLockedProject struct {
 	SourceUrl string   `toml:"sourceUrl,omitempty"`
 }
 
-func readLock(r io.Reader) (*Lock, error) {
+func readLock(r io.Reader, lockPath string) (*Lock, error) {
 	buf := &bytes.Buffer{}
 	_, err := buf.ReadFrom(r)
 	if err != nil {
@@ -70,6 +75,27 @@ func readLock(r io.Reader) (*Lock, error) {
 	err = toml.Unmarshal(buf.Bytes(), &raw)
 	if err != nil {
 		return nil, errors.Wrap(err, "Unable to parse the lock as TOML")
+	}
+
+	if raw.SolveMeta.InputsDigest == "" {
+		// read the lock digest file while parsing the lock, only if the lock file has no input digest
+		// this is best attempt since it would not exist upstream when reading a transitive dependency
+		ldp := filepath.Join(lockPath, LockDigest)
+		_, err := os.Stat(ldp)
+		if os.IsNotExist(err) {
+			// if the lock digest does not exist in the lock, then create the lock digest file
+			newFile, err := os.Create(ldp)
+			if err != nil {
+				uber.UberLogger.Printf("error while creating lock digest file: %v", err)
+			}
+			newFile.Close()
+		} else {
+			ldpBuf, err := ioutil.ReadFile(ldp)
+			if err != nil {
+				uber.UberLogger.Printf("could not open lock digest: %v", err)
+			}
+			raw.SolveMeta.InputsDigest = strings.Trim(string(ldpBuf), "\n")
+		}
 	}
 
 	return fromRawLock(raw)
@@ -178,7 +204,13 @@ func (l *Lock) toRaw() rawLock {
 }
 
 // MarshalTOML serializes this lock into TOML via an intermediate raw form.
-func (l *Lock) MarshalTOML() ([]byte, error) {
+func (l *Lock) MarshalTOML(includeDigest bool) ([]byte, error) {
+	if !includeDigest {
+		currentDigest := l.SolveMeta.InputsDigest
+		l.SolveMeta.InputsDigest = []byte("")
+		defer func() { l.SolveMeta.InputsDigest = currentDigest }()
+	}
+
 	raw := l.toRaw()
 	var buf bytes.Buffer
 	enc := toml.NewEncoder(&buf).ArraysWithOneElementPerLine(true)

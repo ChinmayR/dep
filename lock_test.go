@@ -6,6 +6,7 @@ package dep
 
 import (
 	"encoding/hex"
+	"path/filepath"
 	"reflect"
 	"strings"
 	"testing"
@@ -21,13 +22,39 @@ func TestReadLock(t *testing.T) {
 	golden := "lock/golden0.toml"
 	g0f := h.GetTestFile(golden)
 	defer g0f.Close()
-	got, err := readLock(g0f)
+	got, err := readLock(g0f, "")
 	if err != nil {
 		t.Fatalf("Should have read Lock correctly, but got err %q", err)
 	}
 
-	b, _ := hex.DecodeString("2252a285ab27944a4d7adcba8dbd03980f59ba652f12db39fa93b927c345593e")
 	want := &Lock{
+		SolveMeta: SolveMeta{
+			InputsDigest: []byte{},
+			DepVersion:   "v0.11.0-UBER",
+		},
+		P: []gps.LockedProject{
+			gps.NewLockedProject(
+				gps.ProjectIdentifier{ProjectRoot: gps.ProjectRoot("github.com/golang/dep")},
+				gps.NewBranch("master").Pair(gps.Revision("d05d5aca9f895d19e9265839bffeadd74a2d2ecb")),
+				[]string{"."},
+			),
+		},
+	}
+
+	if !reflect.DeepEqual(got, want) {
+		t.Error("Valid lock did not parse as expected")
+	}
+
+	golden = "lock/golden0.toml"
+	gf := h.GetTestFile(golden)
+	defer g0f.Close()
+	got, err = readLock(gf, filepath.Join(h.GetTestDir(), "lock"))
+	if err != nil {
+		t.Fatalf("Should have read Lock correctly, but got err %q", err)
+	}
+
+	b, _ := hex.DecodeString("0123456789abcdef")
+	want = &Lock{
 		SolveMeta: SolveMeta{
 			InputsDigest: b,
 			DepVersion:   "v0.11.0-UBER",
@@ -48,7 +75,8 @@ func TestReadLock(t *testing.T) {
 	golden = "lock/golden1.toml"
 	g1f := h.GetTestFile(golden)
 	defer g1f.Close()
-	got, err = readLock(g1f)
+	// this verifies that if the lock file has the input digest then the .gopkg.digest is ignored
+	got, err = readLock(g1f, filepath.Join(h.GetTestDir(), "lock"))
 	if err != nil {
 		t.Fatalf("Should have read Lock correctly, but got err %q", err)
 	}
@@ -93,7 +121,7 @@ func TestWriteLock(t *testing.T) {
 		},
 	}
 
-	got, err := l.MarshalTOML()
+	got, err := l.MarshalTOML(false)
 	if err != nil {
 		t.Fatalf("Error while marshaling valid lock to TOML: %q", err)
 	}
@@ -124,7 +152,7 @@ func TestWriteLock(t *testing.T) {
 		},
 	}
 
-	got, err = l.MarshalTOML()
+	got, err = l.MarshalTOML(true)
 	if err != nil {
 		t.Fatalf("Error while marshaling valid lock to TOML: %q", err)
 	}
@@ -157,7 +185,7 @@ func TestReadLockErrors(t *testing.T) {
 	for _, tst := range tests {
 		lf := h.GetTestFile(tst.file)
 		defer lf.Close()
-		_, err = readLock(lf)
+		_, err = readLock(lf, "")
 		if err == nil {
 			t.Errorf("Reading lock with %s should have caused error, but did not", tst.name)
 		} else if !strings.Contains(err.Error(), tst.name) {
