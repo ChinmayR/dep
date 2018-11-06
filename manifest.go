@@ -54,15 +54,15 @@ type Manifest struct {
 	PruneOptions gps.CascadingPruneOptions
 }
 
-type rawManifest struct {
-	Constraints  []rawProject    `toml:"constraint,omitempty"`
-	Overrides    []rawProject    `toml:"override,omitempty"`
+type RawManifest struct {
+	Constraints  []RawProject    `toml:"constraint,omitempty"`
+	Overrides    []RawProject    `toml:"override,omitempty"`
 	Ignored      []string        `toml:"ignored,omitempty"`
 	Required     []string        `toml:"required,omitempty"`
-	PruneOptions rawPruneOptions `toml:"prune,omitempty"`
+	PruneOptions RawPruneOptions `toml:"prune,omitempty"`
 }
 
-type rawProject struct {
+type RawProject struct {
 	Name     string `toml:"name"`
 	Branch   string `toml:"branch,omitempty"`
 	Revision string `toml:"revision,omitempty"`
@@ -70,7 +70,7 @@ type rawProject struct {
 	Source   string `toml:"source,omitempty"`
 }
 
-type rawPruneOptions struct {
+type RawPruneOptions struct {
 	UnusedPackages bool `toml:"unused-packages,omitempty"`
 	NonGoFiles     bool `toml:"non-go,omitempty"`
 	GoTests        bool `toml:"go-tests,omitempty"`
@@ -346,7 +346,7 @@ func readManifest(r io.Reader) (*Manifest, []error, error) {
 		return nil, warns, errors.Wrap(err, "manifest validation failed")
 	}
 
-	raw := rawManifest{}
+	raw := RawManifest{}
 	err = toml.Unmarshal(buf.Bytes(), &raw)
 	if err != nil {
 		return nil, warns, errors.Wrap(err, "unable to parse the manifest as TOML")
@@ -361,7 +361,7 @@ func readManifest(r io.Reader) (*Manifest, []error, error) {
 	return m, warns, nil
 }
 
-func fromRawManifest(raw rawManifest, buf *bytes.Buffer) (*Manifest, error) {
+func fromRawManifest(raw RawManifest, buf *bytes.Buffer) (*Manifest, error) {
 	m := NewManifest()
 
 	m.Constraints = make(gps.ProjectConstraints, len(raw.Constraints))
@@ -457,15 +457,15 @@ func fromRawPruneOptions(prunemap map[string]interface{}) gps.CascadingPruneOpti
 	return opts
 }
 
-// toRawPruneOptions converts a gps.RootPruneOption's PruneOptions to rawPruneOptions
+// toRawPruneOptions converts a gps.RootPruneOption's PruneOptions to RawPruneOptions
 //
 // Will panic if gps.RootPruneOption includes ProjectPruneOptions
 // See https://github.com/golang/dep/pull/1460#discussion_r158128740 for more information
-func toRawPruneOptions(co gps.CascadingPruneOptions) rawPruneOptions {
+func toRawPruneOptions(co gps.CascadingPruneOptions) RawPruneOptions {
 	if len(co.PerProjectOptions) != 0 {
-		panic("toRawPruneOptions cannot convert ProjectOptions to rawPruneOptions")
+		panic("toRawPruneOptions cannot convert ProjectOptions to RawPruneOptions")
 	}
-	raw := rawPruneOptions{}
+	raw := RawPruneOptions{}
 
 	if (co.DefaultOptions & gps.PruneUnusedPackages) != 0 {
 		raw.UnusedPackages = true
@@ -482,10 +482,10 @@ func toRawPruneOptions(co gps.CascadingPruneOptions) rawPruneOptions {
 }
 
 // toProject interprets the string representations of project information held in
-// a rawProject, converting them into a proper gps.ProjectProperties. An
-// error is returned if the rawProject contains some invalid combination -
+// a RawProject, converting them into a proper gps.ProjectProperties. An
+// error is returned if the RawProject contains some invalid combination -
 // for example, if both a branch and version constraint are specified.
-func toProject(raw rawProject) (n gps.ProjectRoot, pp gps.ProjectProperties, err error) {
+func toProject(raw RawProject) (n gps.ProjectRoot, pp gps.ProjectProperties, err error) {
 	n = gps.ProjectRoot(raw.Name)
 	if raw.Branch != "" {
 		if raw.Version != "" || raw.Revision != "" {
@@ -516,7 +516,7 @@ func toProject(raw rawProject) (n gps.ProjectRoot, pp gps.ProjectProperties, err
 	return n, pp, nil
 }
 
-func (m *Manifest) ConvertToRaw() rawManifest {
+func (m *Manifest) ConvertToRaw() RawManifest {
 	return m.toRaw()
 }
 
@@ -530,10 +530,10 @@ func (m *Manifest) MarshalTOML() ([]byte, error) {
 }
 
 // toRaw converts the manifest into a representation suitable to write to the manifest file
-func (m *Manifest) toRaw() rawManifest {
-	raw := rawManifest{
-		Constraints: make([]rawProject, 0, len(m.Constraints)),
-		Overrides:   make([]rawProject, 0, len(m.Ovr)),
+func (m *Manifest) toRaw() RawManifest {
+	raw := RawManifest{
+		Constraints: make([]RawProject, 0, len(m.Constraints)),
+		Overrides:   make([]RawProject, 0, len(m.Ovr)),
 		Ignored:     m.Ignored,
 		Required:    m.Required,
 	}
@@ -553,7 +553,7 @@ func (m *Manifest) toRaw() rawManifest {
 	return raw
 }
 
-type sortedRawProjects []rawProject
+type sortedRawProjects []RawProject
 
 func (s sortedRawProjects) Len() int      { return len(s) }
 func (s sortedRawProjects) Swap(i, j int) { s[i], s[j] = s[j], s[i] }
@@ -570,8 +570,8 @@ func (s sortedRawProjects) Less(i, j int) bool {
 	return l.Source < r.Source
 }
 
-func toRawProject(name gps.ProjectRoot, project gps.ProjectProperties) rawProject {
-	raw := rawProject{
+func toRawProject(name gps.ProjectRoot, project gps.ProjectProperties) RawProject {
+	raw := RawProject{
 		Name:   string(name),
 		Source: project.Source,
 	}

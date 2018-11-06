@@ -658,115 +658,16 @@ func TestValidateProjectRoots(t *testing.T) {
 	}
 }
 
-//func TestFromRawPruneOptions(t *testing.T) {
-//cases := []struct {
-//name            string
-//rawPruneOptions rawPruneOptions
-//wantOptions     gps.CascadingPruneOptions
-//}{
-//{
-//name: "global all options project no options",
-//rawPruneOptions: rawPruneOptions{
-//UnusedPackages: true,
-//NonGoFiles:     true,
-//GoTests:        true,
-//Projects: []map[string]interface{}{
-//{
-//"name": "github.com/golang/dep",
-//pruneOptionUnusedPackages: false,
-//pruneOptionNonGo:          false,
-//pruneOptionGoTests:        false,
-//},
-//},
-//},
-//wantOptions: gps.CascadingPruneOptions{
-//DefaultOptions: 15,
-//PerProjectOptions: map[gps.ProjectRoot]gps.PruneOptionSet{
-//"github.com/golang/dep": gps.PruneOptionSet{
-//NestedVendor:   pvtrue,
-//UnusedPackages: pvfalse,
-//NonGoFiles:     pvfalse,
-//GoTests:        pvfalse,
-//},
-//},
-//},
-//},
-//{
-//name: "global all options project mixed options",
-//rawPruneOptions: rawPruneOptions{
-//UnusedPackages: true,
-//NonGoFiles:     true,
-//GoTests:        true,
-//Projects: []map[string]interface{}{
-//{
-//"name": "github.com/golang/dep",
-//pruneOptionUnusedPackages: false,
-//},
-//},
-//},
-//wantOptions: gps.CascadingPruneOptions{
-//DefaultOptions: 15,
-//PerProjectOptions: map[gps.ProjectRoot]gps.PruneOptionSet{
-//"github.com/golang/dep": gps.PruneOptionSet{
-//NestedVendor:   pvtrue,
-//UnusedPackages: pvfalse,
-//},
-//},
-//},
-//},
-//{
-//name: "global no options project all options",
-//rawPruneOptions: rawPruneOptions{
-//UnusedPackages: false,
-//NonGoFiles:     false,
-//GoTests:        false,
-//Projects: []map[string]interface{}{
-//{
-//"name": "github.com/golang/dep",
-//pruneOptionUnusedPackages: true,
-//pruneOptionNonGo:          true,
-//pruneOptionGoTests:        true,
-//},
-//},
-//},
-//wantOptions: gps.CascadingPruneOptions{
-//DefaultOptions: 1,
-//PerProjectOptions: map[gps.ProjectRoot]gps.PruneOptionSet{
-//"github.com/golang/dep": gps.PruneOptionSet{
-//NestedVendor:   pvtrue,
-//UnusedPackages: pvtrue,
-//NonGoFiles:     pvtrue,
-//GoTests:        pvtrue,
-//},
-//},
-//},
-//},
-//}
-
-//for _, c := range cases {
-//t.Run(c.name, func(t *testing.T) {
-//opts, err := fromRawPruneOptions(c.rawPruneOptions)
-//if err != nil {
-//t.Fatal(err)
-//}
-
-//if !reflect.DeepEqual(opts, c.wantOptions) {
-//t.Fatalf("rawPruneOptions are not as expected:\n\t(GOT) %v\n\t(WNT) %v", opts, c.wantOptions)
-//}
-//})
-//}
-//}
-
 func TestToRawPruneOptions(t *testing.T) {
 	cases := []struct {
 		name         string
 		pruneOptions gps.CascadingPruneOptions
-		wantOptions  rawPruneOptions
+		wantOptions  RawPruneOptions
 	}{
 		{
 			name:         "all options",
 			pruneOptions: gps.CascadingPruneOptions{DefaultOptions: 15},
-			wantOptions: rawPruneOptions{
+			wantOptions: RawPruneOptions{
 				UnusedPackages: true,
 				NonGoFiles:     true,
 				GoTests:        true,
@@ -775,7 +676,7 @@ func TestToRawPruneOptions(t *testing.T) {
 		{
 			name:         "no options",
 			pruneOptions: gps.CascadingPruneOptions{DefaultOptions: 1},
-			wantOptions: rawPruneOptions{
+			wantOptions: RawPruneOptions{
 				UnusedPackages: false,
 				NonGoFiles:     false,
 				GoTests:        false,
@@ -788,7 +689,7 @@ func TestToRawPruneOptions(t *testing.T) {
 			raw := toRawPruneOptions(c.pruneOptions)
 
 			if !reflect.DeepEqual(raw, c.wantOptions) {
-				t.Fatalf("rawPruneOptions are not as expected:\n\t(GOT) %v\n\t(WNT) %v", raw, c.wantOptions)
+				t.Fatalf("RawPruneOptions are not as expected:\n\t(GOT) %v\n\t(WNT) %v", raw, c.wantOptions)
 			}
 		})
 	}
