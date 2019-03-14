@@ -63,9 +63,13 @@ func (r *gitRepo) get(ctx context.Context) error {
 	conRes := uber.GetThreadFromPool()
 	defer conRes.Release()
 
+	// Following command explicitly excludes go-build submodule initialization as it is
+	// extremely time consuming to initialize it on all revisions of all dependent packages.
 	cmd := commandContext(
 		ctx,
 		"git",
+		"-c",
+		"submodule.go-build.update=none",
 		"clone",
 		"--recursive",
 		"-v",
@@ -139,10 +143,14 @@ func (r *gitRepo) defendAgainstSubmodules(ctx context.Context) error {
 	defer conRes.Release()
 
 	// First, update them to whatever they should be, if there should happen to be any.
+	// Following command explicitly excludes go-build submodule initialization as it is
+	// extremely time consuming to initialize it on all revisions of all dependent packages.
 	{
 		cmd := commandContext(
 			ctx,
 			"git",
+			"-c",
+			"submodule.go-build.update=none",
 			"submodule",
 			"update",
 			"--init",

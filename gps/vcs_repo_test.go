@@ -9,6 +9,7 @@ import (
 	"errors"
 	"io/ioutil"
 	"os"
+	"path/filepath"
 	"sync"
 	"testing"
 	"time"
@@ -20,6 +21,7 @@ import (
 // https://github.com/Masterminds/vcs test files
 
 const gitRemoteTestRepo = "https://github.com/Masterminds/VCSTestRepo"
+const gitoliteRemoteTestRepo = "ssh://gitolite@code.uber.internal/go/fliprfx.git"
 
 func TestErrs(t *testing.T) {
 	err := newVcsLocalErrorOr(context.Canceled, nil, "", "")
@@ -276,6 +278,78 @@ func testGitRepo(t *testing.T) {
 	}
 	if v != "806b07b08faa21cfbdae93027904f80174679402" {
 		t.Fatal("Error checking checked out Git version")
+	}
+}
+
+func testGitoliteRepo(t *testing.T) {
+	t.Parallel()
+	if testing.Short() {
+		t.Skip("Skipping slow test in short mode")
+	}
+
+	ctx := context.Background()
+	tempDir, err := ioutil.TempDir("", "go-vcs-gitolite-tests")
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	defer func() {
+		err = os.RemoveAll(tempDir)
+		if err != nil {
+			t.Error(err)
+		}
+	}()
+
+	rep, err := vcs.NewGitRepo(gitoliteRemoteTestRepo, tempDir+"/fliprfx")
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	repo := &gitRepo{sync.Mutex{}, rep}
+
+	// Do an initial clone.
+	err = repo.get(ctx)
+	if err != nil {
+		t.Fatalf("Unable to clone Git repo. Err was %s", err)
+	}
+
+	// Verify Git repo is a Git repo
+	if !repo.CheckLocal() {
+		t.Fatal("Problem checking out repo or Git CheckLocal is not working")
+	}
+
+	verifyGoBuildIsNotInitialized(repo, t)
+	// Perform an update.
+	err = repo.fetch(ctx)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	v, err := repo.Current()
+	if err != nil {
+		t.Fatalf("Error trying Git Current: %s", err)
+	}
+	if v != "master" {
+		t.Fatalf("Current failed to detect Git on tip of master. Got version: %s", v)
+	}
+
+	// Set the version using the short hash.
+	err = repo.updateVersion(ctx, "a2e62e5f5")
+	if err != nil {
+		t.Fatalf("Unable to update Git repo version. Err was %s", err)
+	}
+
+	verifyGoBuildIsNotInitialized(repo, t)
+}
+
+func verifyGoBuildIsNotInitialized(repo *gitRepo, t *testing.T) {
+	// Verifying that go-build was NOT initialized.
+	fileInfo, err := ioutil.ReadDir(filepath.Join(repo.LocalPath(), "go-build"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(fileInfo) != 0 {
+		t.Fatalf(filepath.Join(repo.LocalPath(), "go-build") + " is not empty!")
 	}
 }
 
