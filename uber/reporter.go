@@ -81,11 +81,10 @@ func init() {
 	}
 	var err error
 	CustomRep, err = reporter.New(toolname, reporter.WithSample(1.0))
-	scope, scopeCloser = tally.NewRootScope(tally.ScopeOptions{Reporter: CustomRep}, 5*time.Second)
 	if err != nil {
 		CustomRep = tally.NullStatsReporter
-		UberLogger.Println("Falling back to a null stats reporter")
 	}
+	scope, scopeCloser = tally.NewRootScope(tally.ScopeOptions{Reporter: CustomRep}, 5*time.Second)
 }
 
 func GetRepoTagFriendlyNameFromCWD(cwd string) string {
