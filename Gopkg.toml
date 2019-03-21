@@ -1,3 +1,5 @@
+required = ["code.uber.internal/engsec/usso-cli.git/ussotoken"]
+
 [[constraint]]
   name = "github.com/Masterminds/semver"
   branch = "2.x"

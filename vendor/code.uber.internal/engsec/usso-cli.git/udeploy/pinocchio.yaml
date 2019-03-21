@@ -1,0 +1,3 @@
+service_name: usso-cli
+network_protocol: http_system
+service_type: go

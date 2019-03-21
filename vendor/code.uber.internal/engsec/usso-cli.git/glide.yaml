@@ -1,13 +1,21 @@
 # This glide manifest is @generated and kept in sync by dep for backwards compatibility.
 # It is not a full glide manifest and will not work with traditional glide commands.
 import:
+- package: code.uber.internal/go/configfx.git
+  version: ^1.7.0
 - package: code.uber.internal/go/uberfx.git
   version: ^1.0.0
-- package: github.com/uber-go/tally
-  version: ^3.0.0
-- package: go.uber.org/config
+- package: code.uber.internal/go/yarpcfx.git
+  version: ^1.8.0
+- package: code.uber.internal/go/zapfx.git
   version: ^1.0.0
+- package: github.com/stretchr/testify
+  version: ^1.2.2
 - package: go.uber.org/fx
   version: ^1.0.0
+- package: go.uber.org/thriftrw
+  version: ^1.12.0
+- package: go.uber.org/yarpc
+  version: ^1.22.0
 - package: go.uber.org/zap
   version: ^1.0.0

@@ -1,0 +1,8 @@
+# Learn more about yab templates by running: man yab
+service: usso-cli
+method: UssoCli::hello
+peer: http://localhost:6708/
+thrift: usso_cli.thrift
+request:
+  request:
+    name: ${name:John Doe}

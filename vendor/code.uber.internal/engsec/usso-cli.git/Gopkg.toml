@@ -1,0 +1,75 @@
+# Gopkg.toml example
+#
+# Refer to https://golang.github.io/dep/docs/Gopkg.toml.html
+# for detailed Gopkg.toml documentation.
+#
+# required = ["github.com/user/thing/cmd/thing"]
+# ignored = ["github.com/user/project/pkgX", "bitbucket.org/user/project/pkgA/pkgY"]
+#
+# [[constraint]]
+#   name = "github.com/user/project"
+#   version = "1.0.0"
+#
+# [[constraint]]
+#   name = "github.com/user/project2"
+#   branch = "dev"
+#   source = "github.com/myfork/project2"
+#
+# [[override]]
+#   name = "github.com/x/y"
+#   version = "2.4.0"
+#
+# [prune]
+#   non-go = false
+#   go-tests = true
+#   unused-packages = true
+
+ignored = ["code.uber.internal/engsec/usso-cli.git/.tmp"]
+
+[[constraint]]
+  name = "code.uber.internal/go/configfx.git"
+  version = "1.7.0"  # required for strict YAML unmarshalling
+
+[[constraint]]
+  name = "code.uber.internal/go/uberfx.git"
+  version = "1.0.0"
+
+[[constraint]]
+  name = "code.uber.internal/go/yarpcfx.git"
+  version = "1.8.0"
+
+[[constraint]]
+  name = "code.uber.internal/go/zapfx.git"
+  version = "1.0.0"
+
+[[constraint]]
+  name = "github.com/stretchr/testify"
+  version = "1.2.2"
+
+[[constraint]]
+  name = "go.uber.org/fx"
+  version = "1.0.0"
+
+[[constraint]]
+  name = "go.uber.org/thriftrw"
+  version = "1.12.0"
+
+[[constraint]]
+  name = "go.uber.org/yarpc"
+  version = "1.22.0"
+
+[[constraint]]
+  name = "go.uber.org/zap"
+  version = "1.0.0"
+
+[[override]]
+  name = "golang.org/x/net"
+  source = "golang.org/x/net"
+
+[[override]]
+  name = "golang.org/x/sys"
+  source = "golang.org/x/sys"
+
+[[override]]
+  name = "golang.org/x/tools"
+  source = "golang.org/x/tools"

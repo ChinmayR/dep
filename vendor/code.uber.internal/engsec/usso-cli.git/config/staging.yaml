@@ -1,0 +1,3 @@
+# Having a staging service name is necessary to split auth, metrics, RPCs, etc.
+service:
+  name: usso-cli-staging

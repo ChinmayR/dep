@@ -1,0 +1,15 @@
+service:
+  name: usso-cli
+
+# Learn how to configure YARPC at t.uber.com/yarpc-config
+yarpc:
+  inbounds:
+    tchannel:
+      address: ":${UBER_PORT_TCHANNEL:6707}"
+    http:
+      address: ":${UBER_PORT_HTTP:6708}"
+
+galileo:
+  # As of mid-2018, onboarding to the Galileo ecosystem is paused. See
+  # T1860579 for details.
+  enabled: false

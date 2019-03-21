@@ -24,11 +24,7 @@ type cfg struct {
 	// Entity name to authorize requests.
 	entity string
 
-	// Wonka instance.
-	claimer Claimer
-
-	// Lifetime of a claim.
-	ttl time.Duration
+	ussoAuth UssoAuth
 
 	// Rate to sample metrics.
 	sample float64
@@ -39,8 +35,7 @@ var defaultCfg = cfg{
 	count:    100,
 	addr:     mustParse("https://proxyreporter.uberinternal.com/tally"),
 	entity:   "proxyreporter",
-	claimer:  wk{},
-	ttl:      2 * time.Minute,
+	ussoAuth: OfflineToken{},
 	sample:   0.01,
 }
 
@@ -57,11 +52,10 @@ func WithInterval(interval time.Duration) Option {
 	})
 }
 
-// WithClaimer sets the claimer instance to obtain certificates.
-// Claimer is the subset of wonka.Wonka interface that we care about.
-func WithClaimer(cl Claimer) Option {
+// WithUssoAuth sets the auth type to get offline token from ssh cert
+func WithUssoAuth(ua UssoAuth) Option {
 	return opt(func(c *cfg) {
-		c.claimer = cl
+		c.ussoAuth = ua
 	})
 }
 

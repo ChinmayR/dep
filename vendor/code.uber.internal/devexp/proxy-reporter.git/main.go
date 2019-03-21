@@ -7,7 +7,6 @@ import (
 	"net/http"
 
 	"code.uber.internal/devexp/proxy-reporter.git/handler"
-
 	uberfx "code.uber.internal/go/uberfx.git"
 	"github.com/uber-go/tally"
 	"go.uber.org/config"
@@ -49,12 +48,16 @@ func main() {
 					return nil
 				},
 				OnStop: func(ctx context.Context) error {
+					logger.Info("OnStop invoked, shutting down the server")
 					if err := srv.Shutdown(ctx); err != nil {
+						logger.Error("Received error: %v when attempting to shutdown the server.", zap.Error(err))
 						return err
 					}
 					if err := <-errCh; err != http.ErrServerClosed {
+						logger.Error("Received error: %v when attempting to shutdown the server.", zap.Error(err))
 						return err
 					}
+					logger.Info("No error received when shutting down the server.")
 					return nil
 				},
 			})

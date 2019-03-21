@@ -4,7 +4,7 @@ PROJECT_ROOT = code.uber.internal/devexp/proxy-reporter.git
 PROGS = proxy-reporter
 
 # Modifying any non-vendor go files will rebuild PROGS
-proxy-reporter: $(shell find . -not -path "./vendor/*" -name "*.go") glide.lock
+proxy-reporter: $(shell find . -not -path "./vendor/*" -name "*.go") Gopkg.lock
 
 -include go-build/rules.mk
 

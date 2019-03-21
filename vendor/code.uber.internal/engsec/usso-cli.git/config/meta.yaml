@@ -1,0 +1,4 @@
+# Opt into stricter YAML unmarshalling. See
+# https://engdocs.uberinternal.com/fx/pkg/code.uber.internal/go/configfx.git/index.html
+# for details.
+strict: true

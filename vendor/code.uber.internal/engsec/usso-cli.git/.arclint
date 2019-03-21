@@ -1,0 +1,72 @@
+{
+  "linters": {
+    "generated": {
+      "type": "generated"
+    },
+    "chmod": {
+      "type": "chmod",
+      "include" : "(.*)",
+      "exclude": [
+         "(^vendor/)"
+       ]
+    },
+    "filename": {
+      "type": "filename",
+      "include" : "(.*)",
+      "exclude": [
+         "(^vendor/)"
+       ]
+    },
+    "golint": {
+      "type": "golint",
+      "include": "(\\.go$)",
+      "exclude": [
+         "(^vendor/)",
+         "(\\_mock.go$)",
+         "(\\_mock_test.go$)",
+         "(\\_string.go$)"
+       ]
+    },
+    "gofmt": {
+      "type": "gofmt",
+      "include": "(\\.go$)",
+      "exclude": [
+         "(^vendor/)",
+         "(\\_mock.go$)",
+         "(\\_mock_test.go$)",
+         "(\\_string.go$)"
+       ]
+    },
+    "govet": {
+      "type": "govet",
+      "include": "(\\.go$)",
+      "exclude": [
+         "(^vendor/)",
+         "(\\_mock.go$)",
+         "(\\_mock_test.go$)",
+         "(\\_string.go$)"
+       ]
+    },
+    "json": {
+      "type": "json",
+      "include": "(\\.json$)",
+      "exclude": [
+         "(^vendor/)"
+       ]
+    },
+    "yaml": {
+      "type": "script-and-regex",
+      "include": "(\\.yaml$)",
+      "script-and-regex.script": "ruby -e \"require 'yaml'; begin YAML.load_file(ARGV[0]); rescue Exception => ex; puts ex.message end\"",
+      "script-and-regex.regex": "/^(?P<message>.*)$/m",
+      "exclude": [
+        "(^vendor/)"
+      ]
+    },
+    "merge-conflict": {
+      "type": "merge-conflict",
+      "exclude": "(^vendor/)",
+      "include" : "(.*)"
+    }
+  }
+}

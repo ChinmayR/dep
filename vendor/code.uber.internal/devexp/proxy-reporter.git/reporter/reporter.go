@@ -1,21 +1,20 @@
 package reporter
 
 import (
-	"context"
 	"encoding/json"
 	"fmt"
 	"io"
 	"io/ioutil"
+	"math"
 	"math/rand"
 	"net/http"
 	"net/http/cookiejar"
 	"net/url"
 	"os"
+	"strings"
 	"time"
 
 	"code.uber.internal/devexp/proxy-reporter.git/types"
-
-	wonka "code.uber.internal/engsec/wonka-go.git"
 	"github.com/uber-go/tally"
 	"golang.org/x/net/publicsuffix"
 )
@@ -36,13 +35,14 @@ type backend struct {
 	flushDone  chan struct{}
 
 	client *http.Client
+	token  string
 	addr   string
 	tool   string
 }
 
 const (
 	// Number of retries for posting data.
-	_retryCount = 2
+	_retryCount = 5
 )
 
 // New returns a new reporter.
@@ -75,12 +75,7 @@ func NewScope(tool string, interval time.Duration) (tally.Scope, io.Closer) {
 // newBackend creates a backend that is listening the metric channel
 // in a separate go routine.
 func newBackend(tool string, c cfg, metrics chan *metric) (tally.StatsReporter, error) {
-	claim, err := c.claimer.ClaimResolveTTL(context.Background(), c.entity, time.Hour)
-	if err != nil {
-		return nil, err
-	}
-
-	token, err := wonka.MarshalClaim(claim)
+	token, err := c.ussoAuth.GetTokenForDomain("proxyreporter")
 	if err != nil {
 		return nil, err
 	}
@@ -95,16 +90,13 @@ func newBackend(tool string, c cfg, metrics chan *metric) (tally.StatsReporter, 
 			Name:  "version",
 			Value: types.Version,
 		},
-		{
-			Name:  "usso",
-			Value: token,
-		},
 	})
 
 	b := &backend{
 		metrics:    metrics,
 		client:     &http.Client{Timeout: 30 * time.Second, Jar: jar},
 		addr:       c.addr.String(),
+		token:      token,
 		ticker:     time.NewTicker(c.interval),
 		startFlush: make(chan struct{}),
 		flushDone:  make(chan struct{}),
@@ -164,9 +156,21 @@ func (b *backend) postHTTP(values url.Values) {
 	}
 
 	for i := 0; i < _retryCount; i++ {
-		rsp, err := b.client.PostForm(b.addr, values)
+		req, err := http.NewRequest("POST", b.addr, strings.NewReader(values.Encode()))
 		if err != nil {
-			fmt.Fprintf(os.Stderr, "Error posting request: %v\n", err)
+			fmt.Fprintf(os.Stderr, "Error creating POST request: (%v), no retries remain\n", err)
+			return
+		}
+		req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
+		req.Header.Set("Authorization", "Bearer "+b.token)
+		rsp, err := b.client.Do(req)
+		if err != nil {
+			if i < _retryCount-1 {
+				delay := int(math.Pow(float64(i), 2))
+				time.Sleep(time.Duration(delay) * time.Second)
+			} else {
+				fmt.Fprintf(os.Stderr, "Error posting request: (%v), no retries remain\n", err)
+			}
 			continue
 		}
 
@@ -178,7 +182,7 @@ func (b *backend) postHTTP(values url.Values) {
 			return
 		}
 
-		fmt.Fprintf(os.Stderr, "Received bad responce: %s\n", rsp.Status)
+		fmt.Fprintf(os.Stderr, "Received bad response: %s\n", rsp.Status)
 	}
 }
 
