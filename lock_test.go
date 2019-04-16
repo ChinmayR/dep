@@ -27,18 +27,18 @@ func TestReadLock(t *testing.T) {
 		t.Fatalf("Should have read Lock correctly, but got err %q", err)
 	}
 
+	wantLp := gps.NewLockedProject(
+		gps.ProjectIdentifier{ProjectRoot: gps.ProjectRoot("github.com/golang/dep")},
+		gps.NewBranch("master").Pair(gps.Revision("d05d5aca9f895d19e9265839bffeadd74a2d2ecb")),
+		[]string{"."},
+	)
+	(&wantLp).SetSourceUrl("ssh://gitolite@code.uber.internal/devexp/dep")
 	want := &Lock{
 		SolveMeta: SolveMeta{
 			InputsDigest: []byte{},
 			DepVersion:   "v0.11.0-UBER",
 		},
-		P: []gps.LockedProject{
-			gps.NewLockedProject(
-				gps.ProjectIdentifier{ProjectRoot: gps.ProjectRoot("github.com/golang/dep")},
-				gps.NewBranch("master").Pair(gps.Revision("d05d5aca9f895d19e9265839bffeadd74a2d2ecb")),
-				[]string{"."},
-			),
-		},
+		P: []gps.LockedProject{wantLp},
 	}
 
 	if !reflect.DeepEqual(got, want) {
@@ -59,13 +59,7 @@ func TestReadLock(t *testing.T) {
 			InputsDigest: b,
 			DepVersion:   "v0.11.0-UBER",
 		},
-		P: []gps.LockedProject{
-			gps.NewLockedProject(
-				gps.ProjectIdentifier{ProjectRoot: gps.ProjectRoot("github.com/golang/dep")},
-				gps.NewBranch("master").Pair(gps.Revision("d05d5aca9f895d19e9265839bffeadd74a2d2ecb")),
-				[]string{"."},
-			),
-		},
+		P: []gps.LockedProject{wantLp},
 	}
 
 	if !reflect.DeepEqual(got, want) {
@@ -107,18 +101,20 @@ func TestWriteLock(t *testing.T) {
 	golden := "lock/golden0.toml"
 	want := h.GetTestFileString(golden)
 	memo, _ := hex.DecodeString("2252a285ab27944a4d7adcba8dbd03980f59ba652f12db39fa93b927c345593e")
+
+	writeLp := gps.NewLockedProject(
+		gps.ProjectIdentifier{ProjectRoot: gps.ProjectRoot("github.com/golang/dep")},
+		gps.NewBranch("master").Pair(gps.Revision("d05d5aca9f895d19e9265839bffeadd74a2d2ecb")),
+		[]string{"."},
+	)
+	(&writeLp).SetSourceUrl("ssh://gitolite@code.uber.internal/devexp/dep")
+
 	l := &Lock{
 		SolveMeta: SolveMeta{
 			InputsDigest: memo,
 			DepVersion:   "v0.11.0-UBER",
 		},
-		P: []gps.LockedProject{
-			gps.NewLockedProject(
-				gps.ProjectIdentifier{ProjectRoot: gps.ProjectRoot("github.com/golang/dep")},
-				gps.NewBranch("master").Pair(gps.Revision("d05d5aca9f895d19e9265839bffeadd74a2d2ecb")),
-				[]string{"."},
-			),
-		},
+		P: []gps.LockedProject{writeLp},
 	}
 
 	got, err := l.MarshalTOML(false)

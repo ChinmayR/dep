@@ -137,7 +137,9 @@ func fromRawLock(raw rawLock) (*Lock, error) {
 			ProjectRoot: gps.ProjectRoot(ld.Name),
 			Source:      ld.Source,
 		}
-		l.P[i] = gps.NewLockedProject(id, v, ld.Packages)
+		lockedProject := gps.NewLockedProject(id, v, ld.Packages)
+		(&lockedProject).SetSourceUrl(ld.SourceUrl)
+		l.P[i] = lockedProject
 	}
 
 	return l, nil

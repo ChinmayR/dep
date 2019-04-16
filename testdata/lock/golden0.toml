@@ -4,6 +4,7 @@
   name = "github.com/golang/dep"
   packages = ["."]
   revision = "d05d5aca9f895d19e9265839bffeadd74a2d2ecb"
+  sourceUrl = "ssh://gitolite@code.uber.internal/devexp/dep"
 
 [solve-meta]
   analyzer-name = ""

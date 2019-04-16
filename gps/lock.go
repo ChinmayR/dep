@@ -160,6 +160,11 @@ func (lp LockedProject) SourceUrl() string {
 	return lp.sourceUrl
 }
 
+// Set the SourceUrl for the locked project
+func (lp *LockedProject) SetSourceUrl(sourceUrl string) {
+	lp.sourceUrl = sourceUrl
+}
+
 // Eq checks if two LockedProject instances are equal.
 func (lp LockedProject) Eq(lp2 LockedProject) bool {
 	if lp.pi != lp2.pi {
