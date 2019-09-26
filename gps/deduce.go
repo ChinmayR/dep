@@ -686,6 +686,23 @@ func (m vcsExtensionDeducer) deduceSource(path string, u *url.URL) (maybeSources
 	}
 }
 
+var MultipleSourcesErr = errors.New("found more than one maybe sources")
+
+func GetSourceForPath(path string) (string, error) {
+	ctx, _ := context.WithCancel(context.TODO())
+	superv := newSupervisor(ctx)
+	deducer := newDeductionCoordinator(superv)
+
+	pd, err := deducer.deduceRootPath(ctx, path)
+	if err != nil {
+		return "", err
+	}
+	if len(pd.mb) > 0 {
+		return pd.mb[0].URL().String(), MultipleSourcesErr
+	}
+	return pd.mb[0].URL().String(), nil
+}
+
 // A deducer takes an import path and inspects it to determine where the
 // corresponding project root should be. It applies a number of matching
 // techniques, eventually falling back to an HTTP request for go-get metadata if
